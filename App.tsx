@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import SplashScreen from './components/SplashScreen';
 import { COLORS } from './theme';
+import { WalletProvider } from './context/HotWalletConnector';
 
-export default function App() {
+function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
 
   const handleStart = () => {
@@ -19,6 +20,14 @@ export default function App() {
       <Text style={styles.text}>Welcome to VibesFlow!</Text>
       <Text style={styles.subtitle}>Your emotional music creation journey begins here.</Text>
     </View>
+  );
+}
+
+export default function App() {
+  return (
+    <WalletProvider>
+      <AppContent />
+    </WalletProvider>
   );
 }
 
