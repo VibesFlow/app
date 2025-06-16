@@ -7,6 +7,7 @@ import {
   Modal,
   TextInput,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome } from '@expo/vector-icons';
@@ -33,6 +34,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
   const [freeTickets, setFreeTickets] = useState(false);
   const [ticketPrice, setTicketPrice] = useState('0');
   const [payPerStream, setPayPerStream] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(false);
 
   const resetModal = () => {
     setStep(1);
@@ -44,6 +46,34 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
     setStreamPrice('0');
     setFreeTickets(false);
     setPayPerStream(false);
+    setAudioEnabled(false);
+  };
+
+  const enableAudio = async () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.AudioContext) {
+      try {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        // Test audio with a brief beep
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        osc.frequency.value = 800;
+        gain.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+        osc.start();
+        osc.stop(audioContext.currentTime + 0.1);
+        setAudioEnabled(true);
+        console.log('Audio enabled successfully');
+      } catch (error) {
+        console.warn('Failed to enable audio:', error);
+      }
+    } else {
+      setAudioEnabled(true);
+    }
   };
 
   useEffect(() => {
@@ -80,6 +110,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
   };
 
   const isLaunchDisabled = () => {
+    if (!audioEnabled) return true;
     if (mode === 'group') {
       return !distance || distance === '0' || !ticketAmount || !streamPrice;
     }
@@ -242,6 +273,24 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
               </View>
             </View>
           </View>
+        </View>
+      )}
+
+      {!audioEnabled && (
+        <TouchableOpacity
+          style={styles.enableAudioButton}
+          onPress={enableAudio}
+          activeOpacity={0.7}
+        >
+          <FontAwesome name="volume-up" size={16} color={COLORS.background} />
+          <Text style={styles.enableAudioText}>ENABLE AUDIO</Text>
+        </TouchableOpacity>
+      )}
+
+      {audioEnabled && (
+        <View style={styles.audioEnabledContainer}>
+          <FontAwesome name="check-circle" size={12} color={COLORS.secondary} />
+          <Text style={styles.audioEnabledText}>Audio Ready</Text>
         </View>
       )}
 
@@ -551,6 +600,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginTop: 24,
+  },
+  enableAudioButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.primary,
+    marginBottom: 16,
+    gap: 8,
+  },
+  enableAudioText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.background,
+    letterSpacing: 1.5,
+  },
+  audioEnabledContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  audioEnabledText: {
+    fontSize: 11,
+    color: COLORS.secondary,
+    fontWeight: '600',
+    letterSpacing: 1,
   },
   freeButton: {
     position: 'absolute',

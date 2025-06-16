@@ -105,6 +105,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
         if (Platform.OS === 'web' && typeof window !== 'undefined' && window.AudioContext) {
           audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
           
+          // Resume audio context (required for user interaction)
+          if (audioContextRef.current.state === 'suspended') {
+            await audioContextRef.current.resume();
+          }
+          
           // Create sophisticated filter chain
           const filter = audioContextRef.current.createBiquadFilter();
           filter.type = 'lowpass';
@@ -112,6 +117,8 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           filter.Q.value = 1;
           filter.connect(audioContextRef.current.destination);
           filterRef.current = filter;
+          
+          console.log('Web Audio Context state:', audioContextRef.current.state);
         }
 
         setIsInitialized(true);
@@ -205,47 +212,39 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     };
   }, []);
 
-  // Stable techno music generation system
+  // Simple but effective techno music generation system
   const generateAdvancedMusic = () => {
     if (!audioContextRef.current || !isStreaming) return;
+    if (audioContextRef.current.state !== 'running') return;
 
     try {
       const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
-      const normalizedMagnitude = Math.min(magnitude, 2) / 2;
+      const normalizedMagnitude = Math.max(0.3, Math.min(magnitude, 2) / 2); // Ensure minimum volume
 
-      // Generate multiple layers for rich rave sound
-      const layers = [
-        { freq: 60 + (Math.floor(sensorData.y * 10) % 8) * 10, type: 'sawtooth', gain: 0.4 }, // Bass
-        { freq: 220 + normalizedMagnitude * 200, type: 'square', gain: 0.2 }, // Lead
-        { freq: 880 + normalizedMagnitude * 440, type: 'triangle', gain: 0.15 }, // High
-      ];
-
-      layers.forEach((layer, i) => {
-        const osc = audioContextRef.current.createOscillator();
-        const gainNode = audioContextRef.current.createGain();
-        
-        osc.type = layer.type as OscillatorType;
-        osc.frequency.value = layer.freq;
-        
-        const now = audioContextRef.current.currentTime;
-        const duration = 0.8 + Math.random() * 0.4;
-        
-        gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(layer.gain * normalizedMagnitude, now + 0.05);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
-        
-        osc.connect(gainNode);
-        if (filterRef.current) {
-          gainNode.connect(filterRef.current);
-          filterRef.current.frequency.value = 400 + normalizedMagnitude * 1000;
-          filterRef.current.Q.value = 3 + normalizedMagnitude * 8;
-        } else {
-          gainNode.connect(audioContextRef.current.destination);
-        }
-        
-        osc.start(now + i * 0.1);
-        osc.stop(now + duration);
-      });
+      // Simple but effective bass generator
+      const osc = audioContextRef.current.createOscillator();
+      const gainNode = audioContextRef.current.createGain();
+      
+      // Dynamic bass frequency (40-120Hz)
+      const bassFreq = 60 + (Math.floor(Date.now() / 1000) % 8) * 8;
+      osc.type = 'sawtooth';
+      osc.frequency.value = bassFreq;
+      
+      const now = audioContextRef.current.currentTime;
+      const duration = 1.0;
+      
+      // Strong envelope for punchy bass
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(0.5 * normalizedMagnitude, now + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      
+      osc.connect(gainNode);
+      gainNode.connect(audioContextRef.current.destination);
+      
+      osc.start(now);
+      osc.stop(now + duration);
+      
+      console.log('Generated bass at', bassFreq, 'Hz with gain', 0.5 * normalizedMagnitude);
 
     } catch (error) {
       console.warn('Music generation failed:', error);
@@ -362,6 +361,26 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       setStreamDuration(0);
       setIsStreaming(true);
       console.log('Starting continuous vibestream');
+      
+      // Enable audio context on user interaction
+      if (Platform.OS === 'web' && audioContextRef.current) {
+        const enableAudio = async () => {
+          if (audioContextRef.current.state === 'suspended') {
+            await audioContextRef.current.resume();
+            console.log('Audio context resumed');
+          }
+        };
+        
+        // Try to enable audio immediately
+        enableAudio();
+        
+        // Also enable on any click
+        const handleClick = () => {
+          enableAudio();
+          document.removeEventListener('click', handleClick);
+        };
+        document.addEventListener('click', handleClick);
+      }
     }
   }, [isInitialized]);
 
