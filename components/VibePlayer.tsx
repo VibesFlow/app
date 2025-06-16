@@ -145,33 +145,48 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
     const startSensors = async () => {
       if (Platform.OS === 'web') {
-        // Web fallback with enhanced mouse/device motion
+        // Web mouse velocity tracking for dynamic music generation
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+        let lastMouseTime = Date.now();
+        
         const handleMouseMove = (event: MouseEvent) => {
-          const normalizedX = (event.clientX / window.innerWidth - 0.5) * 2;
-          const normalizedY = (event.clientY / window.innerHeight - 0.5) * 2;
+          const currentTime = Date.now();
+          const deltaTime = currentTime - lastMouseTime;
+          const deltaX = event.clientX - lastMouseX;
+          const deltaY = event.clientY - lastMouseY;
+          
+          // Calculate velocity (pixels per millisecond, scaled)
+          const velocityX = deltaTime > 0 ? (deltaX / deltaTime) * 10 : 0;
+          const velocityY = deltaTime > 0 ? (deltaY / deltaTime) * 10 : 0;
+          const velocityMagnitude = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
+          
           setSensorData({
-            x: normalizedX,
-            y: normalizedY,
-            z: Math.sin(Date.now() / 1000) * 0.5,
-            timestamp: Date.now(),
+            x: Math.max(-2, Math.min(2, velocityX)), // Clamp to reasonable range
+            y: Math.max(-2, Math.min(2, velocityY)),
+            z: Math.max(-2, Math.min(2, velocityMagnitude)),
+            timestamp: currentTime,
           });
+          
+          lastMouseX = event.clientX;
+          lastMouseY = event.clientY;
+          lastMouseTime = currentTime;
         };
 
-        // Enhanced random movement simulation for continuous generation
-        const randomInterval = setInterval(() => {
-          const time = Date.now() / 1000;
-          setSensorData({
-            x: Math.sin(time / 2) * 0.8 + Math.sin(time * 3) * 0.2,
-            y: Math.cos(time / 1.5) * 0.6 + Math.cos(time * 2.5) * 0.3,
-            z: Math.sin(time) * 0.4 + Math.sin(time * 4) * 0.1,
+        // Decay mouse velocity when not moving
+        const decayInterval = setInterval(() => {
+          setSensorData(prev => ({
+            x: prev.x * 0.95,
+            y: prev.y * 0.95,
+            z: prev.z * 0.9,
             timestamp: Date.now(),
-          });
+          }));
         }, 50);
 
         window.addEventListener('mousemove', handleMouseMove);
 
         return () => {
-          clearInterval(randomInterval);
+          clearInterval(decayInterval);
           window.removeEventListener('mousemove', handleMouseMove);
         };
       } else {
@@ -212,59 +227,80 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     };
   }, []);
 
-  // Dynamic sensor-responsive rave music generation
+  // Continuous rave music generation with sensor enhancement
   const generateAdvancedMusic = () => {
     if (!audioContextRef.current || !isStreaming) return;
     if (audioContextRef.current.state !== 'running') return;
 
     try {
       const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
-      const normalizedMagnitude = Math.max(0.4, Math.min(magnitude, 3) / 3);
-      
-      // Use sensor data for musical parameters
-      const bassFreq = 40 + Math.abs(sensorData.x * 30); // X-axis controls bass (40-70Hz)
-      const leadFreq = 200 + Math.abs(sensorData.y * 400); // Y-axis controls lead (200-600Hz)
-      const hihatFreq = 8000 + Math.abs(sensorData.z * 4000); // Z-axis controls hi-hats
-      
+      const normalizedMagnitude = Math.max(0.4, Math.min(magnitude || 1, 3) / 3);
       const now = audioContextRef.current.currentTime;
       
-      // Generate bass line based on X movement
-      if (Math.abs(sensorData.x) > 0.1) {
-        const bassOsc = audioContextRef.current.createOscillator();
-        const bassGain = audioContextRef.current.createGain();
-        const bassFilter = audioContextRef.current.createBiquadFilter();
+      // Always generate bass drum (4/4 kick pattern)
+      const beatTime = (Date.now() / 600) % 4; // 100 BPM roughly
+      if (beatTime < 0.1 || (beatTime > 2 && beatTime < 2.1)) {
+        const kickOsc = audioContextRef.current.createOscillator();
+        const kickGain = audioContextRef.current.createGain();
+        const kickFilter = audioContextRef.current.createBiquadFilter();
         
-        bassOsc.type = 'sawtooth';
-        bassOsc.frequency.value = bassFreq;
-        bassFilter.type = 'lowpass';
-        bassFilter.frequency.value = 150;
+        kickOsc.type = 'sine';
+        kickOsc.frequency.setValueAtTime(60, now);
+        kickOsc.frequency.exponentialRampToValueAtTime(30, now + 0.3);
+        kickFilter.type = 'lowpass';
+        kickFilter.frequency.value = 100;
         
-        bassGain.gain.setValueAtTime(0, now);
-        bassGain.gain.linearRampToValueAtTime(0.6 * normalizedMagnitude, now + 0.01);
-        bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+        kickGain.gain.setValueAtTime(0, now);
+        kickGain.gain.linearRampToValueAtTime(0.8, now + 0.01);
+        kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
         
-        bassOsc.connect(bassFilter);
-        bassFilter.connect(bassGain);
-        bassGain.connect(audioContextRef.current.destination);
+        kickOsc.connect(kickFilter);
+        kickFilter.connect(kickGain);
+        kickGain.connect(audioContextRef.current.destination);
         
-        bassOsc.start(now);
-        bassOsc.stop(now + 0.8);
+        kickOsc.start(now);
+        kickOsc.stop(now + 0.3);
       }
       
-      // Generate acid lead based on Y movement
-      if (Math.abs(sensorData.y) > 0.1) {
+      // Continuous bass line with sensor modulation
+      const bassFreq = 60 + (Math.abs(sensorData.x || 0.5) * 40); // 60-100Hz bass
+      const bassOsc = audioContextRef.current.createOscillator();
+      const bassGain = audioContextRef.current.createGain();
+      const bassFilter = audioContextRef.current.createBiquadFilter();
+      
+      bassOsc.type = 'sawtooth';
+      bassOsc.frequency.value = bassFreq;
+      bassFilter.type = 'lowpass';
+      bassFilter.frequency.value = 200 + (Math.abs(sensorData.y || 0.3) * 300);
+      bassFilter.Q.value = 8;
+      
+      bassGain.gain.setValueAtTime(0, now);
+      bassGain.gain.linearRampToValueAtTime(0.4 * normalizedMagnitude, now + 0.02);
+      bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      
+      bassOsc.connect(bassFilter);
+      bassFilter.connect(bassGain);
+      bassGain.connect(audioContextRef.current.destination);
+      
+      bassOsc.start(now);
+      bassOsc.stop(now + 0.6);
+      
+      // Acid lead with sensor-controlled filter sweep
+      if (Math.random() > 0.3) { // 70% chance to play lead
         const leadOsc = audioContextRef.current.createOscillator();
         const leadGain = audioContextRef.current.createGain();
         const leadFilter = audioContextRef.current.createBiquadFilter();
         
+        const leadFreq = 220 + (Math.abs(sensorData.z || 0.4) * 440);
         leadOsc.type = 'square';
         leadOsc.frequency.value = leadFreq;
         leadFilter.type = 'lowpass';
-        leadFilter.frequency.value = 800 + Math.abs(sensorData.y) * 1200;
-        leadFilter.Q.value = 10 + Math.abs(sensorData.y) * 15;
+        leadFilter.frequency.setValueAtTime(500, now);
+        leadFilter.frequency.exponentialRampToValueAtTime(2000, now + 0.3);
+        leadFilter.Q.value = 15;
         
         leadGain.gain.setValueAtTime(0, now);
-        leadGain.gain.linearRampToValueAtTime(0.3 * normalizedMagnitude, now + 0.005);
+        leadGain.gain.linearRampToValueAtTime(0.25 * normalizedMagnitude, now + 0.01);
         leadGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
         
         leadOsc.connect(leadFilter);
@@ -275,28 +311,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
         leadOsc.stop(now + 0.4);
       }
       
-      // Generate hi-hats based on Z movement
-      if (Math.abs(sensorData.z) > 0.15) {
-        const hihatOsc = audioContextRef.current.createOscillator();
-        const hihatGain = audioContextRef.current.createGain();
-        const hihatFilter = audioContextRef.current.createBiquadFilter();
-        
-        hihatOsc.type = 'sawtooth';
-        hihatOsc.frequency.value = hihatFreq;
-        hihatFilter.type = 'highpass';
-        hihatFilter.frequency.value = 6000;
-        
-        hihatGain.gain.setValueAtTime(0, now);
-        hihatGain.gain.linearRampToValueAtTime(0.2 * normalizedMagnitude, now + 0.001);
-        hihatGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-        
-        hihatOsc.connect(hihatFilter);
-        hihatFilter.connect(hihatGain);
-        hihatGain.connect(audioContextRef.current.destination);
-        
-        hihatOsc.start(now);
-        hihatOsc.stop(now + 0.1);
-      }
+      console.log('Generated rave music - bass:', Math.round(bassFreq), 'Hz, magnitude:', normalizedMagnitude.toFixed(2));
 
     } catch (error) {
       console.warn('Music generation failed:', error);
