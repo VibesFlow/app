@@ -7,13 +7,14 @@ import {
   Animated,
   Dimensions,
   ActivityIndicator,
+  Platform,
+  TextInput,
+  ScrollView,
 } from 'react-native';
-import { Accelerometer, Gyroscope, Magnetometer } from 'expo-sensors';
+import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { WebView } from 'react-native-webview';
-import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
-import { GlitchText, GlitchContainer, AcidButton } from './ui';
 
 const { width, height } = Dimensions.get('window');
 
@@ -22,120 +23,122 @@ interface VibePlayerProps {
 }
 
 interface SensorData {
-  accelerometer: { x: number; y: number; z: number };
-  gyroscope: { x: number; y: number; z: number };
-  magnetometer: { x: number; y: number; z: number };
+  x: number;
+  y: number;
+  z: number;
   timestamp: number;
 }
 
-interface VibeMetrics {
-  energy: number;
-  tempo: number;
-  intensity: number;
-  mood: 'chill' | 'energetic' | 'intense' | 'chaotic';
+interface Comment {
+  id: string;
+  text: string;
+  timestamp: number;
+  position: number; // Position in the track (0-1)
 }
+
+// Generate waveform data points
+const generateWaveformData = (amplitude: number, frequency: number) => {
+  const points = [];
+  const segments = 120;
+  for (let i = 0; i < segments; i++) {
+    const variation = Math.sin((i / segments) * Math.PI * frequency) * amplitude;
+    const height = 20 + variation * 15;
+    points.push(Math.max(5, Math.min(35, height)));
+  }
+  return points;
+};
 
 const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   const webviewRef = useRef<WebView>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentVibe, setCurrentVibe] = useState<VibeMetrics>({
-    energy: 0,
-    tempo: 80,
-    intensity: 0,
-    mood: 'chill',
-  });
+  const [trackProgress, setTrackProgress] = useState(0);
+  const [currentAmplitude, setCurrentAmplitude] = useState(0.3);
+  const [currentFrequency, setCurrentFrequency] = useState(2);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [showCommentInput, setShowCommentInput] = useState(false);
+  const [commentPosition, setCommentPosition] = useState(0);
   
-  // Animated values for visual feedback
-  const energyAnimation = useRef(new Animated.Value(0)).current;
-  const pulseAnimation = useRef(new Animated.Value(1)).current;
-  const glitchIntensity = useRef(new Animated.Value(0)).current;
+  // Animated values for waveform
+  const waveformAnimation = useRef(new Animated.Value(0)).current;
+  const progressAnimation = useRef(new Animated.Value(0)).current;
 
   // Sensor data state
   const [sensorData, setSensorData] = useState<SensorData>({
-    accelerometer: { x: 0, y: 0, z: 0 },
-    gyroscope: { x: 0, y: 0, z: 0 },
-    magnetometer: { x: 0, y: 0, z: 0 },
-    timestamp: Date.now(),
+    x: 0, y: 0, z: 0, timestamp: Date.now(),
   });
 
-  // Calculate vibe metrics from sensor data
-  const calculateVibeMetrics = useCallback((data: SensorData): VibeMetrics => {
-    const { accelerometer, gyroscope, magnetometer } = data;
-    
-    // Calculate energy from accelerometer magnitude
-    const accelMagnitude = Math.sqrt(
-      accelerometer.x ** 2 + accelerometer.y ** 2 + accelerometer.z ** 2
-    );
-    
-    // Calculate rotational energy from gyroscope
-    const gyroMagnitude = Math.sqrt(
-      gyroscope.x ** 2 + gyroscope.y ** 2 + gyroscope.z ** 2
-    );
-    
-    // Calculate magnetic field variance for environmental sensing
-    const magMagnitude = Math.sqrt(
-      magnetometer.x ** 2 + magnetometer.y ** 2 + magnetometer.z ** 2
-    );
-    
-    // Normalize and combine sensor inputs
-    const energy = Math.min((accelMagnitude - 0.9) * 2 + gyroMagnitude * 0.5, 1);
-    const intensity = Math.min(gyroMagnitude * 2 + (accelMagnitude - 0.9) * 3, 1);
-    
-    // Map to tempo (80-180 BPM based on movement)
-    const tempo = Math.max(80, Math.min(180, 80 + energy * 100));
-    
-    // Determine mood based on combined metrics
-    let mood: VibeMetrics['mood'] = 'chill';
-    if (intensity > 0.7 && energy > 0.6) mood = 'chaotic';
-    else if (energy > 0.5) mood = 'energetic';
-    else if (intensity > 0.4) mood = 'intense';
-    
-    return {
-      energy: Math.max(0, energy),
-      tempo,
-      intensity: Math.max(0, intensity),
-      mood,
-    };
-  }, []);
+  // Web fallback for sensors
+  const [useWebFallback, setUseWebFallback] = useState(Platform.OS === 'web');
 
-  // Setup sensor listeners
+  // Setup sensor listeners with web fallback
   useEffect(() => {
     let accelSubscription: any;
     let gyroSubscription: any;
-    let magSubscription: any;
 
     const startSensors = async () => {
-      try {
-        // Set update intervals
-        Accelerometer.setUpdateInterval(100); // 10Hz
-        Gyroscope.setUpdateInterval(100);
-        Magnetometer.setUpdateInterval(200); // 5Hz (less frequent)
-
-        accelSubscription = Accelerometer.addListener((result) => {
-          setSensorData(prev => ({
-            ...prev,
-            accelerometer: result,
+      if (Platform.OS === 'web') {
+        // Web fallback - use mouse movement or random data
+        const handleMouseMove = (event: any) => {
+          const normalizedX = (event.clientX / window.innerWidth - 0.5) * 2;
+          const normalizedY = (event.clientY / window.innerHeight - 0.5) * 2;
+          setSensorData({
+            x: normalizedX,
+            y: normalizedY,
+            z: Math.sin(Date.now() / 1000) * 0.5,
             timestamp: Date.now(),
-          }));
-        });
+          });
+        };
 
-        gyroSubscription = Gyroscope.addListener((result) => {
-          setSensorData(prev => ({
-            ...prev,
-            gyroscope: result,
-          }));
-        });
+        // Start with random movement simulation
+        const randomInterval = setInterval(() => {
+          setSensorData({
+            x: Math.sin(Date.now() / 2000) * 0.8,
+            y: Math.cos(Date.now() / 1500) * 0.6,
+            z: Math.sin(Date.now() / 1000) * 0.4,
+            timestamp: Date.now(),
+          });
+        }, 100);
 
-        magSubscription = Magnetometer.addListener((result) => {
-          setSensorData(prev => ({
-            ...prev,
-            magnetometer: result,
-          }));
-        });
+        if (typeof window !== 'undefined') {
+          window.addEventListener('mousemove', handleMouseMove);
+        }
 
-      } catch (error) {
-        console.warn('Sensor setup error:', error);
+        return () => {
+          clearInterval(randomInterval);
+          if (typeof window !== 'undefined') {
+            window.removeEventListener('mousemove', handleMouseMove);
+          }
+        };
+      } else {
+        // Mobile sensors
+        try {
+          Accelerometer.setUpdateInterval(100);
+          Gyroscope.setUpdateInterval(100);
+
+          accelSubscription = Accelerometer.addListener((result) => {
+            setSensorData({
+              x: result.x,
+              y: result.y,
+              z: result.z,
+              timestamp: Date.now(),
+            });
+          });
+
+          gyroSubscription = Gyroscope.addListener((result) => {
+            setSensorData(prev => ({
+              ...prev,
+              x: prev.x + result.x * 0.1,
+              y: prev.y + result.y * 0.1,
+              z: prev.z + result.z * 0.1,
+            }));
+          });
+
+        } catch (error) {
+          console.warn('Sensor setup error, using fallback:', error);
+          setUseWebFallback(true);
+        }
       }
     };
 
@@ -144,60 +147,52 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     return () => {
       accelSubscription?.remove();
       gyroSubscription?.remove();
-      magSubscription?.remove();
     };
   }, []);
 
-  // Process sensor data and update vibe metrics
+  // Process sensor data and update audio parameters
   useEffect(() => {
-    const newVibe = calculateVibeMetrics(sensorData);
-    setCurrentVibe(newVibe);
+    const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
+    const amplitude = Math.min(magnitude * 0.5 + 0.2, 1);
+    const frequency = 1 + Math.abs(sensorData.x) * 3;
+
+    setCurrentAmplitude(amplitude);
+    setCurrentFrequency(frequency);
 
     // Send to WebView for music generation
     if (isInitialized && webviewRef.current) {
       webviewRef.current.postMessage(JSON.stringify({
-        type: 'vibeUpdate',
-        vibe: newVibe,
+        type: 'audioUpdate',
+        amplitude,
+        frequency,
+        tempo: 120 + amplitude * 60,
         sensors: sensorData,
       }));
     }
 
-    // Update visual animations
-    Animated.timing(energyAnimation, {
-      toValue: newVibe.energy,
-      duration: 200,
+    // Update waveform animation
+    Animated.timing(waveformAnimation, {
+      toValue: amplitude,
+      duration: 150,
       useNativeDriver: false,
     }).start();
 
-    Animated.timing(glitchIntensity, {
-      toValue: newVibe.intensity,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
+  }, [sensorData, isInitialized]);
 
-  }, [sensorData, calculateVibeMetrics, isInitialized]);
-
-  // Pulse animation for play state
+  // Track progress animation
   useEffect(() => {
     if (isPlaying) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnimation, {
-            toValue: 1.1,
-            duration: 60000 / currentVibe.tempo, // Sync with tempo
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnimation, {
-            toValue: 1,
-            duration: 60000 / currentVibe.tempo,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } else {
-      pulseAnimation.setValue(1);
+      const progressInterval = setInterval(() => {
+        setTrackProgress(prev => {
+          const newProgress = prev + 0.001; // Simulate track progress
+          if (newProgress >= 1) return 0;
+          return newProgress;
+        });
+      }, 100);
+
+      return () => clearInterval(progressInterval);
     }
-  }, [isPlaying, currentVibe.tempo]);
+  }, [isPlaying]);
 
   const togglePlayback = () => {
     if (webviewRef.current) {
@@ -208,7 +203,28 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }
   };
 
-  // WebView HTML with Magenta.js and Tone.js integration
+  const handleWaveformClick = (event: any) => {
+    const { locationX } = event.nativeEvent;
+    const position = locationX / (width - 40);
+    setCommentPosition(position);
+    setShowCommentInput(true);
+  };
+
+  const addComment = () => {
+    if (newComment.trim()) {
+      const comment: Comment = {
+        id: Date.now().toString(),
+        text: newComment,
+        timestamp: Date.now(),
+        position: commentPosition,
+      };
+      setComments(prev => [...prev, comment]);
+      setNewComment('');
+      setShowCommentInput(false);
+    }
+  };
+
+  // Enhanced music generation HTML with web audio compatibility
   const musicEngineHTML = `
 <!DOCTYPE html>
 <html>
@@ -218,7 +234,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   <style>
     body, html { margin: 0; padding: 0; background: #000; overflow: hidden; }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/@magenta/music@1.28.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.min.js"></script>
 </head>
 <body></body>
@@ -226,56 +241,26 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 (async function() {
   let isInitialized = false;
   let isPlaying = false;
-  let currentSequence = null;
-  let drumSynth, bassSynth, leadSynth, padSynth;
-  let drumRNN, melodyRNN;
+  let synth, filter, reverb, delay;
   
-  // Initialize audio context and instruments
   async function initializeAudio() {
     try {
       await Tone.start();
       
-      // Create synths for different parts
-      drumSynth = new Tone.PolySynth({
-        voice: Tone.MembraneSynth,
-        options: {
-          envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.1 },
-          oscillator: { type: 'sine' }
-        }
-      }).toDestination();
+      // Create effects chain
+      reverb = new Tone.Reverb(2).toDestination();
+      delay = new Tone.FeedbackDelay("8n", 0.3).connect(reverb);
+      filter = new Tone.Filter(800, "lowpass").connect(delay);
       
-      bassSynth = new Tone.MonoSynth({
-        oscillator: { type: 'sawtooth' },
-        envelope: { attack: 0.02, decay: 0.3, sustain: 0.3, release: 0.5 },
-        filter: { Q: 2, frequency: 300 }
-      }).toDestination();
-      
-      leadSynth = new Tone.PolySynth({
+      // Create main synth
+      synth = new Tone.PolySynth({
         voice: Tone.Synth,
         options: {
-          oscillator: { type: 'square' },
-          envelope: { attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.4 }
+          oscillator: { type: "sawtooth" },
+          envelope: { attack: 0.1, decay: 0.3, sustain: 0.4, release: 1 },
+          filter: { Q: 2, frequency: 300 }
         }
-      }).toDestination();
-      
-      padSynth = new Tone.PolySynth({
-        voice: Tone.Synth,
-        options: {
-          oscillator: { type: 'sine' },
-          envelope: { attack: 0.5, decay: 0.3, sustain: 0.7, release: 2 }
-        }
-      }).toDestination();
-      
-      // Load AI models
-      drumRNN = new mm.MusicRNN(
-        'https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/drum_kit_rnn'
-      );
-      await drumRNN.initialize();
-      
-      melodyRNN = new mm.MusicRNN(
-        'https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/basic_rnn'
-      );
-      await melodyRNN.initialize();
+      }).connect(filter);
       
       isInitialized = true;
       window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'initialized' }));
@@ -289,197 +274,50 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }
   }
   
-  // Generate music based on vibe data
-  async function generateMusic(vibeData) {
-    if (!isInitialized) return;
+  function generateTechnoPattern(amplitude, frequency, tempo) {
+    if (!isInitialized || !isPlaying) return;
     
-    const { energy, tempo, intensity, mood } = vibeData.vibe;
-    const { accelerometer, gyroscope } = vibeData.sensors;
+    Tone.Transport.bpm.value = tempo;
+    filter.frequency.value = 400 + amplitude * 1000;
     
-    try {
-      Tone.Transport.bpm.value = tempo;
-      
-      // Create seed based on mood and sensor data
-      let drumSeed, melodySeed;
-      
-      switch (mood) {
-        case 'chaotic':
-          drumSeed = createChaoticDrumSeed(energy, intensity);
-          melodySeed = createChaoticMelodySeed(accelerometer, gyroscope);
-          break;
-        case 'energetic':
-          drumSeed = createEnergeticDrumSeed(energy);
-          melodySeed = createEnergeticMelodySeed(accelerometer);
-          break;
-        case 'intense':
-          drumSeed = createIntenseDrumSeed(intensity);
-          melodySeed = createIntenseMelodySeed(gyroscope);
-          break;
-        default:
-          drumSeed = createChillDrumSeed();
-          melodySeed = createChillMelodySeed();
+    // Generate bass pattern
+    const bassNotes = ['C2', 'C2', 'F2', 'C2'];
+    const bassPattern = new Tone.Sequence((time, note) => {
+      synth.triggerAttackRelease(note, '8n', time, amplitude * 0.8);
+    }, bassNotes);
+    
+    // Generate lead pattern based on sensor data
+    const leadNotes = ['C4', 'D4', 'F4', 'G4'].map(note => 
+      Tone.Frequency(note).transpose(Math.floor(frequency * 12))
+    );
+    
+    const leadPattern = new Tone.Sequence((time, note) => {
+      if (Math.random() < amplitude) {
+        synth.triggerAttackRelease(note, '16n', time, amplitude * 0.6);
       }
-      
-      // Generate drum pattern
-      const drumContinuation = await drumRNN.continueSequence(
-        drumSeed, 
-        16, 
-        Math.max(0.2, energy * 1.5)
-      );
-      
-      // Generate melody
-      const melodyContinuation = await melodyRNN.continueSequence(
-        melodySeed, 
-        16, 
-        Math.max(0.5, intensity * 1.2)
-      );
-      
-      // Schedule and play
-      if (isPlaying) {
-        playSequence(drumContinuation, melodyContinuation, vibeData);
-      }
-      
-    } catch (error) {
-      console.error('Music generation error:', error);
-    }
-  }
-  
-  function createChaoticDrumSeed(energy, intensity) {
-    return {
-      quantizationInfo: { stepsPerQuarter: 4 },
-      totalQuantizedSteps: 16,
-      notes: [
-        { pitch: 36, quantizedStartStep: 0, quantizedEndStep: 1 }, // kick
-        { pitch: 38, quantizedStartStep: 4, quantizedEndStep: 5 }, // snare
-        { pitch: 42, quantizedStartStep: 2, quantizedEndStep: 3 }, // hihat
-        { pitch: 36, quantizedStartStep: 8, quantizedEndStep: 9 },
-        { pitch: 38, quantizedStartStep: 12, quantizedEndStep: 13 },
-        { pitch: 42, quantizedStartStep: 6, quantizedEndStep: 7 },
-        { pitch: 42, quantizedStartStep: 10, quantizedEndStep: 11 },
-        { pitch: 42, quantizedStartStep: 14, quantizedEndStep: 15 }
-      ]
-    };
-  }
-  
-  function createEnergeticDrumSeed(energy) {
-    return {
-      quantizationInfo: { stepsPerQuarter: 4 },
-      totalQuantizedSteps: 16,
-      notes: [
-        { pitch: 36, quantizedStartStep: 0, quantizedEndStep: 1 },
-        { pitch: 38, quantizedStartStep: 8, quantizedEndStep: 9 },
-        { pitch: 42, quantizedStartStep: 4, quantizedEndStep: 5 },
-        { pitch: 42, quantizedStartStep: 12, quantizedEndStep: 13 }
-      ]
-    };
-  }
-  
-  function createIntenseDrumSeed(intensity) {
-    return {
-      quantizationInfo: { stepsPerQuarter: 4 },
-      totalQuantizedSteps: 8,
-      notes: [
-        { pitch: 36, quantizedStartStep: 0, quantizedEndStep: 1 },
-        { pitch: 38, quantizedStartStep: 4, quantizedEndStep: 5 }
-      ]
-    };
-  }
-  
-  function createChillDrumSeed() {
-    return {
-      quantizationInfo: { stepsPerQuarter: 4 },
-      totalQuantizedSteps: 8,
-      notes: [
-        { pitch: 36, quantizedStartStep: 0, quantizedEndStep: 1 },
-        { pitch: 38, quantizedStartStep: 6, quantizedEndStep: 7 }
-      ]
-    };
-  }
-  
-  function createChaoticMelodySeed(accel, gyro) {
-    const baseNote = 60 + Math.floor(accel.x * 12);
-    return {
-      quantizationInfo: { stepsPerQuarter: 4 },
-      totalQuantizedSteps: 8,
-      notes: [
-        { pitch: baseNote, quantizedStartStep: 0, quantizedEndStep: 2 },
-        { pitch: baseNote + 4, quantizedStartStep: 4, quantizedEndStep: 6 }
-      ]
-    };
-  }
-  
-  function createEnergeticMelodySeed(accel) {
-    const baseNote = 60 + Math.floor(Math.abs(accel.y) * 8);
-    return {
-      quantizationInfo: { stepsPerQuarter: 4 },
-      totalQuantizedSteps: 8,
-      notes: [
-        { pitch: baseNote, quantizedStartStep: 0, quantizedEndStep: 3 }
-      ]
-    };
-  }
-  
-  function createIntenseMelodySeed(gyro) {
-    const baseNote = 48 + Math.floor(Math.abs(gyro.z) * 16);
-    return {
-      quantizationInfo: { stepsPerQuarter: 4 },
-      totalQuantizedSteps: 4,
-      notes: [
-        { pitch: baseNote, quantizedStartStep: 0, quantizedEndStep: 2 }
-      ]
-    };
-  }
-  
-  function createChillMelodySeed() {
-    return {
-      quantizationInfo: { stepsPerQuarter: 4 },
-      totalQuantizedSteps: 8,
-      notes: [
-        { pitch: 60, quantizedStartStep: 0, quantizedEndStep: 4 }
-      ]
-    };
-  }
-  
-  function playSequence(drums, melody, vibeData) {
-    Tone.Transport.cancel();
+    }, leadNotes);
     
-    // Play drums
-    drums.notes.forEach(note => {
-      const time = (note.quantizedStartStep / 4) + 'm';
-      const duration = ((note.quantizedEndStep - note.quantizedStartStep) / 4) + 'm';
-      const freq = Tone.Frequency(note.pitch, 'midi').toFrequency();
-      
-      drumSynth.triggerAttackRelease(freq, duration, '+' + time);
-    });
+    bassPattern.start(0);
+    leadPattern.start(0);
     
-    // Play melody
-    melody.notes.forEach(note => {
-      const time = (note.quantizedStartStep / 4) + 'm';
-      const duration = ((note.quantizedEndStep - note.quantizedStartStep) / 4) + 'm';
-      const freq = Tone.Frequency(note.pitch, 'midi').toFrequency();
-      
-      leadSynth.triggerAttackRelease(freq, duration, '+' + time);
-    });
-    
-    // Add bass line based on energy
-    if (vibeData.vibe.energy > 0.3) {
-      const bassNote = 36 + Math.floor(vibeData.vibe.energy * 12);
-      bassSynth.triggerAttackRelease(Tone.Frequency(bassNote, 'midi').toFrequency(), '1m', '+0m');
-    }
-    
-    if (!Tone.Transport.state === 'started') {
+    if (Tone.Transport.state !== 'started') {
       Tone.Transport.start();
     }
+    
+    // Clean up after pattern
+    setTimeout(() => {
+      bassPattern.dispose();
+      leadPattern.dispose();
+    }, 4000);
   }
   
-  // Message handler
   window.addEventListener('message', async (event) => {
     const data = JSON.parse(event.data);
     
     switch (data.type) {
-      case 'vibeUpdate':
+      case 'audioUpdate':
         if (isPlaying) {
-          await generateMusic(data);
+          generateTechnoPattern(data.amplitude, data.frequency, data.tempo);
         }
         break;
         
@@ -496,7 +334,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }
   });
   
-  // Initialize everything
   await initializeAudio();
 })();
 </script>
@@ -520,139 +357,150 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }
   };
 
-  const getMoodColor = (mood: string) => {
-    switch (mood) {
-      case 'chaotic': return COLORS.error;
-      case 'energetic': return COLORS.primary;
-      case 'intense': return COLORS.accent;
-      default: return COLORS.success;
-    }
-  };
-
-  const getMoodEmoji = (mood: string) => {
-    switch (mood) {
-      case 'chaotic': return '🌪️';
-      case 'energetic': return '⚡';
-      case 'intense': return '🔥';
-      default: return '🌊';
-    }
-  };
+  // Generate waveform bars
+  const waveformData = generateWaveformData(currentAmplitude, currentFrequency);
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={[COLORS.background, '#0a0a0a', COLORS.background]}
-        style={styles.gradient}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack} style={styles.backButton}>
-            <FontAwesome5 name="arrow-left" size={24} color={COLORS.primary} />
-          </TouchableOpacity>
-          <GlitchText 
-            text="VIBE_PLAYER" 
-            style={styles.title} 
-            intensity="medium" 
-          />
-        </View>
+      {/* Hidden WebView for music generation */}
+      <WebView
+        ref={webviewRef}
+        source={{ html: musicEngineHTML }}
+        style={styles.hiddenWebView}
+        onMessage={handleWebViewMessage}
+        javaScriptEnabled
+        domStorageEnabled
+        allowFileAccess
+        originWhitelist={['*']}
+      />
 
-        {/* Hidden WebView for music generation */}
-        <WebView
-          ref={webviewRef}
-          source={{ html: musicEngineHTML }}
-          style={styles.hiddenWebView}
-          onMessage={handleWebViewMessage}
-          javaScriptEnabled
-          domStorageEnabled
-          allowFileAccess
-          originWhitelist={['*']}
-        />
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <FontAwesome5 name="arrow-left" size={20} color={COLORS.textSecondary} />
+        </TouchableOpacity>
+        <Text style={styles.trackTitle}>LIVE_SESSION</Text>
+        <View style={styles.placeholder} />
+      </View>
 
-        {/* Main vibe visualization */}
-        <GlitchContainer 
-          style={styles.vibeContainer}
-          intensity={currentVibe.intensity > 0.5 ? 'high' : currentVibe.intensity > 0.2 ? 'medium' : 'low'}
-          animated={isPlaying}
+      {/* Main waveform container */}
+      <View style={styles.playerContainer}>
+        <TouchableOpacity 
+          style={styles.waveformContainer}
+          onPress={handleWaveformClick}
+          activeOpacity={0.9}
         >
-          <Animated.View 
+          {/* Progress overlay */}
+          <View 
             style={[
-              styles.vibeCircle,
-              {
-                transform: [{ scale: pulseAnimation }],
-                backgroundColor: energyAnimation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [COLORS.secondary, getMoodColor(currentVibe.mood)],
-                }),
-              },
-            ]}
-          >
-            <Text style={styles.moodEmoji}>{getMoodEmoji(currentVibe.mood)}</Text>
-            <Text style={styles.moodText}>{currentVibe.mood.toUpperCase()}</Text>
-          </Animated.View>
-        </GlitchContainer>
-
-        {/* Vibe metrics */}
-        <View style={styles.metricsContainer}>
-          <View style={styles.metric}>
-            <Text style={styles.metricLabel}>ENERGY</Text>
-            <View style={styles.progressBar}>
-              <Animated.View 
+              styles.progressOverlay, 
+              { width: `${trackProgress * 100}%` }
+            ]} 
+          />
+          
+          {/* Waveform bars */}
+          <View style={styles.waveform}>
+            {waveformData.map((height, index) => (
+              <Animated.View
+                key={index}
                 style={[
-                  styles.progressFill,
+                  styles.waveformBar,
                   {
-                    width: energyAnimation.interpolate({
+                    height: height,
+                    opacity: waveformAnimation.interpolate({
                       inputRange: [0, 1],
-                      outputRange: ['0%', '100%'],
+                      outputRange: [0.3, 1],
                     }),
                   },
                 ]}
               />
+            ))}
+          </View>
+
+          {/* Comments overlay */}
+          {comments.map((comment) => (
+            <View
+              key={comment.id}
+              style={[
+                styles.commentMarker,
+                { left: `${comment.position * 100}%` },
+              ]}
+            >
+              <View style={styles.commentDot} />
+              <Text style={styles.commentText}>{comment.text}</Text>
             </View>
-            <Text style={styles.metricValue}>{Math.round(currentVibe.energy * 100)}%</Text>
-          </View>
-
-          <View style={styles.metric}>
-            <Text style={styles.metricLabel}>TEMPO</Text>
-            <Text style={styles.metricValue}>{Math.round(currentVibe.tempo)} BPM</Text>
-          </View>
-
-          <View style={styles.metric}>
-            <Text style={styles.metricLabel}>INTENSITY</Text>
-            <Text style={styles.metricValue}>{Math.round(currentVibe.intensity * 100)}%</Text>
-          </View>
-        </View>
+          ))}
+        </TouchableOpacity>
 
         {/* Controls */}
         <View style={styles.controls}>
-          {!isInitialized ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-              <Text style={styles.loadingText}>INITIALIZING_AUDIO_ENGINE...</Text>
-            </View>
-          ) : (
-            <AcidButton
-              text={isPlaying ? "STOP_VIBE" : "START_VIBE"}
-              onPress={togglePlayback}
-              type="primary"
-              size="large"
-              glitchIntensity={currentVibe.intensity > 0.3 ? 'medium' : 'low'}
-              icon={
-                <FontAwesome5 
-                  name={isPlaying ? "stop" : "play"} 
-                  size={20} 
-                  color={COLORS.background} 
-                />
-              }
-              pulsate={isPlaying}
-            />
-          )}
-        </View>
+          <TouchableOpacity
+            style={styles.playButton}
+            onPress={togglePlayback}
+            disabled={!isInitialized}
+          >
+            {!isInitialized ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <FontAwesome5 
+                name={isPlaying ? "pause" : "play"} 
+                size={16} 
+                color={COLORS.primary} 
+              />
+            )}
+          </TouchableOpacity>
 
-        {/* Instructions */}
-        <Text style={styles.instructions}>
-          Move your device to generate unique rave music based on your vibes
+          <View style={styles.timeInfo}>
+            <Text style={styles.timeText}>
+              {Math.floor(trackProgress * 180)}s / 180s
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Comments section */}
+      <ScrollView style={styles.commentsSection}>
+        {comments.map((comment) => (
+          <View key={comment.id} style={styles.commentItem}>
+            <Text style={styles.commentTimestamp}>
+              {Math.floor(comment.position * 180)}s
+            </Text>
+            <Text style={styles.commentContent}>{comment.text}</Text>
+          </View>
+        ))}
+      </ScrollView>
+
+      {/* Comment input modal */}
+      {showCommentInput && (
+        <View style={styles.commentModal}>
+          <View style={styles.commentInputContainer}>
+            <TextInput
+              style={styles.commentInput}
+              value={newComment}
+              onChangeText={setNewComment}
+              placeholder="Add a comment..."
+              placeholderTextColor={COLORS.textSecondary}
+              autoFocus
+            />
+            <TouchableOpacity style={styles.commentSubmit} onPress={addComment}>
+              <FontAwesome5 name="paper-plane" size={16} color={COLORS.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.commentCancel} 
+              onPress={() => setShowCommentInput(false)}
+            >
+              <FontAwesome5 name="times" size={16} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Status indicator */}
+      <View style={styles.statusBar}>
+        <Text style={styles.statusText}>
+          {useWebFallback ? 'MOUSE_INPUT' : 'MOTION_INPUT'} • {isPlaying ? 'LIVE' : 'PAUSED'}
         </Text>
-      </LinearGradient>
+      </View>
     </View>
   );
 };
@@ -662,8 +510,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  gradient: {
-    flex: 1,
+  hiddenWebView: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
   },
   header: {
     flexDirection: 'row',
@@ -674,102 +525,157 @@ const styles = StyleSheet.create({
   },
   backButton: {
     padding: SPACING.sm,
-    marginRight: SPACING.md,
   },
-  title: {
-    fontSize: FONT_SIZES.xl,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    letterSpacing: 2,
-  },
-  hiddenWebView: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    opacity: 0,
-  },
-  vibeContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: SPACING.xl,
-    height: 250,
-  },
-  vibeCircle: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: COLORS.primary,
-  },
-  moodEmoji: {
-    fontSize: 40,
-    marginBottom: SPACING.sm,
-  },
-  moodText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: 'bold',
-    color: COLORS.background,
-    letterSpacing: 1,
-  },
-  metricsContainer: {
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.xl,
-  },
-  metric: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  metricLabel: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-    width: 80,
-    letterSpacing: 1,
-  },
-  progressBar: {
+  trackTitle: {
     flex: 1,
-    height: 8,
-    backgroundColor: COLORS.secondary,
-    borderRadius: 4,
-    marginHorizontal: SPACING.md,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: COLORS.primary,
-    borderRadius: 4,
-  },
-  metricValue: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.primary,
-    fontWeight: 'bold',
-    width: 60,
-    textAlign: 'right',
+    textAlign: 'center',
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: COLORS.text,
     letterSpacing: 1,
   },
-  controls: {
+  placeholder: {
+    width: 40,
+  },
+  playerContainer: {
+    flex: 1,
     paddingHorizontal: SPACING.lg,
+    justifyContent: 'center',
+  },
+  waveformContainer: {
+    height: 100,
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: 4,
+    overflow: 'hidden',
+    position: 'relative',
     marginBottom: SPACING.lg,
   },
-  loadingContainer: {
+  progressOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: '100%',
+    backgroundColor: COLORS.primary + '20',
+    zIndex: 1,
+  },
+  waveform: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    height: '100%',
+    paddingHorizontal: 4,
+  },
+  waveformBar: {
+    width: 2,
+    backgroundColor: COLORS.primary,
+    borderRadius: 1,
+  },
+  commentMarker: {
+    position: 'absolute',
+    top: -20,
+    zIndex: 2,
+  },
+  commentDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.accent,
+    marginBottom: 4,
+  },
+  commentText: {
+    fontSize: 10,
+    color: COLORS.text,
+    backgroundColor: COLORS.background + 'CC',
+    padding: 4,
+    borderRadius: 4,
+    minWidth: 60,
+    textAlign: 'center',
+  },
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  playButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  timeInfo: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  timeText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  commentsSection: {
+    maxHeight: 150,
+    paddingHorizontal: SPACING.lg,
+  },
+  commentItem: {
+    flexDirection: 'row',
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.backgroundSecondary,
+  },
+  commentTimestamp: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.accent,
+    width: 40,
+    fontWeight: '600',
+  },
+  commentContent: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text,
+    marginLeft: SPACING.sm,
+  },
+  commentModal: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.backgroundSecondary,
     padding: SPACING.lg,
   },
-  loadingText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.md,
-    letterSpacing: 1,
+  commentInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  instructions: {
-    fontSize: FONT_SIZES.sm,
+  commentInput: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    color: COLORS.text,
+    padding: SPACING.md,
+    borderRadius: 4,
+    marginRight: SPACING.sm,
+  },
+  commentSubmit: {
+    padding: SPACING.md,
+    backgroundColor: COLORS.primary + '20',
+    borderRadius: 4,
+    marginRight: SPACING.sm,
+  },
+  commentCancel: {
+    padding: SPACING.md,
+  },
+  statusBar: {
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.backgroundSecondary,
+  },
+  statusText: {
+    fontSize: FONT_SIZES.xs,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    paddingHorizontal: SPACING.lg,
-    letterSpacing: 0.5,
-    lineHeight: 20,
+    letterSpacing: 1,
   },
 });
 
