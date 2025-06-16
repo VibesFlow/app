@@ -587,36 +587,7 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 24,
   },
-  enableAudioButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: COLORS.primary,
-    marginBottom: 16,
-    gap: 8,
-  },
-  enableAudioText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.background,
-    letterSpacing: 1.5,
-  },
-  audioEnabledContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    marginBottom: 16,
-    gap: 8,
-  },
-  audioEnabledText: {
-    fontSize: 11,
-    color: COLORS.secondary,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
+
   freeButton: {
     position: 'absolute',
     right: 0,
