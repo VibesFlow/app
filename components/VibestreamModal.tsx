@@ -479,25 +479,6 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     letterSpacing: 1,
   },
-  freeButton: {
-    position: 'absolute',
-    right: 0,
-    top: 22,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    backgroundColor: COLORS.primary,
-  },
-  freeButtonText: {
-    fontSize: 8,
-    color: COLORS.background,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  actionButtonsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
-  },
   payPerStreamContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -514,6 +495,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 1,
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  freeButton: {
+    position: 'absolute',
+    right: 0,
+    top: 22,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: COLORS.primary,
+  },
+  freeButtonText: {
+    fontSize: 8,
+    color: COLORS.background,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });
 
