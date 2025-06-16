@@ -227,91 +227,97 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     };
   }, []);
 
-  // Continuous rave music generation with sensor enhancement
+  // Pure sensor-driven music generation - NO MUSIC WITHOUT SENSOR INPUT
   const generateAdvancedMusic = () => {
     if (!audioContextRef.current || !isStreaming) return;
     if (audioContextRef.current.state !== 'running') return;
 
     try {
       const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
-      const normalizedMagnitude = Math.max(0.4, Math.min(magnitude || 1, 3) / 3);
+      
+      // ONLY generate music if there is actual sensor movement
+      if (magnitude < 0.05) return; // No movement = no music
+      
+      const normalizedMagnitude = Math.min(magnitude, 3) / 3;
       const now = audioContextRef.current.currentTime;
       
-      // Always generate bass drum (4/4 kick pattern)
-      const beatTime = (Date.now() / 600) % 4; // 100 BPM roughly
-      if (beatTime < 0.1 || (beatTime > 2 && beatTime < 2.1)) {
-        const kickOsc = audioContextRef.current.createOscillator();
-        const kickGain = audioContextRef.current.createGain();
-        const kickFilter = audioContextRef.current.createBiquadFilter();
+      // Generate bass based on X-axis movement only
+      if (Math.abs(sensorData.x) > 0.1) {
+        const bassFreq = 40 + Math.abs(sensorData.x) * 60; // 40-100Hz based on actual X movement
+        const bassOsc = audioContextRef.current.createOscillator();
+        const bassGain = audioContextRef.current.createGain();
+        const bassFilter = audioContextRef.current.createBiquadFilter();
         
-        kickOsc.type = 'sine';
-        kickOsc.frequency.setValueAtTime(60, now);
-        kickOsc.frequency.exponentialRampToValueAtTime(30, now + 0.3);
-        kickFilter.type = 'lowpass';
-        kickFilter.frequency.value = 100;
+        bassOsc.type = 'sawtooth';
+        bassOsc.frequency.value = bassFreq;
+        bassFilter.type = 'lowpass';
+        bassFilter.frequency.value = 150;
         
-        kickGain.gain.setValueAtTime(0, now);
-        kickGain.gain.linearRampToValueAtTime(0.8, now + 0.01);
-        kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        bassGain.gain.setValueAtTime(0, now);
+        bassGain.gain.linearRampToValueAtTime(0.6 * normalizedMagnitude, now + 0.01);
+        bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
         
-        kickOsc.connect(kickFilter);
-        kickFilter.connect(kickGain);
-        kickGain.connect(audioContextRef.current.destination);
+        bassOsc.connect(bassFilter);
+        bassFilter.connect(bassGain);
+        bassGain.connect(audioContextRef.current.destination);
         
-        kickOsc.start(now);
-        kickOsc.stop(now + 0.3);
+        bassOsc.start(now);
+        bassOsc.stop(now + 0.5);
+        
+        console.log('Bass generated from X movement:', Math.round(bassFreq), 'Hz');
       }
       
-      // Continuous bass line with sensor modulation
-      const bassFreq = 60 + (Math.abs(sensorData.x || 0.5) * 40); // 60-100Hz bass
-      const bassOsc = audioContextRef.current.createOscillator();
-      const bassGain = audioContextRef.current.createGain();
-      const bassFilter = audioContextRef.current.createBiquadFilter();
-      
-      bassOsc.type = 'sawtooth';
-      bassOsc.frequency.value = bassFreq;
-      bassFilter.type = 'lowpass';
-      bassFilter.frequency.value = 200 + (Math.abs(sensorData.y || 0.3) * 300);
-      bassFilter.Q.value = 8;
-      
-      bassGain.gain.setValueAtTime(0, now);
-      bassGain.gain.linearRampToValueAtTime(0.4 * normalizedMagnitude, now + 0.02);
-      bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
-      
-      bassOsc.connect(bassFilter);
-      bassFilter.connect(bassGain);
-      bassGain.connect(audioContextRef.current.destination);
-      
-      bassOsc.start(now);
-      bassOsc.stop(now + 0.6);
-      
-      // Acid lead with sensor-controlled filter sweep
-      if (Math.random() > 0.3) { // 70% chance to play lead
+      // Generate lead based on Y-axis movement only
+      if (Math.abs(sensorData.y) > 0.1) {
+        const leadFreq = 200 + Math.abs(sensorData.y) * 400; // 200-600Hz based on actual Y movement
         const leadOsc = audioContextRef.current.createOscillator();
         const leadGain = audioContextRef.current.createGain();
         const leadFilter = audioContextRef.current.createBiquadFilter();
         
-        const leadFreq = 220 + (Math.abs(sensorData.z || 0.4) * 440);
         leadOsc.type = 'square';
         leadOsc.frequency.value = leadFreq;
         leadFilter.type = 'lowpass';
-        leadFilter.frequency.setValueAtTime(500, now);
-        leadFilter.frequency.exponentialRampToValueAtTime(2000, now + 0.3);
-        leadFilter.Q.value = 15;
+        leadFilter.frequency.value = 800 + Math.abs(sensorData.y) * 1200;
+        leadFilter.Q.value = 10 + Math.abs(sensorData.y) * 15;
         
         leadGain.gain.setValueAtTime(0, now);
-        leadGain.gain.linearRampToValueAtTime(0.25 * normalizedMagnitude, now + 0.01);
-        leadGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+        leadGain.gain.linearRampToValueAtTime(0.3 * normalizedMagnitude, now + 0.005);
+        leadGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
         
         leadOsc.connect(leadFilter);
         leadFilter.connect(leadGain);
         leadGain.connect(audioContextRef.current.destination);
         
         leadOsc.start(now);
-        leadOsc.stop(now + 0.4);
+        leadOsc.stop(now + 0.3);
+        
+        console.log('Lead generated from Y movement:', Math.round(leadFreq), 'Hz');
       }
       
-      console.log('Generated rave music - bass:', Math.round(bassFreq), 'Hz, magnitude:', normalizedMagnitude.toFixed(2));
+      // Generate percussion based on Z-axis movement only
+      if (Math.abs(sensorData.z) > 0.15) {
+        const percOsc = audioContextRef.current.createOscillator();
+        const percGain = audioContextRef.current.createGain();
+        const percFilter = audioContextRef.current.createBiquadFilter();
+        
+        percOsc.type = 'sawtooth';
+        percOsc.frequency.value = 8000 + Math.abs(sensorData.z) * 4000;
+        percFilter.type = 'highpass';
+        percFilter.frequency.value = 6000;
+        
+        percGain.gain.setValueAtTime(0, now);
+        percGain.gain.linearRampToValueAtTime(0.2 * normalizedMagnitude, now + 0.001);
+        percGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        
+        percOsc.connect(percFilter);
+        percFilter.connect(percGain);
+        percGain.connect(audioContextRef.current.destination);
+        
+        percOsc.start(now);
+        percOsc.stop(now + 0.08);
+        
+        console.log('Percussion generated from Z movement');
+      }
 
     } catch (error) {
       console.warn('Music generation failed:', error);
