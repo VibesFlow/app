@@ -36,11 +36,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
   const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // Pinata configuration
-  const PINATA_API_KEY = 'd856b1edf03a5264d9b5';
-  const PINATA_API_SECRET = '21db92a10e14b9235818e0ebef5098563678e6ef18631bcc2b10e1c3028053c4';
-  const PINATA_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiIyZjlmZmEyMC03M2UwLTRjNDktYjg5YS1mYThkMGE2ZjkxYjYiLCJlbWFpbCI6ImhhdXNsaXZlMjVAZ21haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBpbl9wb2xpY3kiOnsicmVnaW9ucyI6W3siZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiRlJBMSJ9LHsiZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiTllDMSJ9XSwidmVyc2lvbiI6MX0sIm1mYV9lbmFibGVkIjpmYWxzZSwic3RhdHVzIjoiQUNUSVZFIn0sImF1dGhlbnRpY2F0aW9uVHlwZSI6InNjb3BlZEtleSIsInNjb3BlZEtleUtleSI6ImQ4NTZiMWVkZjAzYTUyNjRkOWI1Iiwic2NvcGVkS2V5U2VjcmV0IjoiMjFkYjkyYTEwZTE0YjkyMzU4MThlMGViZWY1MDk4NTYzNjc4ZTZlZjE4NjMxYmNjMmIxMGUxYzMwMjgwNTNjNCIsImV4cCI6MTc3ODg2MzU2N30.XhasGn7s9RRbRWciSMfo0GV4eJ2TZBJ6ZWOHqNYKB6E';
-  const PINATA_URL = 'gray-random-lamprey-785.mypinata.cloud';
+
 
   // Load saved profile image on component mount
   useEffect(() => {
@@ -49,7 +45,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
         if (Platform.OS === 'web') {
           const savedImageHash = localStorage.getItem(`vibesflow_profile_${accountId}`);
           if (savedImageHash) {
-            setProfileImageUri(`https://${PINATA_URL}/ipfs/${savedImageHash}`);
+            setProfileImageUri(`${PINATA_GATEWAY_URL}${savedImageHash}`);
           }
         }
       } catch (error) {
@@ -100,7 +96,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
       const result = await pinataResponse.json();
       
       if (result.IpfsHash) {
-        const ipfsUrl = `https://${PINATA_URL}/ipfs/${result.IpfsHash}`;
+        const ipfsUrl = `${PINATA_GATEWAY_URL}${result.IpfsHash}`;
         setProfileImageUri(ipfsUrl);
         
         // Save hash to local storage

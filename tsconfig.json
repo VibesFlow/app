@@ -7,6 +7,12 @@
     "strictFunctionTypes": true,
     "strictBindCallApply": true,
     "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true
-  }
+    "noFallthroughCasesInSwitch": true,
+    "typeRoots": ["./node_modules/@types", "./"]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "env.d.ts"
+  ]
 }
