@@ -48,9 +48,8 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
   const handleModeSelect = (selectedMode: VibestreamMode) => {
     setMode(selectedMode);
     if (selectedMode === 'solo') {
-      // Stay on step 1 for solo mode
+      setStep(2);
     } else {
-      // Move to step 2 for group mode
       setStep(2);
     }
   };
@@ -58,26 +57,24 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
   const handleLaunchVibestream = () => {
     console.log('Launching Vibestream with:', {
       mode,
-      storeToFilecoin,
-      ...(mode === 'group' && {
-        distance: parseInt(distance),
-        ticketAmount: parseFloat(ticketAmount),
-        streamPrice: parseFloat(streamPrice),
-      }),
+      storeToFilecoin: mode === 'solo' ? storeToFilecoin : undefined,
+      distance: mode === 'group' ? distance : undefined,
+      ticketAmount: mode === 'group' ? ticketAmount : undefined,
+      streamPrice: mode === 'group' ? streamPrice : undefined,
     });
     onClose();
   };
 
   const isLaunchDisabled = () => {
     if (mode === 'group') {
-      return !distance || distance === '0';
+      return !distance || distance === '0' || !ticketAmount || !streamPrice;
     }
     return false;
   };
 
   const renderStep1 = () => (
     <View style={styles.stepContainer}>
-      <GlitchText text="SELECT MODE" style={styles.stepTitle} intensity="medium" />
+      <Text style={styles.stepTitle}>SELECT MODE</Text>
       
       <View style={styles.modeContainer}>
         <TouchableOpacity
@@ -85,9 +82,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
           onPress={() => handleModeSelect('solo')}
           activeOpacity={0.7}
         >
-          <Text style={[styles.modeText, mode === 'solo' && styles.selectedModeText]}>
-            SOLO
-          </Text>
+          <Text style={styles.modeText}>SOLO</Text>
         </TouchableOpacity>
         
         <TouchableOpacity
@@ -95,14 +90,27 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
           onPress={() => handleModeSelect('group')}
           activeOpacity={0.7}
         >
-          <Text style={[styles.modeText, mode === 'group' && styles.selectedModeText]}>
-            GROUP
-          </Text>
+          <Text style={styles.modeText}>GROUP</Text>
         </TouchableOpacity>
       </View>
+    </View>
+  );
 
-      {mode === 'solo' && (
-        <View style={styles.optionsContainer}>
+  const renderStep2 = () => (
+    <View style={styles.stepContainer}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => setStep(1)}
+        activeOpacity={0.7}
+      >
+        <FontAwesome name="chevron-left" size={12} color={COLORS.primary} />
+        <Text style={styles.backText}>BACK</Text>
+      </TouchableOpacity>
+
+      {mode === 'solo' ? (
+        <View>
+          <Text style={styles.stepTitle}>SOLO SETTINGS</Text>
+          
           <TouchableOpacity
             style={styles.checkboxContainer}
             onPress={() => setStoreToFilecoin(!storeToFilecoin)}
@@ -110,7 +118,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
           >
             <View style={[styles.checkbox, storeToFilecoin && styles.checkedBox]}>
               {storeToFilecoin && (
-                <FontAwesome name="check" size={12} color={COLORS.background} />
+                <FontAwesome name="check" size={8} color={COLORS.background} />
               )}
             </View>
             <Text style={styles.checkboxText}>Store to Filecoin</Text>
@@ -138,118 +146,83 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
             </TouchableOpacity>
           </View>
         </View>
+      ) : (
+        <View>
+          <Text style={styles.stepTitle}>GROUP SETTINGS</Text>
+          
+          <View style={styles.settingsContainer}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>DISTANCE</Text>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.textInput}
+                  value={distance}
+                  onChangeText={setDistance}
+                  placeholder="100"
+                  placeholderTextColor={COLORS.textSecondary}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.inputUnit}>meters</Text>
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>TICKET AMOUNT</Text>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.textInput}
+                  value={ticketAmount}
+                  onChangeText={setTicketAmount}
+                  placeholder="0"
+                  placeholderTextColor={COLORS.textSecondary}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.inputUnit}>tickets</Text>
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>STREAM PRICE</Text>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.textInput}
+                  value={streamPrice}
+                  onChangeText={setStreamPrice}
+                  placeholder="0"
+                  placeholderTextColor={COLORS.textSecondary}
+                  keyboardType="decimal-pad"
+                />
+                <Text style={styles.inputUnit}>$NEAR</Text>
+              </View>
+              <TouchableOpacity style={styles.freeButton} activeOpacity={0.7}>
+                <Text style={styles.freeButtonText}>FREE</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.actionButton, isLaunchDisabled() && styles.disabledButton]}
+              onPress={handleLaunchVibestream}
+              disabled={isLaunchDisabled()}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.actionButtonText, isLaunchDisabled() && styles.disabledText]}>
+                LAUNCH
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.disabledButton]}
+              disabled={true}
+              activeOpacity={1}
+            >
+              <Text style={[styles.actionButtonText, styles.disabledText]}>
+                SCHEDULE
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
-    </View>
-  );
-
-  const renderStep2 = () => (
-    <View style={styles.stepContainer}>
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => setStep(1)}
-        activeOpacity={0.7}
-      >
-        <FontAwesome name="arrow-left" size={16} color={COLORS.primary} />
-        <Text style={styles.backText}>BACK</Text>
-      </TouchableOpacity>
-
-      <GlitchText text="GROUP SETTINGS" style={styles.stepTitle} intensity="medium" />
-      
-      <View style={styles.settingsContainer}>
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Distance</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              value={distance}
-              onChangeText={setDistance}
-              placeholder="100"
-              placeholderTextColor={COLORS.muted}
-              keyboardType="numeric"
-            />
-            <Text style={styles.inputUnit}>m</Text>
-          </View>
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Ticket Amount</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              value={ticketAmount}
-              onChangeText={setTicketAmount}
-              placeholder="0"
-              placeholderTextColor={COLORS.muted}
-              keyboardType="numeric"
-            />
-            <Text style={styles.inputUnit}>$NEAR</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.freeButton}
-            onPress={() => setTicketAmount('0')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.freeButtonText}>FREE</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Stream Price</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              value={streamPrice}
-              onChangeText={setStreamPrice}
-              placeholder="0"
-              placeholderTextColor={COLORS.muted}
-              keyboardType="numeric"
-            />
-            <Text style={styles.inputUnit}>$NEAR</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.freeButton}
-            onPress={() => setStreamPrice('0')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.freeButtonText}>FREE</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity
-          style={styles.checkboxContainer}
-          onPress={() => setStoreToFilecoin(!storeToFilecoin)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.checkbox, storeToFilecoin && styles.checkedBox]}>
-            {storeToFilecoin && (
-              <FontAwesome name="check" size={10} color={COLORS.background} />
-            )}
-          </View>
-          <Text style={styles.checkboxText}>Store to Filecoin</Text>
-        </TouchableOpacity>
-
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, isLaunchDisabled() && styles.disabledButton]}
-            onPress={handleLaunchVibestream}
-            disabled={isLaunchDisabled()}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.actionButtonText, isLaunchDisabled() && styles.disabledText]}>
-              LAUNCH
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.disabledButton]}
-            disabled={true}
-            activeOpacity={1}
-          >
-            <Text style={[styles.actionButtonText, styles.disabledText]}>
-              SCHEDULE
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
     </View>
   );
 
@@ -365,9 +338,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.primary,
     letterSpacing: 1.5,
-  },
-  optionsContainer: {
-    marginTop: SPACING.medium,
   },
   checkboxContainer: {
     flexDirection: 'row',

@@ -22,8 +22,21 @@ const Button: React.FC<ButtonProps> = ({
   textStyle,
 }) => {
   const getButtonStyle = () => {
-    const baseStyle = [styles.button, styles[size]];
+    const baseStyle = [styles.button];
     
+    // Add size styles
+    switch (size) {
+      case 'small':
+        baseStyle.push(styles.small);
+        break;
+      case 'large':
+        baseStyle.push(styles.large);
+        break;
+      default:
+        baseStyle.push(styles.medium);
+    }
+    
+    // Add type styles
     switch (type) {
       case 'secondary':
         baseStyle.push(styles.secondary);
@@ -45,6 +58,7 @@ const Button: React.FC<ButtonProps> = ({
   const getTextStyle = () => {
     const baseStyle = [styles.text];
     
+    // Add size text styles
     switch (size) {
       case 'small':
         baseStyle.push(styles.smallText);
@@ -56,6 +70,7 @@ const Button: React.FC<ButtonProps> = ({
         baseStyle.push(styles.mediumText);
     }
     
+    // Add color text styles
     switch (type) {
       case 'secondary':
         baseStyle.push(styles.secondaryText);
