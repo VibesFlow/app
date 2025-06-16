@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { Platform } from 'react-native';
 
 interface WalletAccount {
-  address: string;
+  accountId: string;
   publicKey: string;
   network: string;
 }
@@ -42,64 +42,79 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       setConnecting(true);
       setError(null);
 
-      // Check if we're on web and if Near Wallet is available
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        // Try to connect to Near Wallet first
-        if ((window as any).near) {
-          const nearWallet = (window as any).near;
-          const account = await nearWallet.requestSignIn({
-            contractId: 'vibesflow.near',
-            methodNames: ['create_composition', 'mint_nft']
+        // Try to connect to HOT Wallet using HERE Wallet core
+        try {
+          // Check if HERE Wallet core is available
+          const { HereWallet } = await import('@here-wallet/core');
+          
+          const here = await HereWallet.connect({
+            botId: "VibesFlow/app",
+            walletId: "herewalletbot/app", // HOT Wallet
           });
+
+          // Authenticate without adding keys first
+          const { accountId } = await here.authenticate();
           
-          if (account) {
+          if (accountId) {
             setAccount({
-              address: account.accountId,
-              publicKey: account.publicKey,
-              network: 'near-mainnet'
+              accountId: accountId,
+              publicKey: '', // Will be populated when needed
+              network: 'near-testnet'
             });
+            console.log(`Connected to HOT wallet: ${accountId}`);
             return;
+          }
+        } catch (hereError: any) {
+          console.log('HERE Wallet connection failed:', hereError.message);
+          
+          // Fallback to standard NEAR wallet connection
+          if ((window as any).near) {
+            const nearWallet = (window as any).near;
+            const account = await nearWallet.requestSignIn({
+              contractId: 'vibesflow.testnet',
+              methodNames: ['create_composition', 'mint_nft']
+            });
+            
+            if (account) {
+              setAccount({
+                accountId: account.accountId,
+                publicKey: account.publicKey,
+                network: 'near-testnet'
+              });
+              return;
+            }
           }
         }
 
-        // Try Sui Wallet
-        if ((window as any).suiWallet) {
-          const suiWallet = (window as any).suiWallet;
-          const response = await suiWallet.requestPermissions(['viewAccount']);
-          
-          if (response.accounts && response.accounts.length > 0) {
-            setAccount({
-              address: response.accounts[0],
-              publicKey: response.accounts[0],
-              network: 'sui-mainnet'
-            });
-            return;
-          }
-        }
-
-        // Try Ethereum wallets
-        if ((window as any).ethereum) {
-          const ethereum = (window as any).ethereum;
-          const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-          
-          if (accounts && accounts.length > 0) {
-            setAccount({
-              address: accounts[0],
-              publicKey: accounts[0],
-              network: 'ethereum-mainnet'
-            });
-            return;
-          }
-        }
-
-        throw new Error('No supported wallet found. Please install Near Wallet, Sui Wallet, or MetaMask.');
+        throw new Error('No HOT Wallet found. Please install HERE Wallet or NEAR Wallet.');
       } else {
-        // Mobile wallet connection
-        throw new Error('Mobile wallet connection not yet implemented');
+        // Mobile wallet connection using HERE Wallet
+        try {
+          const { HereWallet } = await import('@here-wallet/core');
+          
+          const here = await HereWallet.connect({
+            botId: "VibesFlow/app",
+            walletId: "herewalletbot/app",
+          });
+
+          const { accountId } = await here.authenticate();
+          
+          if (accountId) {
+            setAccount({
+              accountId: accountId,
+              publicKey: '',
+              network: 'near-testnet'
+            });
+            return;
+          }
+        } catch (mobileError: any) {
+          throw new Error('Mobile HOT Wallet connection failed. Please install HERE Wallet.');
+        }
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to connect wallet');
-      console.error('Wallet connection error:', err);
+      setError(err.message || 'Failed to connect HOT wallet');
+      console.error('HOT wallet connection error:', err);
     } finally {
       setConnecting(false);
     }
@@ -123,18 +138,20 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
 
     try {
-      if (account.network === 'near-mainnet' && (window as any).near) {
-        const result = await (window as any).near.account().functionCall(transaction);
-        return result.transaction.hash;
-      } else if (account.network === 'sui-mainnet' && (window as any).suiWallet) {
-        const result = await (window as any).suiWallet.signTransaction(transaction);
-        return result.signature;
-      } else if (account.network === 'ethereum-mainnet' && (window as any).ethereum) {
-        const result = await (window as any).ethereum.request({
-          method: 'eth_sendTransaction',
-          params: [transaction]
+      if (account.network === 'near-testnet') {
+        // Use HERE Wallet for HOT Protocol transactions
+        const { HereWallet } = await import('@here-wallet/core');
+        const here = await HereWallet.connect({
+          botId: "VibesFlow/app",
+          walletId: "herewalletbot/app",
         });
-        return result;
+        
+        const result = await here.signAndSendTransaction({
+          actions: transaction.actions,
+          receiverId: transaction.receiverId,
+        });
+        
+        return result.transaction.hash;
       }
       
       throw new Error('Unsupported wallet network');
@@ -149,15 +166,24 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
 
     try {
-      if (account.network === 'ethereum-mainnet' && (window as any).ethereum) {
-        const signature = await (window as any).ethereum.request({
-          method: 'personal_sign',
-          params: [message, account.address]
+      if (account.network === 'near-testnet') {
+        // Use HERE Wallet for message signing
+        const { HereWallet } = await import('@here-wallet/core');
+        const here = await HereWallet.connect({
+          botId: "VibesFlow/app",
+          walletId: "herewalletbot/app",
         });
+        
+        const nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+        const recipient = typeof window !== 'undefined' ? window.location.host : 'vibesflow.app';
+        
+        const { signature } = await here.signMessage({
+          recipient,
+          nonce,
+          message
+        });
+        
         return signature;
-      } else if (account.network === 'sui-mainnet' && (window as any).suiWallet) {
-        const result = await (window as any).suiWallet.signMessage({ message });
-        return result.signature;
       }
       
       throw new Error('Message signing not supported for this wallet');
@@ -170,31 +196,37 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   useEffect(() => {
     const checkExistingConnection = async () => {
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        // Check Near Wallet
-        if ((window as any).near?.isSignedIn && (window as any).near.isSignedIn()) {
-          const accountId = (window as any).near.getAccountId();
+        try {
+          // Check for existing HOT Wallet connection
+          const { HereWallet } = await import('@here-wallet/core');
+          const here = await HereWallet.connect({
+            botId: "VibesFlow/app",
+            walletId: "herewalletbot/app",
+          });
+          
+          // Try to authenticate silently
+          const { accountId } = await here.authenticate();
           if (accountId) {
             setAccount({
-              address: accountId,
-              publicKey: accountId,
-              network: 'near-mainnet'
+              accountId: accountId,
+              publicKey: '',
+              network: 'near-testnet'
             });
+            console.log('Existing HOT wallet connection found:', accountId);
           }
-        }
-        
-        // Check Ethereum wallet
-        else if ((window as any).ethereum) {
-          try {
-            const accounts = await (window as any).ethereum.request({ method: 'eth_accounts' });
-            if (accounts && accounts.length > 0) {
+        } catch (err) {
+          console.log('No existing HOT wallet connection');
+          
+          // Fallback to check standard NEAR wallet
+          if ((window as any).near?.isSignedIn && (window as any).near.isSignedIn()) {
+            const accountId = (window as any).near.getAccountId();
+            if (accountId) {
               setAccount({
-                address: accounts[0],
-                publicKey: accounts[0],
-                network: 'ethereum-mainnet'
+                accountId: accountId,
+                publicKey: '',
+                network: 'near-testnet'
               });
             }
-          } catch (err) {
-            console.log('No existing Ethereum connection');
           }
         }
       }

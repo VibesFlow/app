@@ -117,7 +117,10 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
         <GlitchText text="CONNECTED!" style={styles.successText} intensity="high" />
         {account && (
           <Text style={styles.walletAddress}>
-            {account.address.substring(0, 6)}...{account.address.substring(account.address.length - 4)}
+            {account.accountId.length > 10 ? 
+              `${account.accountId.substring(0, 6)}...${account.accountId.substring(account.accountId.length - 4)}` :
+              account.accountId
+            }
           </Text>
         )}
       </View>

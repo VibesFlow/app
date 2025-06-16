@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, BRANDING } from '../theme';
 import ConnectModal from './ConnectModal';
+import { useWallet } from '../context/HotWalletConnector';
 
 const { width, height } = Dimensions.get('window');
 
@@ -34,17 +35,31 @@ interface SplashScreenProps {
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ onStart }) => {
   const [connectModalVisible, setConnectModalVisible] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const [wallet, setWallet] = useState<string | null>(null);
+  const [showDisconnectDropdown, setShowDisconnectDropdown] = useState(false);
+  const { account, connected, disconnect } = useWallet();
   
   const handleConnect = () => {
     setConnectModalVisible(true);
   };
+
+  const handleWalletClick = () => {
+    if (connected && account) {
+      setShowDisconnectDropdown(!showDisconnectDropdown);
+    } else {
+      handleConnect();
+    }
+  };
+
+  const handleDisconnect = () => {
+    disconnect();
+    setShowDisconnectDropdown(false);
+  };
   
   // Format wallet address for display
-  const formatAddress = (address: string | null) => {
-    if (!address || typeof address !== 'string' || address.length < 10) return 'CONNECT';
-    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  const formatAddress = (accountId: string | null) => {
+    if (!accountId || typeof accountId !== 'string') return 'CONNECT';
+    if (accountId.length <= 10) return accountId;
+    return `${accountId.substring(0, 6)}...${accountId.substring(accountId.length - 4)}`;
   };
 
   return (
@@ -79,22 +94,37 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onStart }) => {
       {/* Noise texture overlay */}
       <View style={styles.noiseOverlay} />
       
-      {/* Connect button - top right */}
-      <TouchableOpacity 
-        style={[
-          styles.connectButton,
-          connected && styles.connectedButton
-        ]} 
-        onPress={handleConnect}
-        activeOpacity={0.6}
-      >
-        <Text style={[
-          styles.connectText,
-          connected && styles.connectedText
-        ]}>
-          {formatAddress(wallet)}
-        </Text>
-      </TouchableOpacity>
+      {/* Connect/Wallet button - top right */}
+      <View style={styles.walletContainer}>
+        <TouchableOpacity 
+          style={[
+            styles.connectButton,
+            connected && styles.connectedButton
+          ]} 
+          onPress={handleWalletClick}
+          activeOpacity={0.6}
+        >
+          <Text style={[
+            styles.connectText,
+            connected && styles.connectedText
+          ]}>
+            {formatAddress(account?.accountId || null)}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Disconnect dropdown */}
+        {showDisconnectDropdown && connected && (
+          <View style={styles.disconnectDropdown}>
+            <TouchableOpacity 
+              style={styles.disconnectButton}
+              onPress={handleDisconnect}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.disconnectText}>DISCONNECT</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
       
       {/* Logo and branding */}
       <View style={styles.logoContainer}>
@@ -168,16 +198,18 @@ const styles = StyleSheet.create({
     opacity: 0.08,
     zIndex: 3,
   },
-  connectButton: {
+  walletContainer: {
     position: 'absolute',
     top: 60,
     right: 20,
+    zIndex: 10,
+  },
+  connectButton: {
     paddingVertical: 8,
     paddingHorizontal: 16,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderWidth: 1,
     borderColor: COLORS.primary,
-    zIndex: 10,
   },
   connectedButton: {
     borderColor: COLORS.secondary,
@@ -191,6 +223,27 @@ const styles = StyleSheet.create({
   },
   connectedText: {
     color: COLORS.secondary,
+  },
+  disconnectDropdown: {
+    position: 'absolute',
+    top: 45,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    borderRadius: 4,
+    padding: 4,
+    minWidth: 120,
+  },
+  disconnectButton: {
+    padding: 8,
+    alignItems: 'center',
+  },
+  disconnectText: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1,
   },
   logoContainer: {
     alignItems: 'center',
