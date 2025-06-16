@@ -149,7 +149,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
           />
 
           <View style={styles.modalHeader}>
-            <GlitchText text="VIBESYNC" style={styles.modalTitle} intensity="low" />
+            <GlitchText text="VIBESFLOW" style={styles.modalTitle} intensity="low" />
             <TouchableOpacity 
               style={styles.closeButton}
               onPress={onClose}
@@ -161,7 +161,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
           {renderContent()}
 
           <View style={styles.modalFooter}>
-            <Text style={styles.footerText}>SECURED BY BLOCKCHAIN TECHNOLOGY</Text>
+            <Text style={styles.footerText}>POWERED BY NEAR</Text>
           </View>
 
         </Animated.View>
