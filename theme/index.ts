@@ -17,6 +17,11 @@ export const COLORS = {
   textSecondary: "#aaaaaa",
   textTertiary: "#666666",
   muted: "#666666",
+
+  // Status colors
+  success: "#00ff41",
+  error: "#ff0066",
+  warning: "#ffaa00",
 };
 
 export const FONT_SIZES = {

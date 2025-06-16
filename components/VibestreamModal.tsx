@@ -18,6 +18,7 @@ const { width } = Dimensions.get('window');
 interface VibestreamModalProps {
   visible: boolean;
   onClose: () => void;
+  onLaunchVibePlayer: () => void;
 }
 
 type VibestreamMode = 'solo' | 'group';
