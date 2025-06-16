@@ -42,7 +42,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
           <TouchableOpacity
             key={item.id || index}
             style={styles.gridItem}
-            onPress={item.isCreateButton ? onCreateVibestream : undefined}
+            onPress={item.isCreateButton ? () => setModalVisible(true) : undefined}
             activeOpacity={0.8}
           >
             <GlitchContainer 
@@ -54,9 +54,10 @@ const UserProfile: React.FC<UserProfileProps> = ({
                 <View style={styles.createButton}>
                   <FontAwesome5 
                     name="plus" 
-                    size={24} 
+                    size={40} 
                     color={COLORS.primary} 
                   />
+                  <Text style={styles.createButtonText}>NEW VIBESTREAM</Text>
                 </View>
               ) : (
                 <View style={styles.vibestreamThumbnail}>
@@ -139,6 +140,12 @@ const UserProfile: React.FC<UserProfileProps> = ({
           <Text style={styles.brandText}>{BRANDING.manifesto}</Text>
         </View>
       </ScrollView>
+
+      <VibestreamModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onLaunchVibePlayer={onCreateVibestream}
+      />
     </View>
   );
 };
@@ -273,6 +280,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.primary,
     borderStyle: 'dashed',
+    gap: 8,
+  },
+  createButtonText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.primary,
+    letterSpacing: 1,
+    textAlign: 'center',
   },
   vibestreamThumbnail: {
     flex: 1,
