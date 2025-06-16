@@ -63,8 +63,8 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Welcome to VibesFlow!</Text>
-      <Text style={styles.subtitle}>Your emotional music creation journey begins here.</Text>
+      <Text style={styles.text}>VibesFlow.</Text>
+      <Text style={styles.subtitle}>An unstoppable rave party, always in your pocket.</Text>
     </View>
   );
 }

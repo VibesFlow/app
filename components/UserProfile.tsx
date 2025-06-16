@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,15 @@ import {
   ScrollView,
   Image,
   Dimensions,
+  Platform,
+  Alert,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING, BRANDING } from '../theme';
 import GlitchContainer from './ui/GlitchContainer';
 import AcidButton from './ui/AcidButton';
 import VibestreamModal from './VibestreamModal';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width } = Dimensions.get('window');
 
@@ -29,6 +32,116 @@ const UserProfile: React.FC<UserProfileProps> = ({
 }) => {
   const [vibestreams] = useState<any[]>([]); // Initially empty as requested
   const [modalVisible, setModalVisible] = useState(false);
+  const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Pinata configuration
+  const PINATA_API_KEY = 'd856b1edf03a5264d9b5';
+  const PINATA_API_SECRET = '21db92a10e14b9235818e0ebef5098563678e6ef18631bcc2b10e1c3028053c4';
+  const PINATA_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiIyZjlmZmEyMC03M2UwLTRjNDktYjg5YS1mYThkMGE2ZjkxYjYiLCJlbWFpbCI6ImhhdXNsaXZlMjVAZ21haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBpbl9wb2xpY3kiOnsicmVnaW9ucyI6W3siZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiRlJBMSJ9LHsiZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiTllDMSJ9XSwidmVyc2lvbiI6MX0sIm1mYV9lbmFibGVkIjpmYWxzZSwic3RhdHVzIjoiQUNUSVZFIn0sImF1dGhlbnRpY2F0aW9uVHlwZSI6InNjb3BlZEtleSIsInNjb3BlZEtleUtleSI6ImQ4NTZiMWVkZjAzYTUyNjRkOWI1Iiwic2NvcGVkS2V5U2VjcmV0IjoiMjFkYjkyYTEwZTE0YjkyMzU4MThlMGViZWY1MDk4NTYzNjc4ZTZlZjE4NjMxYmNjMmIxMGUxYzMwMjgwNTNjNCIsImV4cCI6MTc3ODg2MzU2N30.XhasGn7s9RRbRWciSMfo0GV4eJ2TZBJ6ZWOHqNYKB6E';
+  const PINATA_URL = 'gray-random-lamprey-785.mypinata.cloud';
+
+  // Load saved profile image on component mount
+  useEffect(() => {
+    const loadProfileImage = async () => {
+      try {
+        if (Platform.OS === 'web') {
+          const savedImageHash = localStorage.getItem(`vibesflow_profile_${accountId}`);
+          if (savedImageHash) {
+            setProfileImageUri(`https://${PINATA_URL}/ipfs/${savedImageHash}`);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to load profile image:', error);
+      }
+    };
+    loadProfileImage();
+  }, [accountId]);
+
+  const uploadToPinata = async (imageUri: string) => {
+    try {
+      setUploading(true);
+      
+      const formData = new FormData();
+      const filename = `profile_${accountId}_${Date.now()}.jpg`;
+      
+      if (Platform.OS === 'web') {
+        // Web implementation
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
+        formData.append('file', blob, filename);
+      } else {
+        // Mobile implementation
+        formData.append('file', {
+          uri: imageUri,
+          type: 'image/jpeg',
+          name: filename,
+        } as any);
+      }
+
+      const metadata = JSON.stringify({
+        name: filename,
+        keyvalues: {
+          userId: accountId,
+          type: 'profile_image'
+        }
+      });
+      formData.append('pinataMetadata', metadata);
+
+      const pinataResponse = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${PINATA_JWT}`,
+        },
+        body: formData,
+      });
+
+      const result = await pinataResponse.json();
+      
+      if (result.IpfsHash) {
+        const ipfsUrl = `https://${PINATA_URL}/ipfs/${result.IpfsHash}`;
+        setProfileImageUri(ipfsUrl);
+        
+        // Save hash to local storage
+        if (Platform.OS === 'web') {
+          localStorage.setItem(`vibesflow_profile_${accountId}`, result.IpfsHash);
+        }
+        
+        console.log('Profile image uploaded to IPFS:', result.IpfsHash);
+      }
+      
+    } catch (error) {
+      console.error('Upload failed:', error);
+      Alert.alert('Upload Failed', 'Could not upload profile image');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const selectImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Permission Required', 'Please allow access to your photo library');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadToPinata(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Image selection failed:', error);
+      Alert.alert('Error', 'Failed to select image');
+    }
+  };
 
   const renderVibestreamGrid = () => {
     const gridItems = [...vibestreams];
@@ -54,10 +167,9 @@ const UserProfile: React.FC<UserProfileProps> = ({
                 <View style={styles.createButton}>
                   <FontAwesome5 
                     name="plus" 
-                    size={40} 
+                    size={32} 
                     color={COLORS.primary} 
                   />
-                  <Text style={styles.createButtonText}>NEW VIBESTREAM</Text>
                 </View>
               ) : (
                 <View style={styles.vibestreamThumbnail}>
@@ -95,22 +207,39 @@ const UserProfile: React.FC<UserProfileProps> = ({
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Profile Section */}
         <View style={styles.profileSection}>
-          <GlitchContainer 
-            style={styles.avatarContainer} 
-            intensity="medium"
-            animated={true}
-          >
-            <View style={styles.avatar}>
-              <FontAwesome5 
-                name="user-astronaut" 
-                size={48} 
-                color={COLORS.primary} 
-              />
-            </View>
-          </GlitchContainer>
+          <TouchableOpacity onPress={selectImage} style={styles.avatarContainer}>
+            <GlitchContainer 
+              style={styles.avatarGlitch} 
+              intensity="medium"
+              animated={true}
+            >
+              <View style={styles.avatar}>
+                {profileImageUri ? (
+                  <Image 
+                    source={{ uri: profileImageUri }} 
+                    style={styles.profileImage}
+                  />
+                ) : (
+                  <FontAwesome5 
+                    name="user-astronaut" 
+                    size={48} 
+                    color={COLORS.primary} 
+                  />
+                )}
+                {uploading && (
+                  <View style={styles.uploadingOverlay}>
+                    <FontAwesome5 
+                      name="spinner" 
+                      size={24} 
+                      color={COLORS.primary} 
+                    />
+                  </View>
+                )}
+              </View>
+            </GlitchContainer>
+          </TouchableOpacity>
           
           <Text style={styles.accountName}>{accountId}</Text>
-          <Text style={styles.accountType}>NEAR PROTOCOL</Text>
           
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
@@ -187,15 +316,33 @@ const styles = StyleSheet.create({
   avatarContainer: {
     marginBottom: SPACING.lg,
   },
+  avatarGlitch: {
+    borderRadius: 0,
+  },
   avatar: {
     width: 120,
     height: 120,
-    borderRadius: 60,
-    backgroundColor: COLORS.backgroundSecondary,
+    backgroundColor: COLORS.background,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: COLORS.primary,
+    position: 'relative',
+  },
+  profileImage: {
+    width: 118,
+    height: 118,
+    resizeMode: 'cover',
+  },
+  uploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   accountName: {
     fontSize: FONT_SIZES.xl,
@@ -276,18 +423,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.backgroundSecondary,
-    borderWidth: 2,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
     borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-    gap: 8,
-  },
-  createButtonText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.primary,
-    letterSpacing: 1,
-    textAlign: 'center',
   },
   vibestreamThumbnail: {
     flex: 1,
