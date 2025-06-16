@@ -1,0 +1,274 @@
+HOT Protocol [FAQ]
+docs.hotdao.ai
+May 15, 2024
+
+This is an early version of the documentation and it continues to be
+expanded and improved.
+
+What is an MPC Wallet
+An MPC wallet is a type of cryptocurrency wallet that divides the private key into
+multiple parts and stores them in different locations for increased security. Usually
+access to such servers is controlled centrally, by Coinbase, Binance, OKX or ByBit
+or other provider. In HOT Protocol, the key is stored with a large number of
+independent validators and the proof of ownership is stored on-chan. This makes
+the protocol open and guarantees the owner access to the MPC wallet.
+By working on top of NEAR Chain Abstraction, such nodes are resistant to
+rotation. The disclosure of one or more keys of individual nodes carries no risks for
+wallets created on top of the protocol. Also, new nodes can connect to sign
+transactions thanks to key sharing, allowing the protocol to be even more
+decentralized.
+HOT
+
+1/2
+
+HOT - the centerpiece of the HOT Protocol economy. HOT will be staked by
+validators as collateral for their participation in transaction signing. Users and
+projects will burn HOT when making transactions on wallets on top of the HOT
+Protocol. This economy will make the HOT network sustainable and independent.
+HOT Accounts
+A HOT Accounts is a accounts created on top of the HOT Protocol. Their private
+key is stored distributed in a network of validators. This allows users to give limited
+access to account, transfer ownership of wallets, replace the seed-phrase,
+customize 2FA and more. HOT is an open protocol, HOT accounts can be used
+through any compatible crypto wallet. For example, HERE Wallet and HOT Cli.
+1. Replaceable the seed-phrase. Accounts created on top of HOT Protocol
+can have their seed-phrases changed. This not only increases the security of
+such wallets, but also gives access to transfer accounts with their reputation
+and locked tokens.
+2. 2FA. Thanks to the flexible access system, you can set up 2FA via SMS or
+mail to sign transactions. At the same time, 2FA can always be waived after
+waiting a few days. If your seed phrase has been compromised, you will
+always have time to react and replace it.
+3. Cross-chain gas. With HOT Relay you can perform transactions on any
+network and pay for gas in HOT.
+
+2/2
+
+Auth by Keys | HOT Protocol
+docs.hotdao.ai/hot-protocol-faq/wallet-ownership/auth-by-keys
+August 5, 2024
+
+Prerequisites
+Ensure you have the following libraries installed:
+pipinstallasynciojsonsha256base58ed25519httpxpy_near
+import asyncio
+import json
+from hashlib import sha256
+import base58
+import ed25519
+import httpx
+from py_near.account import Account
+from app import dao_nc
+from configs import CONFIG
+public_key ="[KEY]"
+private_key ="...."
+wallet_id ="EHGDUJ7GDASucUVU4ngsgUsTYZT1FpG91CTFG8iUmGQ5"
+pk = ed25519.SigningKey(base58.b58decode(private_key))
+
+Add Access
+The following steps outline how to add access to a wallet.
+
+1/4
+
+1. Get Wallet Information
+wallets =await dao_nc.view_function(
+"keys.auth.hot.tg",
+"get_wallet",
+{"wallet_id": wallet_id},
+)
+
+2. Prepare Access Data
+access = {"public_keys": [public_key], "rules": []}
+access_json = json.dumps(access).replace(" ", "")
+
+3. Create and Sign the Message
+msg = access_json + f".{wallet_id}"
+msg_hash = sha256(msg.encode()).digest()
+signature_add = pk.sign(msg_hash)
+signature_add = base58.b58encode(signature_add).decode()
+
+4. Call the grant_assess Function
+wallets = await dao_nc.function_call(
+"keys.auth.hot.tg",
+"grant_assess",
+{
+"wallet_id": wallet_id,
+"access": access,
+"signatures": [signature_add],
+"auth_method": 0,
+},
+amount=1,
+included=True,
+)
+print(wallets)
+
+Revoke Access
+The following steps outline how to revoke access from a wallet.
+1. Create and Sign the Message for Revoking Access
+access_id = 0
+msg = "revoke-auth-{}-{}".format(wallet_id, access_json)
+msg_hash = sha256(msg.encode()).digest()
+signature = pk.sign(msg_hash)
+signature = base58.b58encode(signature).decode()
+
+2/4
+
+2. Call the revoke_assess Function
+wallets = await dao_nc.function_call(
+"keys.auth.hot.tg",
+"revoke_assess",
+{
+"wallet_id": wallet_id,
+"access_id": access_id,
+"signatures": [signature],
+"auth_method": 0,
+},
+amount=1,
+included=True,
+)
+print(wallets)
+
+Execute Multiple Actions
+The following steps outline how to execute multiple actions in a single call.
+1. Create and Sign the Messages
+access_id =0
+msg ="revoke-auth-{}-{}".format(wallet_id, access_json)
+msg_hash =sha256(msg.encode()).digest()
+signature = pk.sign(msg_hash)
+signature = base58.b58encode(signature).decode()
+
+2. Call the execute Function
+wallets =await dao_nc.function_call(
+"keys.auth.hot.tg",
+"execute",
+{
+"actions": [
+{
+"wallet_id": wallet_id,
+"signatures": [signature_add],
+"auth_method": 0,
+"action": {"Add": access},
+},
+{
+"wallet_id": wallet_id,
+"signatures": [signature],
+"auth_method": 0,
+"action": {"Revoke": access_id},
+},
+]
+},
+amount=1,
+included=True,
+)
+print(wallets)
+
+3/4
+
+Running the Function
+To run the function, use the following:
+asyncio.run(f())
+
+This documentation provides a clear example of how to manage wallet access
+using digital signatures and API calls in an asynchronous Python environment.
+
+4/4
+
+Wallet Connect
+docs.hotdao.ai/sdk/wallet-connect
+May 13, 2024
+
+@herewallet/core
+In contrast to the synchronous signing of transactions in web near wallets, where
+the user is redirected to the wallet site for signing -- HERE Wallet provides the
+ability to sign transactions using async/await API calls.
+npminear-api-js@^0.44.2--save
+npmi@here-wallet/core--save
+import { HereWallet } from"@here-wallet/core";
+consthere=awaitHereWallet.connect();
+constaccount=awaithere.signIn({ contractId:"social.near" });
+console.log(`Hello ${account}!`);
+
+You can also login to the wallet without adding a key. For this you can call
+signIn without contractId
+How it works
+By default, all near-selector api calls that you make with this library run a
+background process and generate a unique link that the user can go to their
+mobile wallet and confirm the transaction. This is a link of the form:
+https://h4n.app/TRX_PART_OF_SHA1_IN_BASE64
+
+1/3
+
+If a user has logged into your application from a phone and has a wallet installed,
+we immediately transfer him to the application for signing. In all other cases, we
+open a new window on the web.herewallet.app site, where the user can find
+information about installing the wallet and sign the transaction there.
+All this time while user signing the transaction, a background process in your
+application will monitor the status of the transaction requested for signing.
+Sign in is optional!
+You can generate a signing transaction without knowing your user's accountId
+(without calling signIn). There are cases when you do not need to receive a public
+key from the user to call your contract, but you want to ask the user to perform an
+action in your application once:
+import { HereWallet } from "@here-wallet/core";
+const here = await HereWallet.connect();
+const tx = await here.signAndSendTransaction({
+actions: [{ type: "FunctionCall", params: { deposit: 1000 } }],
+receiverId: "donate.near",
+});
+console.log("Thanks for the donation!");
+import { HereWallet } from "@here-wallet/core";
+const here = await HereWallet.connect({
+botId: "HOTExampleConnectBot/app", // Your bot MiniApp
+walletId: "herewalletbot/app", // HOT Wallet
+});
+
+Login without AddKey
+In order to use the wallet for authorization on the backend, you need to use the
+signMessage method. This method signs your message with a private full access
+key inside the wallet. You can also use this just to securely get your user's
+accountId without any extra transactions.
+import { HereWallet } from "@here-wallet/core";
+const here = await HereWallet.connect();
+const nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+const recipient = window.location.host;
+const message = "Authenticate message";
+const { signature, publicKey, accountId } = await here.signMessage({
+recipient, nonce, message });
+// Verify on you backend side, check NEP0413
+const accessToken = await axios.post(yourAPI, { signature, accountId,
+publicKey, nonce, message, recipient });
+console.log("Auth completed!");
+
+Or you can verify signMessage on client side, just call:
+
+2/3
+
+try {
+const { accountId } = await here.authenticate();
+console.log(`Hello ${accountId}!`);
+} catch (e) {
+console.log(e);
+}
+
+If you use js-sdk on your backend, then you do not need to additionally check the
+signature and key, the library does this, and if the signature is invalid or the key is
+not a full access key, then the method returns an error. Otherwise, on the backend,
+you need to verify the signature and message with this public key. And also check
+that this public key is the full access key for this accountId.
+It's important to understand that the returned message is not the same as the
+message you submitted for signature. This message conforms to the standard:
+https://github.com/near/NEPs/pull/413
+Security
+To transfer data between the application and the phone, we use our own proxy
+service. On the client side, a transaction confirmation request is generated with a
+unique request_id, our wallet receives this request_id and requests this transaction
+from the proxy.
+To make sure that the transaction was not forged by the proxy service, the
+link that opens inside the application contains a hash-sum of the transaction.
+If the hashes do not match, the wallet will automatically reject the signing
+request
+Last updated 1 year ago
+
+3/3
+
+
