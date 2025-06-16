@@ -212,123 +212,61 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     };
   }, []);
 
-  // Enhanced rave music generation system
+  // Stable rave music generation system
   const generateAdvancedMusic = () => {
     if (!audioContextRef.current || !isStreaming) return;
 
-    const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
-    const normalizedMagnitude = Math.min(magnitude, 2) / 2;
+    try {
+      const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
+      const normalizedMagnitude = Math.min(magnitude, 2) / 2;
 
-    // Techno/Acid BPM range (128-140 BPM)
-    const newBpm = 128 + normalizedMagnitude * 12;
-    
-    // Acid-style key changes
-    const keyShift = Math.floor(Math.abs(sensorData.y) * 7); // Pentatonic-ish
-    
-    // Update music state with rave patterns
-    setMusicState(prev => ({
-      ...prev,
-      bpm: newBpm,
-      currentChord: [0, 3, 7, 10].map(note => (note + keyShift) % 12) // Minor 7th chords
-    }));
+      // Techno/Acid BPM range (128-140 BPM)
+      const newBpm = 128 + normalizedMagnitude * 12;
+      
+      // Acid-style key changes
+      const keyShift = Math.floor(Math.abs(sensorData.y) * 7);
+      
+      // Update music state
+      setMusicState(prev => ({
+        ...prev,
+        bpm: newBpm,
+        currentChord: [0, 3, 7, 10].map(note => (note + keyShift) % 12)
+      }));
 
-    // Create sophisticated audio chain
-    const createRaveOscillator = (freq: number, type: OscillatorType, gain: number, detune: number = 0) => {
+      // Create stable single oscillator with envelope
       const osc = audioContextRef.current.createOscillator();
       const gainNode = audioContextRef.current.createGain();
-      const distortion = audioContextRef.current.createWaveShaper();
       
-      // Acid-style distortion curve
-      const samples = 44100;
-      const curve = new Float32Array(samples);
-      const amount = 50;
-      for (let i = 0; i < samples; i++) {
-        const x = (i * 2) / samples - 1;
-        curve[i] = ((3 + amount) * x * 20 * Math.PI / 180) / (Math.PI + amount * Math.abs(x));
-      }
-      distortion.curve = curve;
+      // Simple but effective rave bass
+      const bassFreq = 55 + (keyShift % 8) * 15;
+      osc.type = 'sawtooth';
+      osc.frequency.value = bassFreq;
       
-      osc.type = type;
-      osc.frequency.value = freq;
-      osc.detune.value = detune;
-      gainNode.gain.value = gain * normalizedMagnitude;
+      // Envelope for natural sound
+      const now = audioContextRef.current.currentTime;
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(normalizedMagnitude * 0.3, now + 0.1);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
       
-      // Chain: osc -> distortion -> gain -> filter -> destination
-      osc.connect(distortion);
-      distortion.connect(gainNode);
+      // Connect audio chain
+      osc.connect(gainNode);
       if (filterRef.current) {
         gainNode.connect(filterRef.current);
+        // Dynamic filter sweep
+        const cutoffFreq = 300 + normalizedMagnitude * 1500;
+        filterRef.current.frequency.setValueAtTime(cutoffFreq, now);
+        filterRef.current.Q.value = 5 + normalizedMagnitude * 10;
       } else {
         gainNode.connect(audioContextRef.current.destination);
       }
       
-      oscillatorsRef.current.push(osc);
-      gainNodesRef.current.push(gainNode);
+      // Play and auto-cleanup
+      osc.start(now);
+      osc.stop(now + 1.2);
       
-      return { osc, gainNode };
-    };
-
-    // Clean up previous oscillators
-    oscillatorsRef.current.forEach(osc => {
-      try { osc.stop(); } catch (e) {}
-    });
-    oscillatorsRef.current = [];
-    gainNodesRef.current = [];
-
-    // Deep techno bass (40-80Hz)
-    const bassFreq = 40 + (keyShift % 4) * 10;
-    createRaveOscillator(bassFreq, 'sawtooth', 0.4);
-    createRaveOscillator(bassFreq * 2, 'triangle', 0.2, -10); // Sub-octave with detune
-
-    // Acid lead synth (200-800Hz) - TB-303 style
-    const leadFreq = 200 + keyShift * 50 + normalizedMagnitude * 200;
-    createRaveOscillator(leadFreq, 'sawtooth', 0.3, 7);
-    createRaveOscillator(leadFreq * 1.005, 'sawtooth', 0.25, -7); // Slight detune for width
-
-    // High-hat simulation (8kHz+)
-    if (normalizedMagnitude > 0.4) {
-      createRaveOscillator(8000 + Math.random() * 4000, 'square', 0.15);
+    } catch (error) {
+      console.warn('Music generation failed:', error);
     }
-
-    // Rave stab chords
-    musicState.currentChord.forEach((note, i) => {
-      const stabFreq = 440 * Math.pow(2, note / 12);
-      createRaveOscillator(stabFreq, 'square', 0.1, i * 3);
-    });
-
-    // Motion-reactive elements
-    if (Math.abs(sensorData.x) > 0.5) {
-      // X-axis triggers acid sweeps
-      createRaveOscillator(1000 + normalizedMagnitude * 1000, 'sawtooth', 0.2, 15);
-    }
-    
-    if (Math.abs(sensorData.z) > 0.6) {
-      // Z-axis triggers breaks/glitches
-      createRaveOscillator(2000 + Math.random() * 2000, 'square', 0.25);
-    }
-
-    // Start all oscillators
-    oscillatorsRef.current.forEach(osc => {
-      osc.start();
-    });
-
-    // Dynamic filter sweep (TB-303 style)
-    if (filterRef.current) {
-      const cutoffFreq = 200 + normalizedMagnitude * 2000 + Math.sin(Date.now() / 200) * 500;
-      const resonance = 5 + normalizedMagnitude * 15;
-      
-      filterRef.current.frequency.value = cutoffFreq;
-      filterRef.current.Q.value = resonance;
-      filterRef.current.type = 'lowpass';
-    }
-
-    // Longer duration for continuous rave feel
-    const duration = 800 + Math.random() * 400;
-    setTimeout(() => {
-      oscillatorsRef.current.forEach(osc => {
-        try { osc.stop(); } catch (e) {}
-      });
-    }, duration);
   };
 
   // Process sensor data and update music
@@ -356,20 +294,34 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
   }, [sensorData, isStreaming]);
 
-  // Separate effect for music generation to prevent infinite loops
+  // Stable music generation system
   useEffect(() => {
-    if (!isStreaming) return;
+    if (!isStreaming || !isInitialized) return;
 
-    const musicInterval = setInterval(() => {
-      if (Platform.OS === 'web') {
-        generateAdvancedMusic();
-      } else {
-        generateMobilePattern();
-      }
-    }, 200);
+    let musicInterval: NodeJS.Timeout;
+    
+    if (Platform.OS === 'web' && audioContextRef.current) {
+      musicInterval = setInterval(() => {
+        try {
+          generateAdvancedMusic();
+        } catch (error) {
+          console.warn('Music generation error:', error);
+        }
+      }, 500); // Slower interval for stability
+    } else {
+      musicInterval = setInterval(() => {
+        try {
+          generateMobilePattern();
+        } catch (error) {
+          console.warn('Pattern generation error:', error);
+        }
+      }, 300);
+    }
 
-    return () => clearInterval(musicInterval);
-  }, [isStreaming]);
+    return () => {
+      if (musicInterval) clearInterval(musicInterval);
+    };
+  }, [isStreaming, isInitialized]);
 
   // Stream duration tracking
   useEffect(() => {
@@ -420,23 +372,20 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }
   };
 
-  const toggleStreaming = () => {
-    if (!isInitialized) return;
-
-    if (!isStreaming) {
+  // Auto-start streaming when component mounts
+  useEffect(() => {
+    if (isInitialized && !isStreaming) {
       startTimeRef.current = Date.now();
       setStreamDuration(0);
       setIsStreaming(true);
       console.log('Starting continuous vibestream');
-    } else {
-      setIsStreaming(false);
-      // Clean up all oscillators
-      oscillatorsRef.current.forEach(osc => {
-        try { osc.stop(); } catch (e) {}
-      });
-      oscillatorsRef.current = [];
-      console.log('Vibestream closed');
     }
+  }, [isInitialized]);
+
+  const closeVibestream = () => {
+    setIsStreaming(false);
+    console.log('Vibestream closed');
+    onBack(); // Navigate to user profile
   };
 
   const handleWaveformClick = (event: any) => {
@@ -565,8 +514,8 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
         {/* Controls */}
         <View style={styles.controls}>
           <TouchableOpacity
-            style={[styles.streamButton, isStreaming && styles.streamButtonActive]}
-            onPress={toggleStreaming}
+            style={[styles.streamButton, styles.streamButtonActive]}
+            onPress={closeVibestream}
             disabled={!isInitialized}
           >
             {!isInitialized ? (
@@ -574,12 +523,12 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
             ) : (
               <>
                 <FontAwesome5 
-                  name={isStreaming ? "stop" : "play"} 
+                  name="stop" 
                   size={16} 
-                  color={isStreaming ? COLORS.background : COLORS.primary} 
+                  color={COLORS.background} 
                 />
-                <Text style={[styles.streamButtonText, isStreaming && styles.streamButtonTextActive]}>
-                  {isStreaming ? "CLOSE VIBESTREAM" : "START VIBESTREAM"}
+                <Text style={[styles.streamButtonText, styles.streamButtonTextActive]}>
+                  CLOSE VIBESTREAM
                 </Text>
               </>
             )}
