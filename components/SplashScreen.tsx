@@ -148,7 +148,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onStart }) => {
       {/* Start vibing button - restyled */}
       <TouchableOpacity 
         style={styles.startButton}
-        onPress={onStart}
+        onPress={handleStartVibing}
         activeOpacity={0.7}
       >
         <Text style={styles.startButtonText}>START_VIBING</Text>

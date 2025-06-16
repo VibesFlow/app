@@ -14,7 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
 import GlitchText from './ui/GlitchText';
-import AcidButton from './ui/AcidButton';
+import Button from './ui/Button';
 import GlitchContainer from './ui/GlitchContainer';
 
 const { width, height } = Dimensions.get('window');
@@ -136,14 +136,14 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
           </TouchableOpacity>
 
           <View style={styles.actionButtons}>
-            <AcidButton
+            <Button
               text="LAUNCH VIBESTREAM"
               onPress={handleLaunchVibestream}
               type="primary"
               size="large"
               disabled={isLaunchDisabled()}
             />
-            <AcidButton
+            <Button
               text="SCHEDULE"
               onPress={() => {}}
               type="secondary"
@@ -244,14 +244,14 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
         </TouchableOpacity>
 
         <View style={styles.actionButtons}>
-          <AcidButton
+          <Button
             text="LAUNCH VIBESTREAM"
             onPress={handleLaunchVibestream}
             type="primary"
             size="large"
             disabled={isLaunchDisabled()}
           />
-          <AcidButton
+          <Button
             text="SCHEDULE"
             onPress={() => {}}
             type="secondary"
