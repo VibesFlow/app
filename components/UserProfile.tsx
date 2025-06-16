@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
+import { PINATA_JWT, PINATA_GATEWAY_URL } from '@env';
 import { COLORS, FONT_SIZES, SPACING, BRANDING } from '../theme';
 import GlitchContainer from './ui/GlitchContainer';
 import AcidButton from './ui/AcidButton';
