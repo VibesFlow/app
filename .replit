@@ -11,6 +11,10 @@ externalPort = 5000
 localPort = 8081
 externalPort = 80
 
+[[ports]]
+localPort = 8082
+externalPort = 3000
+
 [workflows]
 runButton = "Project"
 
@@ -29,7 +33,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "expo start --web --port 5000"
+args = "npx expo start --tunnel --port 5000"
 waitForPort = 5000
 
 [deployment]

@@ -26,6 +26,12 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "vibesflow-mobile"
+      }
+    },
+    "scheme": "vibesflow"
   }
 }
