@@ -12,6 +12,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING, BRANDING } from '../theme';
 import GlitchContainer from './ui/GlitchContainer';
 import AcidButton from './ui/AcidButton';
+import VibestreamModal from './VibestreamModal';
 
 const { width } = Dimensions.get('window');
 
@@ -27,6 +28,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
   onBack 
 }) => {
   const [vibestreams] = useState<any[]>([]); // Initially empty as requested
+  const [modalVisible, setModalVisible] = useState(false);
 
   const renderVibestreamGrid = () => {
     const gridItems = [...vibestreams];

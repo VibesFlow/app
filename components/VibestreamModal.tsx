@@ -40,13 +40,13 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
     setStep(1);
     setMode('solo');
     setStoreToFilecoin(true);
-    setDistance('100');
+    setDistance('10');
     setTicketAmount('0');
     setTicketPrice('0');
     setStreamPrice('0');
     setFreeTickets(false);
     setPayPerStream(false);
-    setAudioEnabled(false);
+    setAudioEnabled(true);
   };
 
   const enableAudio = async () => {
@@ -301,7 +301,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
           activeOpacity={0.7}
         >
           <Text style={[styles.actionButtonText, isLaunchDisabled() && styles.disabledText]}>
-            {Platform.OS === 'web' ? 'ENABLE AUDIO & LAUNCH' : 'LAUNCH'}
+            {Platform.OS === 'web' ? 'LAUNCH' : 'LAUNCH'}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
