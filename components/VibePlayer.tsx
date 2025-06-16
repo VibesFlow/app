@@ -12,9 +12,9 @@ import {
   ScrollView,
 } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
-import { WebView } from 'react-native-webview';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
+import * as Tone from 'tone';
 
 const { width } = Dimensions.get('window');
 
@@ -37,7 +37,6 @@ interface Comment {
 }
 
 const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
-  const webviewRef = useRef<WebView>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackProgress, setTrackProgress] = useState(0);
@@ -48,6 +47,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentPosition, setCommentPosition] = useState(0);
   
+  // Audio components
+  const synthRef = useRef<any>(null);
+  const filterRef = useRef<any>(null);
+  const patternRef = useRef<any>(null);
+  
   // Animated values
   const waveformAnimation = useRef(new Animated.Value(0)).current;
 
@@ -56,200 +60,42 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     x: 0, y: 0, z: 0, timestamp: Date.now(),
   });
 
-  // WebView music engine with full Tone.js and Magenta.js
-  const musicEngineHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body, html { margin: 0; padding: 0; background: #000; overflow: hidden; }
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/@magenta/music@1.28.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.min.js"></script>
-</head>
-<body></body>
-<script>
-(async function() {
-  let isInitialized = false;
-  let isPlaying = false;
-  let drumSynth, bassSynth, leadSynth;
-  let drumRNN, melodyRNN;
-  let currentPattern = null;
-  
-  async function initializeAudio() {
-    try {
-      await Tone.start();
-      
-      // Create drum synth
-      drumSynth = new Tone.PolySynth({
-        voice: Tone.MembraneSynth,
-        options: {
-          envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.1 },
-          oscillator: { type: 'sine' }
-        }
-      }).toDestination();
-      
-      // Create bass synth
-      bassSynth = new Tone.MonoSynth({
-        oscillator: { type: 'sawtooth' },
-        envelope: { attack: 0.02, decay: 0.3, sustain: 0.3, release: 0.5 },
-        filter: { Q: 2, frequency: 300 }
-      }).toDestination();
-      
-      // Create lead synth
-      leadSynth = new Tone.PolySynth({
-        voice: Tone.Synth,
-        options: {
-          oscillator: { type: 'square' },
-          envelope: { attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.4 }
-        }
-      }).toDestination();
-      
-      // Load AI models
-      drumRNN = new mm.MusicRNN(
-        'https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/drum_kit_rnn'
-      );
-      await drumRNN.initialize();
-      
-      melodyRNN = new mm.MusicRNN(
-        'https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/basic_rnn'
-      );
-      await melodyRNN.initialize();
-      
-      isInitialized = true;
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'initialized' }));
-      
-    } catch (error) {
-      console.error('Audio initialization failed:', error);
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ 
-        type: 'error', 
-        message: error.message 
-      }));
-    }
-  }
-  
-  async function generateMusicFromSensors(sensorData) {
-    if (!isInitialized || !isPlaying) return;
-    
-    const { x, y, z } = sensorData;
-    const magnitude = Math.sqrt(x*x + y*y + z*z);
-    const amplitude = Math.min(magnitude * 0.5 + 0.3, 1);
-    const tempo = Math.max(100, Math.min(180, 120 + amplitude * 60));
-    const temperature = Math.min(Math.max(amplitude * 1.5, 0.2), 1.5);
-    
-    Tone.Transport.bpm.value = tempo;
-    
-    try {
-      // Create seeds based on sensor data
-      const drumSeed = {
-        quantizationInfo: { stepsPerQuarter: 4 },
-        totalQuantizedSteps: 16,
-        notes: [
-          { pitch: 36, quantizedStartStep: 0, quantizedEndStep: 1 }, // kick
-          { pitch: 38, quantizedStartStep: 8, quantizedEndStep: 9 }, // snare
-          { pitch: 42, quantizedStartStep: 4, quantizedEndStep: 5 }, // hihat
-          { pitch: 42, quantizedStartStep: 12, quantizedEndStep: 13 }
-        ]
-      };
-      
-      const baseNote = 36 + Math.floor(Math.abs(x) * 12);
-      const melodySeed = {
-        quantizationInfo: { stepsPerQuarter: 4 },
-        totalQuantizedSteps: 8,
-        notes: [
-          { pitch: baseNote, quantizedStartStep: 0, quantizedEndStep: 2 },
-          { pitch: baseNote + 4, quantizedStartStep: 4, quantizedEndStep: 6 }
-        ]
-      };
-      
-      // Generate patterns
-      const drumContinuation = await drumRNN.continueSequence(drumSeed, 16, temperature);
-      const melodyContinuation = await melodyRNN.continueSequence(melodySeed, 16, temperature);
-      
-      // Clear previous patterns
-      Tone.Transport.cancel();
-      
-      // Schedule drums
-      drumContinuation.notes.forEach(note => {
-        const time = (note.quantizedStartStep / 4) + 'm';
-        const duration = ((note.quantizedEndStep - note.quantizedStartStep) / 4) + 'm';
-        const freq = Tone.Frequency(note.pitch, 'midi').toFrequency();
-        drumSynth.triggerAttackRelease(freq, duration, '+' + time);
-      });
-      
-      // Schedule melody
-      melodyContinuation.notes.forEach(note => {
-        const time = (note.quantizedStartStep / 4) + 'm';
-        const duration = ((note.quantizedEndStep - note.quantizedStartStep) / 4) + 'm';
-        const freq = Tone.Frequency(note.pitch, 'midi').toFrequency();
-        leadSynth.triggerAttackRelease(freq, duration, '+' + time);
-      });
-      
-      // Add bass based on motion
-      if (amplitude > 0.4) {
-        const bassNote = 36 + Math.floor(Math.abs(y) * 8);
-        bassSynth.triggerAttackRelease(
-          Tone.Frequency(bassNote, 'midi').toFrequency(), 
-          '1m', 
-          '+0m'
-        );
-      }
-      
-      if (Tone.Transport.state !== 'started') {
-        Tone.Transport.start();
-      }
-      
-    } catch (error) {
-      console.error('Music generation error:', error);
-    }
-  }
-  
-  window.addEventListener('message', async (event) => {
-    const data = JSON.parse(event.data);
-    
-    switch (data.type) {
-      case 'sensorUpdate':
-        if (isPlaying) {
-          await generateMusicFromSensors(data.sensors);
-        }
-        break;
-        
-      case 'play':
-        isPlaying = true;
-        break;
-        
-      case 'stop':
-        isPlaying = false;
-        Tone.Transport.stop();
-        Tone.Transport.cancel();
-        break;
-    }
-  });
-  
-  await initializeAudio();
-})();
-</script>
-</html>
-`;
-
-  const handleWebViewMessage = (event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      
-      switch (data.type) {
-        case 'initialized':
+  // Initialize audio
+  useEffect(() => {
+    const initAudio = async () => {
+      try {
+        if (Platform.OS === 'web') {
+          await Tone.start();
+          
+          // Create filter and synth
+          filterRef.current = new Tone.Filter(800, "lowpass").toDestination();
+          synthRef.current = new Tone.PolySynth({
+            voice: Tone.Synth,
+            options: {
+              oscillator: { type: "sawtooth" },
+              envelope: { attack: 0.1, decay: 0.3, sustain: 0.4, release: 1 }
+            }
+          }).connect(filterRef.current);
+          
           setIsInitialized(true);
-          break;
-        case 'error':
-          console.error('WebView error:', data.message);
-          break;
+        } else {
+          // Mobile fallback - use basic audio without Tone.js
+          setIsInitialized(true);
+        }
+      } catch (error) {
+        console.warn('Audio init failed:', error);
+        setIsInitialized(true);
       }
-    } catch (error) {
-      console.error('Failed to parse WebView message:', error);
-    }
-  };
+    };
+
+    initAudio();
+
+    return () => {
+      if (patternRef.current) {
+        patternRef.current.dispose();
+      }
+    };
+  }, []);
 
   // Setup sensors
   useEffect(() => {
@@ -313,10 +159,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
         } catch (error) {
           console.warn('Sensor setup error:', error);
         }
-        
-        return () => {
-          // Cleanup for mobile
-        };
       }
     };
 
@@ -328,7 +170,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     };
   }, []);
 
-  // Process sensor data and send to music engine
+  // Process sensor data
   useEffect(() => {
     const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
     const amplitude = Math.min(magnitude * 0.5 + 0.2, 1);
@@ -337,15 +179,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     setCurrentAmplitude(amplitude);
     setCurrentFrequency(frequency);
 
-    // Send sensor data to WebView for music generation
-    if (isInitialized && webviewRef.current) {
-      webviewRef.current.postMessage(JSON.stringify({
-        type: 'sensorUpdate',
-        sensors: sensorData,
-        amplitude,
-        frequency,
-        tempo: 120 + amplitude * 60,
-      }));
+    // Update audio parameters
+    if (isPlaying && Platform.OS === 'web' && filterRef.current) {
+      const filterFreq = 400 + amplitude * 1000;
+      filterRef.current.frequency.value = filterFreq;
+      Tone.Transport.bpm.value = 120 + amplitude * 60;
     }
 
     // Update waveform animation
@@ -355,7 +193,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       useNativeDriver: false,
     }).start();
 
-  }, [sensorData, isInitialized]);
+  }, [sensorData, isPlaying]);
 
   // Track progress
   useEffect(() => {
@@ -370,21 +208,32 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
       return () => clearInterval(progressInterval);
     }
-    
-    return () => {
-      // Cleanup when not playing
-    };
   }, [isPlaying]);
 
   const togglePlayback = () => {
     if (!isInitialized) return;
 
-    if (webviewRef.current) {
-      webviewRef.current.postMessage(JSON.stringify({
-        type: isPlaying ? 'stop' : 'play',
-      }));
-      setIsPlaying(!isPlaying);
+    if (Platform.OS === 'web' && synthRef.current) {
+      if (!isPlaying) {
+        // Start playing
+        const bassNotes = ['C2', 'C2', 'F2', 'C2'];
+        patternRef.current = new Tone.Sequence((time, note) => {
+          synthRef.current.triggerAttackRelease(note, '8n', time, currentAmplitude * 0.8);
+        }, bassNotes);
+        
+        patternRef.current.start(0);
+        Tone.Transport.start();
+      } else {
+        // Stop playing
+        if (patternRef.current) {
+          patternRef.current.stop();
+          patternRef.current.dispose();
+        }
+        Tone.Transport.stop();
+      }
     }
+
+    setIsPlaying(!isPlaying);
   };
 
   const handleWaveformClick = (event: any) => {
@@ -424,18 +273,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
   return (
     <View style={styles.container}>
-      {/* Hidden WebView for music generation */}
-      <WebView
-        ref={webviewRef}
-        source={{ html: musicEngineHTML }}
-        style={styles.hiddenWebView}
-        onMessage={handleWebViewMessage}
-        javaScriptEnabled
-        domStorageEnabled
-        allowFileAccess
-        originWhitelist={['*']}
-      />
-
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -571,12 +408,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-  },
-  hiddenWebView: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    opacity: 0,
   },
   header: {
     flexDirection: 'row',
