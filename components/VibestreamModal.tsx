@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,15 +21,13 @@ interface VibestreamModalProps {
 }
 
 type VibeMode = 'Solo' | 'Group';
-type VibeSchedule = 'Launch' | 'Schedule';
-type Step = 'mode' | 'group-config' | 'timing';
+type Step = 'mode' | 'group-config';
 
 const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) => {
   const { account, signTransaction } = useWallet();
   
   const [currentStep, setCurrentStep] = useState<Step>('mode');
   const [mode, setMode] = useState<VibeMode>('Solo');
-  const [schedule, setSchedule] = useState<VibeSchedule>('Launch');
   const [storeToFilecoin, setStoreToFilecoin] = useState<boolean>(true);
   const [distance, setDistance] = useState<string>('50');
   const [seats, setSeats] = useState<string>('10');
@@ -39,30 +35,21 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
   const [payPerStream, setPayPerStream] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const handleNext = () => {
     if (currentStep === 'mode' && mode === 'Group') {
       setCurrentStep('group-config');
-    } else if (currentStep === 'group-config') {
-      setCurrentStep('timing');
     }
   };
 
   const handleBack = () => {
     if (currentStep === 'group-config') {
       setCurrentStep('mode');
-    } else if (currentStep === 'timing') {
-      setCurrentStep(mode === 'Group' ? 'group-config' : 'mode');
     }
   };
 
   const handleLaunch = async () => {
     setError(null);
-    
-    if (schedule === 'Schedule') {
-      setError('SCHEDULED VIBES COMING SOON');
-      return;
-    }
     
     try {
       setLoading(true);
@@ -113,7 +100,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       setError('FAILED TO LAUNCH VIBESTREAM. TRY AGAIN.');
     }
   };
-  
+
   const renderModeStep = () => (
     <View style={styles.stepContainer}>
       <GlitchText text="MODE" style={styles.stepTitle} intensity="low" />
@@ -154,10 +141,9 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
 
       <View style={styles.timingButtons}>
         <TouchableOpacity
-          style={[styles.timingButton, schedule === 'Launch' && styles.activeTimingButton]}
-          onPress={() => setSchedule('Launch')}
+          style={styles.timingButton}
         >
-          <Text style={[styles.timingButtonText, schedule === 'Launch' && styles.activeTimingButtonText]}>
+          <Text style={styles.timingButtonText}>
             LAUNCH VIBESTREAM
           </Text>
         </TouchableOpacity>
@@ -173,7 +159,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       </View>
     </View>
   );
-  
+
   const renderGroupConfigStep = () => (
     <View style={styles.stepContainer}>
       <GlitchText text="GROUP CONFIGURATION" style={styles.stepTitle} intensity="low" />
@@ -243,7 +229,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       </View>
     </View>
   );
-  
+
   const renderCurrentStep = () => {
     switch (currentStep) {
       case 'mode':
@@ -254,7 +240,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
         return renderModeStep();
     }
   };
-  
+
   const renderErrorMessage = () => {
     if (!error) return null;
     
@@ -265,18 +251,6 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       </View>
     );
   };
-  
-  const canProceed = () => {
-    if (currentStep === 'mode') {
-      return mode === 'Solo' || mode === 'Group';
-    }
-    return true;
-  };
-
-  const handleOutsidePress = () => {
-    if (loading) return;
-    onClose();
-  };
 
   const handleModalClose = () => {
     setCurrentStep('mode');
@@ -285,6 +259,11 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
     setPayPerStream(false);
     setError(null);
     onClose();
+  };
+
+  const handleOutsidePress = () => {
+    if (loading) return;
+    handleModalClose();
   };
   
   return (
@@ -346,7 +325,6 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
                   type="primary"
                   size="medium"
                   style={styles.nextButton}
-                  disabled={!canProceed()}
                 />
               ) : (
                 <AcidButton
@@ -354,10 +332,10 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
                   onPress={handleLaunch}
                   type="primary"
                   size="medium"
-                  disabled={loading || !canProceed() || schedule === 'Schedule'}
+                  disabled={loading}
                   style={styles.launchButton}
                   showLoadingIndicator={loading}
-                  pulsate={!loading && canProceed() && schedule === 'Launch'}
+                  pulsate={!loading}
                 />
               )}
             </View>
@@ -378,7 +356,7 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: '90%',
     maxWidth: 400,
-    maxHeight: '85%',
+    maxHeight: '80%',
   },
   modalContent: {
     flex: 1,
@@ -409,20 +387,20 @@ const styles = StyleSheet.create({
   },
   stepContainer: {
     flex: 1,
-    justifyContent: 'space-between',
+    minHeight: 300,
   },
   stepTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.primary,
-    marginBottom: 25,
+    marginBottom: 30,
     letterSpacing: 2,
     textAlign: 'center',
   },
   buttonsRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 25,
+    marginBottom: 30,
   },
   modeButton: {
     flex: 1,
@@ -448,7 +426,8 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   checkboxContainer: {
-    marginBottom: 20,
+    marginBottom: 30,
+    alignItems: 'center',
   },
   checkbox: {
     flexDirection: 'row',
@@ -480,15 +459,11 @@ const styles = StyleSheet.create({
   timingButton: {
     paddingVertical: 15,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: `${COLORS.primary}20`,
     borderWidth: 1,
-    borderColor: COLORS.textTertiary,
+    borderColor: COLORS.primary,
     borderRadius: 6,
     alignItems: 'center',
-  },
-  activeTimingButton: {
-    backgroundColor: `${COLORS.primary}20`,
-    borderColor: COLORS.primary,
   },
   disabledButton: {
     backgroundColor: 'rgba(0, 0, 0, 0.2)',
@@ -496,19 +471,16 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   timingButtonText: {
-    color: COLORS.textSecondary,
+    color: COLORS.primary,
     fontSize: 14,
     fontWeight: '600',
     letterSpacing: 1,
-  },
-  activeTimingButtonText: {
-    color: COLORS.primary,
   },
   disabledButtonText: {
     color: COLORS.textTertiary,
   },
   configOption: {
-    marginBottom: 20,
+    marginBottom: 25,
   },
   configLabel: {
     color: COLORS.primary,
@@ -579,7 +551,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   nextButton: {
-    flex: 2,
+    flex: 1,
   },
   launchButton: {
     flex: 1,
