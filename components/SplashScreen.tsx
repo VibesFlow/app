@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, BRANDING } from '../theme';
 import ConnectModal from './ConnectModal';
+import VibestreamModal from './VibestreamModal';
 import { useWallet } from '../context/HotWalletConnector';
 
 const { width, height } = Dimensions.get('window');
@@ -35,11 +36,20 @@ interface SplashScreenProps {
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ onStart }) => {
   const [connectModalVisible, setConnectModalVisible] = useState(false);
+  const [vibestreamModalVisible, setVibestreamModalVisible] = useState(false);
   const [showDisconnectDropdown, setShowDisconnectDropdown] = useState(false);
   const { account, connected, disconnect } = useWallet();
   
   const handleConnect = () => {
     setConnectModalVisible(true);
+  };
+
+  const handleStartVibing = () => {
+    if (connected && account) {
+      setVibestreamModalVisible(true);
+    } else {
+      setConnectModalVisible(true);
+    }
   };
 
   const handleWalletClick = () => {
@@ -154,6 +164,12 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onStart }) => {
       <ConnectModal
         visible={connectModalVisible}
         onClose={() => setConnectModalVisible(false)}
+      />
+      
+      {/* Vibestream Modal */}
+      <VibestreamModal
+        visible={vibestreamModalVisible}
+        onClose={() => setVibestreamModalVisible(false)}
       />
     </View>
   );

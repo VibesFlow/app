@@ -9,17 +9,23 @@ export const COLORS = {
   // Background colors
   background: "#000000",
   backgroundLight: "#0a0a0a",
+  backgroundSecondary: "#1a1a1a",
 
   // Text colors
+  text: "#ffffff",
   textPrimary: "#ffffff",
   textSecondary: "#aaaaaa",
   textTertiary: "#666666",
+  muted: "#666666",
 };
 
 export const FONT_SIZES = {
   xs: 10,
+  small: 12,
   sm: 12,
+  medium: 16,
   md: 16,
+  large: 20,
   lg: 20,
   xl: 24,
   xxl: 32,
@@ -29,8 +35,11 @@ export const FONT_SIZES = {
 
 export const SPACING = {
   xs: 4,
+  small: 8,
   sm: 8,
+  medium: 16,
   md: 16,
+  large: 24,
   lg: 24,
   xl: 32,
   xxl: 48,
