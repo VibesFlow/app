@@ -22,7 +22,7 @@ const Button: React.FC<ButtonProps> = ({
   textStyle,
 }) => {
   const getButtonStyle = () => {
-    const baseStyle = [styles.button];
+    const baseStyle: any[] = [styles.button];
     
     // Add size styles
     switch (size) {
@@ -56,7 +56,7 @@ const Button: React.FC<ButtonProps> = ({
   };
 
   const getTextStyle = () => {
-    const baseStyle = [styles.text];
+    const baseStyle: any[] = [styles.text];
     
     // Add size text styles
     switch (size) {
@@ -91,12 +91,12 @@ const Button: React.FC<ButtonProps> = ({
 
   return (
     <TouchableOpacity
-      style={[...getButtonStyle(), style]}
+      style={[getButtonStyle(), style]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={disabled ? 1 : 0.7}
     >
-      <Text style={[...getTextStyle(), textStyle]}>{text}</Text>
+      <Text style={[getTextStyle(), textStyle]}>{text}</Text>
     </TouchableOpacity>
   );
 };

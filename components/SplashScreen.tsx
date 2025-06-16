@@ -68,8 +68,8 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onStart }) => {
   // Format wallet address for display
   const formatAddress = (accountId: string | null) => {
     if (!accountId || typeof accountId !== 'string') return 'CONNECT';
-    if (accountId.length <= 10) return accountId;
-    return `${accountId.substring(0, 6)}...${accountId.substring(accountId.length - 4)}`;
+    if (accountId.length <= 10) return accountId.toUpperCase();
+    return `${accountId.substring(0, 6)}...${accountId.substring(accountId.length - 4)}`.toUpperCase();
   };
 
   return (
