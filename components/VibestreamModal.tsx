@@ -139,24 +139,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
         </View>
       )}
 
-      <View style={styles.timingButtons}>
-        <TouchableOpacity
-          style={styles.timingButton}
-        >
-          <Text style={styles.timingButtonText}>
-            LAUNCH VIBESTREAM
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.timingButton, styles.disabledButton]}
-          disabled={true}
-        >
-          <Text style={[styles.timingButtonText, styles.disabledButtonText]}>
-            SCHEDULE
-          </Text>
-        </TouchableOpacity>
-      </View>
+
     </View>
   );
 
@@ -307,7 +290,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
             </ScrollView>
             
             <View style={styles.footer}>
-              {currentStep !== 'mode' && (
+              {currentStep === 'group-config' && (
                 <AcidButton
                   text="BACK"
                   onPress={handleBack}
