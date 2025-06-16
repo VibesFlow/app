@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,18 +6,14 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
-  Animated,
-  Easing,
   Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome } from '@expo/vector-icons';
-import { COLORS, FONT_SIZES, SPACING } from '../theme';
+import { COLORS } from '../theme';
 import GlitchText from './ui/GlitchText';
-import Button from './ui/Button';
-import GlitchContainer from './ui/GlitchContainer';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 interface VibestreamModalProps {
   visible: boolean;
@@ -33,34 +29,19 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
   const [distance, setDistance] = useState('100');
   const [ticketAmount, setTicketAmount] = useState('0');
   const [streamPrice, setStreamPrice] = useState('0');
-  const [fadeAnim] = useState(new Animated.Value(0));
-  const [slideAnim] = useState(new Animated.Value(0));
 
-  React.useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 1,
-          duration: 400,
-          easing: Easing.out(Easing.back(1.2)),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else {
-      fadeAnim.setValue(0);
-      slideAnim.setValue(0);
-      setStep(1);
-      setMode('solo');
-      setStoreToFilecoin(false);
-      setDistance('100');
-      setTicketAmount('0');
-      setStreamPrice('0');
+  const resetModal = () => {
+    setStep(1);
+    setMode('solo');
+    setStoreToFilecoin(false);
+    setDistance('100');
+    setTicketAmount('0');
+    setStreamPrice('0');
+  };
+
+  useEffect(() => {
+    if (!visible) {
+      resetModal();
     }
   }, [visible]);
 
@@ -143,7 +124,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
               activeOpacity={0.7}
             >
               <Text style={[styles.actionButtonText, isLaunchDisabled() && styles.disabledText]}>
-                LAUNCH VIBESTREAM
+                LAUNCH
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -255,7 +236,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
             activeOpacity={0.7}
           >
             <Text style={[styles.actionButtonText, isLaunchDisabled() && styles.disabledText]}>
-              LAUNCH VIBESTREAM
+              LAUNCH
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -276,48 +257,31 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
     <Modal
       visible={visible}
       transparent={true}
-      animationType="none"
+      animationType="fade"
       onRequestClose={onClose}
     >
-      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+      <View style={styles.overlay}>
         <TouchableOpacity style={styles.overlayTouch} onPress={onClose} activeOpacity={1}>
-          <Animated.View
-            style={[
-              styles.modalContainer,
-              {
-                transform: [
-                  {
-                    translateY: slideAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [height, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-              <GlitchContainer style={styles.modalContent} intensity="medium" animated>
-                <LinearGradient
-                  colors={[COLORS.background, COLORS.backgroundSecondary]}
-                  style={styles.gradientBackground}
-                >
-                  <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
-                    <FontAwesome name="times" size={20} color={COLORS.primary} />
-                  </TouchableOpacity>
+          <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalContent}>
+              <LinearGradient
+                colors={[COLORS.background, '#0a0a0a']}
+                style={styles.gradientBackground}
+              >
+                <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
+                  <FontAwesome name="times" size={16} color={COLORS.primary} />
+                </TouchableOpacity>
 
-                  <View style={styles.header}>
-                    <GlitchText text="VIBESTREAM" style={styles.modalTitle} intensity="high" />
-                    <Text style={styles.modalSubtitle}>Configure your vibe session</Text>
-                  </View>
+                <View style={styles.header}>
+                  <GlitchText text="VIBESTREAM" style={styles.modalTitle} intensity="medium" />
+                </View>
 
-                  {step === 1 ? renderStep1() : renderStep2()}
-                </LinearGradient>
-              </GlitchContainer>
-            </TouchableOpacity>
-          </Animated.View>
+                {step === 1 ? renderStep1() : renderStep2()}
+              </LinearGradient>
+            </View>
+          </TouchableOpacity>
         </TouchableOpacity>
-      </Animated.View>
+      </View>
     </Modal>
   );
 };
@@ -325,7 +289,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -335,84 +299,72 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalContainer: {
-    width: width * 0.85,
-    maxWidth: 350,
-    maxHeight: height * 0.7,
-  },
   modalContent: {
-    borderRadius: 4,
-    overflow: 'hidden',
+    width: width * 0.85,
+    maxWidth: 320,
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: COLORS.primary,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   gradientBackground: {
-    padding: SPACING.lg,
-    minHeight: 300,
+    padding: 24,
+    minHeight: 250,
   },
   closeButton: {
     position: 'absolute',
-    top: SPACING.medium,
-    right: SPACING.medium,
+    top: 12,
+    right: 12,
     zIndex: 10,
-    padding: SPACING.small,
+    padding: 8,
   },
   header: {
     alignItems: 'center',
-    marginBottom: SPACING.large,
-    paddingTop: SPACING.medium,
+    marginBottom: 24,
+    paddingTop: 16,
   },
   modalTitle: {
-    fontSize: FONT_SIZES.xl,
+    fontSize: 20,
     fontWeight: '900',
     color: COLORS.primary,
     textAlign: 'center',
-    marginBottom: SPACING.sm,
-  },
-  modalSubtitle: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    letterSpacing: 1,
+    letterSpacing: 3,
   },
   stepContainer: {
     flex: 1,
   },
   stepTitle: {
-    fontSize: FONT_SIZES.md,
+    fontSize: 14,
     fontWeight: '700',
     color: COLORS.primary,
     textAlign: 'center',
-    marginBottom: SPACING.lg,
+    marginBottom: 20,
     letterSpacing: 2,
   },
   modeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: SPACING.lg,
-    gap: SPACING.md,
+    marginBottom: 20,
+    gap: 12,
   },
   modeButton: {
     flex: 1,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: COLORS.primary,
     backgroundColor: 'transparent',
     alignItems: 'center',
   },
   selectedMode: {
-    borderColor: COLORS.primary,
-    backgroundColor: 'rgba(0, 255, 65, 0.1)',
+    backgroundColor: 'rgba(0, 255, 65, 0.2)',
   },
   modeText: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: 12,
     fontWeight: '700',
     color: COLORS.primary,
-    letterSpacing: 1,
-  },
-  selectedModeText: {
-    color: COLORS.primary,
+    letterSpacing: 1.5,
   },
   optionsContainer: {
     marginTop: SPACING.medium,
@@ -420,48 +372,46 @@ const styles = StyleSheet.create({
   checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.lg,
-    paddingVertical: SPACING.sm,
+    marginBottom: 20,
+    paddingVertical: 8,
   },
   checkbox: {
-    width: 16,
-    height: 16,
+    width: 14,
+    height: 14,
     borderWidth: 1,
     borderColor: COLORS.primary,
-    marginRight: SPACING.md,
+    marginRight: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkedBox: {
     backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
   },
   checkboxText: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: 12,
     color: COLORS.textPrimary,
     fontWeight: '500',
     letterSpacing: 0.5,
   },
   actionButtons: {
-    gap: SPACING.md,
+    gap: 12,
   },
   actionButton: {
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: COLORS.primary,
     backgroundColor: 'transparent',
     alignItems: 'center',
   },
   actionButtonText: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: 12,
     fontWeight: '700',
     color: COLORS.primary,
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   disabledButton: {
-    opacity: 0.3,
-    borderColor: COLORS.textSecondary,
+    opacity: 0.4,
   },
   disabledText: {
     color: COLORS.textSecondary,
@@ -469,64 +419,62 @@ const styles = StyleSheet.create({
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.lg,
-    paddingVertical: SPACING.sm,
+    marginBottom: 20,
+    paddingVertical: 8,
   },
   backText: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: 12,
     color: COLORS.primary,
     fontWeight: '600',
-    marginLeft: SPACING.sm,
-    letterSpacing: 0.5,
+    marginLeft: 8,
+    letterSpacing: 1,
   },
   settingsContainer: {
-    gap: SPACING.md,
+    gap: 16,
   },
   inputGroup: {
     position: 'relative',
   },
   inputLabel: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: 11,
     color: COLORS.primary,
     fontWeight: '600',
-    marginBottom: SPACING.sm,
-    letterSpacing: 0.5,
+    marginBottom: 6,
+    letterSpacing: 1,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: COLORS.primary,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
   textInput: {
     flex: 1,
-    fontSize: FONT_SIZES.sm,
+    fontSize: 12,
     color: COLORS.textPrimary,
     fontWeight: '500',
-    paddingVertical: SPACING.sm,
+    paddingVertical: 4,
   },
   inputUnit: {
-    fontSize: FONT_SIZES.xs,
+    fontSize: 10,
     color: COLORS.textSecondary,
     fontWeight: '500',
-    marginLeft: SPACING.sm,
+    marginLeft: 8,
     letterSpacing: 0.5,
   },
   freeButton: {
     position: 'absolute',
     right: 0,
-    top: 24,
-    paddingHorizontal: SPACING.sm,
+    top: 22,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     backgroundColor: COLORS.primary,
-    borderTopRightRadius: 2,
-    borderBottomRightRadius: 2,
   },
   freeButtonText: {
-    fontSize: 9,
+    fontSize: 8,
     color: COLORS.background,
     fontWeight: '700',
     letterSpacing: 0.5,
