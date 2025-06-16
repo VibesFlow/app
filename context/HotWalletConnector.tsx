@@ -45,21 +45,19 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         // Try to connect to HOT Wallet using HERE Wallet core
         try {
-          // Check if HERE Wallet core is available
-          const { HereWallet } = await import('@here-wallet/core');
+          const HereWallet = require('@here-wallet/core').HereWallet;
           
-          const here = await HereWallet.connect({
-            botId: "VibesFlow/app",
-            walletId: "herewalletbot/app", // HOT Wallet
-          });
+          const here = await HereWallet.connect();
 
-          // Authenticate without adding keys first
-          const { accountId } = await here.authenticate();
+          // Use signIn method to connect to NEAR testnet
+          const accountId = await here.signIn({
+            contractId: 'vibesflow.testnet'
+          });
           
           if (accountId) {
             setAccount({
               accountId: accountId,
-              publicKey: '', // Will be populated when needed
+              publicKey: '', 
               network: 'near-testnet'
             });
             console.log(`Connected to HOT wallet: ${accountId}`);
@@ -68,37 +66,40 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         } catch (hereError: any) {
           console.log('HERE Wallet connection failed:', hereError.message);
           
-          // Fallback to standard NEAR wallet connection
-          if ((window as any).near) {
-            const nearWallet = (window as any).near;
-            const account = await nearWallet.requestSignIn({
-              contractId: 'vibesflow.testnet',
-              methodNames: ['create_composition', 'mint_nft']
-            });
-            
-            if (account) {
-              setAccount({
-                accountId: account.accountId,
-                publicKey: account.publicKey,
-                network: 'near-testnet'
+          // Fallback to NEAR Web Wallet
+          if (typeof window !== 'undefined' && (window as any).near) {
+            try {
+              const wallet = (window as any).near;
+              await wallet.requestSignIn({
+                contractId: 'vibesflow.testnet',
+                methodNames: ['create_composition', 'mint_nft']
               });
-              return;
+              
+              const accountId = wallet.getAccountId();
+              if (accountId) {
+                setAccount({
+                  accountId: accountId,
+                  publicKey: '',
+                  network: 'near-testnet'
+                });
+                return;
+              }
+            } catch (nearError: any) {
+              console.log('NEAR Wallet connection failed:', nearError.message);
             }
           }
         }
 
-        throw new Error('No HOT Wallet found. Please install HERE Wallet or NEAR Wallet.');
+        throw new Error('No NEAR wallet found. Please install HERE Wallet or visit https://wallet.near.org');
       } else {
         // Mobile wallet connection using HERE Wallet
         try {
-          const { HereWallet } = await import('@here-wallet/core');
+          const HereWallet = require('@here-wallet/core').HereWallet;
           
-          const here = await HereWallet.connect({
-            botId: "VibesFlow/app",
-            walletId: "herewalletbot/app",
+          const here = await HereWallet.connect();
+          const accountId = await here.signIn({
+            contractId: 'vibesflow.testnet'
           });
-
-          const { accountId } = await here.authenticate();
           
           if (accountId) {
             setAccount({
@@ -109,7 +110,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
             return;
           }
         } catch (mobileError: any) {
-          throw new Error('Mobile HOT Wallet connection failed. Please install HERE Wallet.');
+          throw new Error('Mobile NEAR Wallet connection failed. Please install HERE Wallet.');
         }
       }
     } catch (err: any) {
@@ -178,9 +179,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         const recipient = typeof window !== 'undefined' ? window.location.host : 'vibesflow.app';
         
         const { signature } = await here.signMessage({
-          recipient,
-          nonce,
-          message
+          message,
+          nonce: Buffer.from(nonce),
+          recipient
         });
         
         return signature;
@@ -198,21 +199,20 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         try {
           // Check for existing HOT Wallet connection
-          const { HereWallet } = await import('@here-wallet/core');
-          const here = await HereWallet.connect({
-            botId: "VibesFlow/app",
-            walletId: "herewalletbot/app",
-          });
+          const HereWallet = require('@here-wallet/core').HereWallet;
+          const here = await HereWallet.connect();
           
-          // Try to authenticate silently
-          const { accountId } = await here.authenticate();
-          if (accountId) {
-            setAccount({
-              accountId: accountId,
-              publicKey: '',
-              network: 'near-testnet'
-            });
-            console.log('Existing HOT wallet connection found:', accountId);
+          // Check if already signed in
+          if (here.isSignedIn()) {
+            const accountId = here.getAccountId();
+            if (accountId) {
+              setAccount({
+                accountId: accountId,
+                publicKey: '',
+                network: 'near-testnet'
+              });
+              console.log('Existing HOT wallet connection found:', accountId);
+            }
           }
         } catch (err) {
           console.log('No existing HOT wallet connection');
