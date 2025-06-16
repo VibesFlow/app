@@ -125,21 +125,17 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
         </TouchableOpacity>
       </View>
 
-      {mode === 'Solo' && (
-        <View style={styles.checkboxContainer}>
-          <TouchableOpacity 
-            style={styles.checkbox}
-            onPress={() => setStoreToFilecoin(!storeToFilecoin)}
-          >
-            <View style={[styles.checkboxBox, storeToFilecoin && styles.checkboxChecked]}>
-              {storeToFilecoin && <FontAwesome name="check" size={12} color={COLORS.background} />}
-            </View>
-            <Text style={styles.checkboxText}>STORE TO FILECOIN</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-
+      <View style={styles.checkboxContainer}>
+        <TouchableOpacity 
+          style={styles.checkbox}
+          onPress={() => setStoreToFilecoin(!storeToFilecoin)}
+        >
+          <View style={[styles.checkboxBox, storeToFilecoin && styles.checkboxChecked]}>
+            {storeToFilecoin && <FontAwesome name="check" size={12} color={COLORS.background} />}
+          </View>
+          <Text style={styles.checkboxText}>STORE TO FILECOIN</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -148,51 +144,68 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       <GlitchText text="GROUP CONFIGURATION" style={styles.stepTitle} intensity="low" />
       
       <View style={styles.configOption}>
-        <Text style={styles.configLabel}>DISTANCE (METERS)</Text>
-        <TextInput
-          style={styles.configInput}
-          value={distance}
-          onChangeText={setDistance}
-          keyboardType="numeric"
-          placeholder="50"
-          placeholderTextColor={COLORS.textTertiary}
-        />
-      </View>
-      
-      <View style={styles.configOption}>
-        <Text style={styles.configLabel}>SEATS</Text>
+        <Text style={styles.configLabel}>DISTANCE</Text>
         <View style={styles.inputRow}>
           <TextInput
             style={[styles.configInput, styles.flexInput]}
-            value={seats}
-            onChangeText={setSeats}
+            value={distance}
+            onChangeText={setDistance}
             keyboardType="numeric"
-            placeholder="10"
+            placeholder="50"
             placeholderTextColor={COLORS.textTertiary}
           />
+          <View style={styles.unitLabel}>
+            <Text style={styles.unitText}>M</Text>
+          </View>
+        </View>
+      </View>
+      
+      <View style={styles.configOption}>
+        <Text style={styles.configLabel}>TICKETS AMT</Text>
+        <View style={styles.inputRow}>
+          <View style={styles.currencyInputContainer}>
+            <Text style={styles.currencySymbol}>$NEAR</Text>
+            <TextInput
+              style={[styles.configInput, styles.currencyInput]}
+              value={entryFee}
+              onChangeText={setEntryFee}
+              keyboardType="numeric"
+              placeholder="0.1"
+              placeholderTextColor={COLORS.textTertiary}
+            />
+          </View>
           <TouchableOpacity
             style={styles.quickButton}
-            onPress={() => setSeats('∞')}
+            onPress={() => setEntryFee('0')}
           >
-            <Text style={styles.quickButtonText}>NO LIMIT</Text>
+            <Text style={styles.quickButtonText}>FREE</Text>
           </TouchableOpacity>
         </View>
       </View>
       
       <View style={styles.configOption}>
-        <Text style={styles.configLabel}>ENTRY FEE (NEAR)</Text>
+        <Text style={styles.configLabel}>STREAM PRICE</Text>
         <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.configInput, styles.flexInput]}
-            value={entryFee}
-            onChangeText={setEntryFee}
-            keyboardType="numeric"
-            placeholder="0.1"
-            placeholderTextColor={COLORS.textTertiary}
-          />
+          <View style={styles.currencyInputContainer}>
+            <Text style={styles.currencySymbol}>$NEAR</Text>
+            <TextInput
+              style={[styles.configInput, styles.currencyInput]}
+              value={payPerStream ? '0.01' : '0'}
+              onChangeText={(value) => {
+                if (value === '0') {
+                  setPayPerStream(false);
+                } else {
+                  setPayPerStream(true);
+                }
+              }}
+              keyboardType="numeric"
+              placeholder="0.01"
+              placeholderTextColor={COLORS.textTertiary}
+            />
+          </View>
           <TouchableOpacity
             style={styles.quickButton}
-            onPress={() => setEntryFee('0')}
+            onPress={() => setPayPerStream(false)}
           >
             <Text style={styles.quickButtonText}>FREE</Text>
           </TouchableOpacity>
@@ -202,12 +215,12 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       <View style={styles.checkboxContainer}>
         <TouchableOpacity 
           style={styles.checkbox}
-          onPress={() => setPayPerStream(!payPerStream)}
+          onPress={() => setStoreToFilecoin(!storeToFilecoin)}
         >
-          <View style={[styles.checkboxBox, payPerStream && styles.checkboxChecked]}>
-            {payPerStream && <FontAwesome name="check" size={12} color={COLORS.background} />}
+          <View style={[styles.checkboxBox, storeToFilecoin && styles.checkboxChecked]}>
+            {storeToFilecoin && <FontAwesome name="check" size={12} color={COLORS.background} />}
           </View>
-          <Text style={styles.checkboxText}>PAY-PER-STREAM</Text>
+          <Text style={styles.checkboxText}>STORE TO FILECOIN</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -396,8 +409,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   activeModeButton: {
-    backgroundColor: `${COLORS.primary}20`,
-    borderColor: COLORS.primary,
+    backgroundColor: `${COLORS.secondary}20`,
+    borderColor: COLORS.secondary,
   },
   modeButtonText: {
     color: COLORS.textSecondary,
@@ -406,7 +419,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   activeModeButtonText: {
-    color: COLORS.primary,
+    color: COLORS.secondary,
   },
   checkboxContainer: {
     marginBottom: 30,
@@ -427,8 +440,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxChecked: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: COLORS.secondary,
+    borderColor: COLORS.secondary,
   },
   checkboxText: {
     color: COLORS.textPrimary,
@@ -538,6 +551,54 @@ const styles = StyleSheet.create({
   },
   launchButton: {
     flex: 1,
+  },
+  unitLabel: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderWidth: 1,
+    borderColor: COLORS.textTertiary,
+    borderRadius: 6,
+    borderLeftWidth: 0,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unitText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 1,
+  },
+  currencyInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderWidth: 1,
+    borderColor: COLORS.textTertiary,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  currencySymbol: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    color: COLORS.secondary,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 1,
+    textAlignVertical: 'center',
+  },
+  currencyInput: {
+    flex: 1,
+    padding: 12,
+    paddingLeft: 8,
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    letterSpacing: 1,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
 });
 
