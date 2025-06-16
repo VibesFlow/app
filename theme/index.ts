@@ -41,4 +41,5 @@ export const BRANDING = {
   slogan: "SYNTHESIZE · SYNCHRONIZE · TRANSCEND",
   manifesto:
     "DECENTRALIZED FREQUENCIES // COLLECTIVE RESONANCE // AUTONOMOUS WAVES",
+  blockchain: "NEAR",
 };

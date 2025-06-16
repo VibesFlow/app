@@ -1,0 +1,525 @@
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  Modal,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
+  Switch,
+  Alert,
+  ActivityIndicator,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { COLORS } from '../theme';
+import * as Haptics from 'expo-haptics';
+import { useVibe } from '../context/VibeContext';
+import ActiveVibeView from './ActiveVibeView';
+import { GlitchText, GlitchContainer, AcidButton } from './ui';
+
+interface NewVibeModalProps {
+  visible: boolean;
+  onClose: () => void;
+}
+
+type VibeMode = 'Solo' | 'Group';
+type VibeSchedule = 'Now' | 'Schedule';
+type SavePreference = 'Yes' | 'No';
+
+const NewVibeModal: React.FC<NewVibeModalProps> = ({ visible, onClose }) => {
+  const { startVibeSession, status, currentSession } = useVibe();
+  
+  const [mode, setMode] = useState<VibeMode>('Solo');
+  const [schedule, setSchedule] = useState<VibeSchedule>('Now');
+  const [save, setSave] = useState<SavePreference>('Yes');
+  const [distance, setDistance] = useState<string>('50');
+  const [seats, setSeats] = useState<string>('10');
+  const [entryFee, setEntryFee] = useState<string>('0');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Close modal when session starts successfully
+  useEffect(() => {
+    if (status === 'active' && currentSession) {
+      // Allow a brief moment to see the success state before closing
+      const timer = setTimeout(() => {
+        onClose();
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [status, currentSession]);
+  
+  const handleStart = async () => {
+    // Provide haptic feedback
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    // Clear any previous errors
+    setError(null);
+    
+    // Check if we should proceed with starting the vibe stream
+    if (schedule === 'Schedule') {
+      Alert.alert(
+        'FEATURE COMING SOON',
+        'SCHEDULED VIBES WILL BE AVAILABLE IN A FUTURE UPDATE.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      // Prepare vibe session configuration
+      const config = {
+        mode: mode,
+        saveHistory: save === 'Yes',
+        distance: mode === 'Group' ? parseFloat(distance) : undefined,
+        seats: mode === 'Group' ? parseInt(seats, 10) : undefined,
+        entryFee: mode === 'Group' ? parseFloat(entryFee) : undefined
+      };
+      
+      console.log('Starting vibe session with config:', config);
+      
+      // Start vibe session using the vibe manager
+      // We'll keep the loading state for a minimum of 1 second
+      // to show the loading animation even if the actual start is quick
+      const startTime = Date.now();
+      
+      // Force a delay to ensure UI feedback
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const success = await startVibeSession(config);
+      console.log('Vibe session start result:', success, 'Current status:', status);
+      
+      // Ensure loading animation shows for at least 1.5 seconds total
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 1500) {
+        await new Promise(resolve => setTimeout(resolve, 1500 - elapsed));
+      }
+      
+      setLoading(false);
+      
+      if (!success) {
+        console.error('Failed to start vibe session');
+        setError('FAILED TO START VIBE STREAM. PLEASE TRY AGAIN.');
+      } else {
+        // Provide success feedback
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        // Even if the auto-close from useEffect doesn't trigger, manually show active view
+        // by keeping the modal open and the status should be updated by the context
+        console.log('Vibe session started successfully');
+      }
+    } catch (error) {
+      console.error('Error starting vibe session:', error);
+      setLoading(false);
+      setError('FAILED TO START VIBE STREAM. PLEASE TRY AGAIN.');
+    }
+  };
+  
+  const renderModeSelection = () => (
+    <View style={styles.optionContainer}>
+      <GlitchText text="MODE" style={styles.optionTitle} intensity="low" />
+      <View style={styles.buttonsRow}>
+        <TouchableOpacity
+          style={[styles.optionButton, mode === 'Solo' && styles.activeOptionButton]}
+          onPress={() => setMode('Solo')}
+        >
+          <Text style={[styles.optionButtonText, mode === 'Solo' && styles.activeOptionButtonText]}>
+            SOLO
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.optionButton, mode === 'Public' && styles.activeOptionButton]}
+          onPress={() => setMode('Public')}
+        >
+          <Text style={[styles.optionButtonText, mode === 'Public' && styles.activeOptionButtonText]}>
+            PUBLIC
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+  
+  const renderPublicOptions = () => {
+    if (mode !== 'Group') return null;
+    
+    return (
+      <>
+        <View style={styles.optionContainer}>
+          <GlitchText text="DISTANCE (METERS)" style={styles.optionTitle} intensity="low" />
+          <TextInput
+            style={styles.textInput}
+            value={distance}
+            onChangeText={setDistance}
+            keyboardType="numeric"
+            placeholder="UP TO 50 METERS"
+            placeholderTextColor={COLORS.textTertiary}
+          />
+        </View>
+        
+        <View style={styles.optionContainer}>
+          <GlitchText text="SEATS" style={styles.optionTitle} intensity="low" />
+          <View style={styles.entryRow}>
+            <TextInput
+              style={[styles.textInput, styles.entryInput]}
+              value={seats}
+              onChangeText={setSeats}
+              keyboardType="numeric"
+              placeholder="NUMBER OF SEATS"
+              placeholderTextColor={COLORS.textTertiary}
+            />
+            
+            <TouchableOpacity
+              style={styles.noCap}
+              onPress={() => setSeats('∞')}
+            >
+              <Text style={styles.noCapText}>NO CAP</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        <View style={styles.optionContainer}>
+          <View style={styles.optionTitleRow}>
+            <GlitchText text="ENTRY FEE" style={styles.optionTitle} intensity="low" />
+            <Text style={styles.optionSubtitle}>(SUI)</Text>
+          </View>
+          <View style={styles.entryRow}>
+            <TextInput
+              style={[styles.textInput, styles.entryInput]}
+              value={entryFee}
+              onChangeText={setEntryFee}
+              keyboardType="numeric"
+              placeholder="$NEAR"
+              placeholderTextColor={COLORS.textTertiary}
+            />
+            
+            <TouchableOpacity
+              style={styles.noCap}
+              onPress={() => setEntryFee('0')}
+            >
+              <Text style={styles.noCapText}>FREE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </>
+    );
+  };
+  
+  const renderScheduleOptions = () => (
+    <View style={styles.optionContainer}>
+      <GlitchText text="VIBE" style={styles.optionTitle} intensity="low" />
+      <View style={styles.buttonsRow}>
+        <TouchableOpacity
+          style={[styles.optionButton, schedule === 'Now' && styles.activeOptionButton]}
+          onPress={() => setSchedule('Now')}
+        >
+          <Text style={[styles.optionButtonText, schedule === 'Now' && styles.activeOptionButtonText]}>
+            NOW
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.optionButton, schedule === 'Schedule' && styles.activeOptionButton]}
+          onPress={() => setSchedule('Schedule')}
+        >
+          <Text style={[styles.optionButtonText, schedule === 'Schedule' && styles.activeOptionButtonText]}>
+            SCHEDULE
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+  
+  const renderSaveOption = () => (
+    <View style={styles.optionContainer}>
+      <GlitchText text="SAVE" style={styles.optionTitle} intensity="low" />
+      <View style={styles.buttonsRow}>
+        <TouchableOpacity
+          style={[styles.optionButton, save === 'Yes' && styles.activeOptionButton]}
+          onPress={() => setSave('Yes')}
+        >
+          <Text style={[styles.optionButtonText, save === 'Yes' && styles.activeOptionButtonText]}>
+            YES
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.optionButton, save === 'No' && styles.activeOptionButton]}
+          onPress={() => setSave('No')}
+        >
+          <Text style={[styles.optionButtonText, save === 'No' && styles.activeOptionButtonText]}>
+            NO
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+  
+  const renderErrorMessage = () => {
+    if (!error) return null;
+    
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>{error}</Text>
+      </View>
+    );
+  };
+  
+  const renderConfigView = () => (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.keyboardAvoidingView}
+    >
+      <View style={styles.headerContainer}>
+        <GlitchText text="NEW VIBE" style={styles.title} intensity="medium" color={COLORS.primary} />
+      </View>
+      
+      <ScrollView 
+        style={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContentContainer,
+          mode === 'Public' && styles.scrollContentPublic
+        ]}
+        showsVerticalScrollIndicator={true}
+      >
+        {renderErrorMessage()}
+        {renderModeSelection()}
+        {renderPublicOptions()}
+        {renderScheduleOptions()}
+        {renderSaveOption()}
+        <View style={styles.spacer} />
+      </ScrollView>
+      
+      <View style={styles.footer}>
+        <AcidButton
+          text="CANCEL"
+          onPress={onClose}
+          type="secondary"
+          size="medium"
+          style={styles.cancelButton}
+        />
+        
+        <AcidButton
+          text={loading ? "STARTING..." : "START"}
+          onPress={handleStart}
+          type="primary"
+          size="medium"
+          disabled={loading}
+          style={styles.startButton}
+        />
+      </View>
+    </KeyboardAvoidingView>
+  );
+  
+  // Handle closing the modal during an active vibe session
+  const handleCloseActiveView = () => {
+    onClose();
+  };
+  
+  // Handle tapping outside the modal content
+  const handleOutsidePress = () => {
+    // Don't close if loading
+    if (loading) return;
+    
+    // Close the modal
+    onClose();
+  };
+  
+  return (
+    <Modal
+      animationType="fade"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <TouchableWithoutFeedback onPress={handleOutsidePress}>
+        <View style={styles.modalOverlay}>
+          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+            <GlitchContainer 
+              style={status === 'active' || status === 'paused' ? styles.activeModalContainer : styles.modalContainer}
+              intensity="low"
+              borderColor={COLORS.primary}
+            >
+              <LinearGradient
+                colors={[COLORS.backgroundLight, COLORS.background]}
+                style={styles.modalBackground}
+              />
+              
+              {status === 'active' || status === 'paused' ? (
+                <ActiveVibeView onClose={handleCloseActiveView} />
+              ) : (
+                renderConfigView()
+              )}
+            </GlitchContainer>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
+
+const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '90%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    overflow: 'hidden',
+    borderRadius: 8,
+  },
+  activeModalContainer: {
+    width: '100%',
+    height: '100%',
+    maxHeight: '100%',
+  },
+  modalBackground: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  headerContainer: {
+    paddingTop: 20,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 255, 65, 0.2)',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    letterSpacing: 3,
+  },
+  scrollContent: {
+    flex: 1,
+  },
+  scrollContentContainer: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  scrollContentPublic: {
+    paddingBottom: 120, // Add extra padding at the bottom for Public mode
+  },
+  optionContainer: {
+    marginBottom: 20,
+  },
+  optionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  optionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    letterSpacing: 2,
+  },
+  optionSubtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginLeft: 8,
+    letterSpacing: 1,
+  },
+  buttonsRow: {
+    flexDirection: 'row',
+  },
+  optionButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    marginRight: 10,
+  },
+  activeOptionButton: {
+    backgroundColor: 'rgba(0,255,65,0.15)',
+  },
+  optionButtonText: {
+    color: COLORS.textSecondary,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  activeOptionButtonText: {
+    color: COLORS.primary,
+  },
+  textInput: {
+    height: 46,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingHorizontal: 12,
+    color: COLORS.textPrimary,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    letterSpacing: 2,
+  },
+  entryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  entryInput: {
+    flex: 1,
+    marginRight: 10,
+  },
+  noCap: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    backgroundColor: 'rgba(0,204,255,0.1)',
+  },
+  noCapText: {
+    color: COLORS.accent,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,255,65,0.15)',
+  },
+  cancelButton: {
+    flex: 1,
+    marginRight: 10,
+  },
+  startButton: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  errorContainer: {
+    backgroundColor: 'rgba(255,0,0,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,0,0,0.3)',
+    padding: 12,
+    borderRadius: 4,
+    marginBottom: 20,
+  },
+  errorText: {
+    color: '#ff6b6b',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  spacer: {
+    height: 20,
+  },
+});
+
+export default NewVibeModal; 
