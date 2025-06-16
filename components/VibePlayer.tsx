@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
-import { WebView } from 'react-native-webview';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
+import * as Tone from 'tone';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 interface VibePlayerProps {
   onBack: () => void;
@@ -33,23 +33,10 @@ interface Comment {
   id: string;
   text: string;
   timestamp: number;
-  position: number; // Position in the track (0-1)
+  position: number;
 }
 
-// Generate waveform data points
-const generateWaveformData = (amplitude: number, frequency: number) => {
-  const points = [];
-  const segments = 120;
-  for (let i = 0; i < segments; i++) {
-    const variation = Math.sin((i / segments) * Math.PI * frequency) * amplitude;
-    const height = 20 + variation * 15;
-    points.push(Math.max(5, Math.min(35, height)));
-  }
-  return points;
-};
-
 const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
-  const webviewRef = useRef<WebView>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackProgress, setTrackProgress] = useState(0);
@@ -60,27 +47,65 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentPosition, setCommentPosition] = useState(0);
   
-  // Animated values for waveform
+  // Audio components
+  const synthRef = useRef<any>(null);
+  const filterRef = useRef<any>(null);
+  const patternRef = useRef<any>(null);
+  
+  // Animated values
   const waveformAnimation = useRef(new Animated.Value(0)).current;
-  const progressAnimation = useRef(new Animated.Value(0)).current;
 
-  // Sensor data state
+  // Sensor data
   const [sensorData, setSensorData] = useState<SensorData>({
     x: 0, y: 0, z: 0, timestamp: Date.now(),
   });
 
-  // Web fallback for sensors
-  const [useWebFallback, setUseWebFallback] = useState(Platform.OS === 'web');
+  // Initialize audio
+  useEffect(() => {
+    const initAudio = async () => {
+      try {
+        if (Platform.OS === 'web') {
+          await Tone.start();
+          
+          // Create filter and synth
+          filterRef.current = new Tone.Filter(800, "lowpass").toDestination();
+          synthRef.current = new Tone.PolySynth({
+            voice: Tone.Synth,
+            options: {
+              oscillator: { type: "sawtooth" },
+              envelope: { attack: 0.1, decay: 0.3, sustain: 0.4, release: 1 }
+            }
+          }).connect(filterRef.current);
+          
+          setIsInitialized(true);
+        } else {
+          // Mobile fallback - use basic audio without Tone.js
+          setIsInitialized(true);
+        }
+      } catch (error) {
+        console.warn('Audio init failed:', error);
+        setIsInitialized(true);
+      }
+    };
 
-  // Setup sensor listeners with web fallback
+    initAudio();
+
+    return () => {
+      if (patternRef.current) {
+        patternRef.current.dispose();
+      }
+    };
+  }, []);
+
+  // Setup sensors
   useEffect(() => {
     let accelSubscription: any;
     let gyroSubscription: any;
 
     const startSensors = async () => {
       if (Platform.OS === 'web') {
-        // Web fallback - use mouse movement or random data
-        const handleMouseMove = (event: any) => {
+        // Web fallback with mouse movement
+        const handleMouseMove = (event: MouseEvent) => {
           const normalizedX = (event.clientX / window.innerWidth - 0.5) * 2;
           const normalizedY = (event.clientY / window.innerHeight - 0.5) * 2;
           setSensorData({
@@ -91,7 +116,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           });
         };
 
-        // Start with random movement simulation
+        // Random movement simulation
         const randomInterval = setInterval(() => {
           setSensorData({
             x: Math.sin(Date.now() / 2000) * 0.8,
@@ -101,15 +126,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           });
         }, 100);
 
-        if (typeof window !== 'undefined') {
-          window.addEventListener('mousemove', handleMouseMove);
-        }
+        window.addEventListener('mousemove', handleMouseMove);
 
         return () => {
           clearInterval(randomInterval);
-          if (typeof window !== 'undefined') {
-            window.removeEventListener('mousemove', handleMouseMove);
-          }
+          window.removeEventListener('mousemove', handleMouseMove);
         };
       } else {
         // Mobile sensors
@@ -136,8 +157,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           });
 
         } catch (error) {
-          console.warn('Sensor setup error, using fallback:', error);
-          setUseWebFallback(true);
+          console.warn('Sensor setup error:', error);
         }
       }
     };
@@ -150,7 +170,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     };
   }, []);
 
-  // Process sensor data and update audio parameters
+  // Process sensor data
   useEffect(() => {
     const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
     const amplitude = Math.min(magnitude * 0.5 + 0.2, 1);
@@ -159,15 +179,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     setCurrentAmplitude(amplitude);
     setCurrentFrequency(frequency);
 
-    // Send to WebView for music generation
-    if (isInitialized && webviewRef.current) {
-      webviewRef.current.postMessage(JSON.stringify({
-        type: 'audioUpdate',
-        amplitude,
-        frequency,
-        tempo: 120 + amplitude * 60,
-        sensors: sensorData,
-      }));
+    // Update audio parameters
+    if (isPlaying && Platform.OS === 'web' && filterRef.current) {
+      const filterFreq = 400 + amplitude * 1000;
+      filterRef.current.frequency.value = filterFreq;
+      Tone.Transport.bpm.value = 120 + amplitude * 60;
     }
 
     // Update waveform animation
@@ -177,14 +193,14 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       useNativeDriver: false,
     }).start();
 
-  }, [sensorData, isInitialized]);
+  }, [sensorData, isPlaying]);
 
-  // Track progress animation
+  // Track progress
   useEffect(() => {
     if (isPlaying) {
       const progressInterval = setInterval(() => {
         setTrackProgress(prev => {
-          const newProgress = prev + 0.001; // Simulate track progress
+          const newProgress = prev + 0.001;
           if (newProgress >= 1) return 0;
           return newProgress;
         });
@@ -195,12 +211,29 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   }, [isPlaying]);
 
   const togglePlayback = () => {
-    if (webviewRef.current) {
-      webviewRef.current.postMessage(JSON.stringify({
-        type: isPlaying ? 'stop' : 'play',
-      }));
-      setIsPlaying(!isPlaying);
+    if (!isInitialized) return;
+
+    if (Platform.OS === 'web' && synthRef.current) {
+      if (!isPlaying) {
+        // Start playing
+        const bassNotes = ['C2', 'C2', 'F2', 'C2'];
+        patternRef.current = new Tone.Sequence((time, note) => {
+          synthRef.current.triggerAttackRelease(note, '8n', time, currentAmplitude * 0.8);
+        }, bassNotes);
+        
+        patternRef.current.start(0);
+        Tone.Transport.start();
+      } else {
+        // Stop playing
+        if (patternRef.current) {
+          patternRef.current.stop();
+          patternRef.current.dispose();
+        }
+        Tone.Transport.stop();
+      }
     }
+
+    setIsPlaying(!isPlaying);
   };
 
   const handleWaveformClick = (event: any) => {
@@ -224,156 +257,22 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }
   };
 
-  // Enhanced music generation HTML with web audio compatibility
-  const musicEngineHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body, html { margin: 0; padding: 0; background: #000; overflow: hidden; }
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.min.js"></script>
-</head>
-<body></body>
-<script>
-(async function() {
-  let isInitialized = false;
-  let isPlaying = false;
-  let synth, filter, reverb, delay;
-  
-  async function initializeAudio() {
-    try {
-      await Tone.start();
-      
-      // Create effects chain
-      reverb = new Tone.Reverb(2).toDestination();
-      delay = new Tone.FeedbackDelay("8n", 0.3).connect(reverb);
-      filter = new Tone.Filter(800, "lowpass").connect(delay);
-      
-      // Create main synth
-      synth = new Tone.PolySynth({
-        voice: Tone.Synth,
-        options: {
-          oscillator: { type: "sawtooth" },
-          envelope: { attack: 0.1, decay: 0.3, sustain: 0.4, release: 1 },
-          filter: { Q: 2, frequency: 300 }
-        }
-      }).connect(filter);
-      
-      isInitialized = true;
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'initialized' }));
-      
-    } catch (error) {
-      console.error('Audio initialization failed:', error);
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ 
-        type: 'error', 
-        message: error.message 
-      }));
+  // Generate waveform bars
+  const generateWaveformData = (): number[] => {
+    const points: number[] = [];
+    const segments = 120;
+    for (let i = 0; i < segments; i++) {
+      const variation = Math.sin((i / segments) * Math.PI * currentFrequency) * currentAmplitude;
+      const height = 20 + variation * 15;
+      points.push(Math.max(5, Math.min(35, height)));
     }
-  }
-  
-  function generateTechnoPattern(amplitude, frequency, tempo) {
-    if (!isInitialized || !isPlaying) return;
-    
-    Tone.Transport.bpm.value = tempo;
-    filter.frequency.value = 400 + amplitude * 1000;
-    
-    // Generate bass pattern
-    const bassNotes = ['C2', 'C2', 'F2', 'C2'];
-    const bassPattern = new Tone.Sequence((time, note) => {
-      synth.triggerAttackRelease(note, '8n', time, amplitude * 0.8);
-    }, bassNotes);
-    
-    // Generate lead pattern based on sensor data
-    const leadNotes = ['C4', 'D4', 'F4', 'G4'].map(note => 
-      Tone.Frequency(note).transpose(Math.floor(frequency * 12))
-    );
-    
-    const leadPattern = new Tone.Sequence((time, note) => {
-      if (Math.random() < amplitude) {
-        synth.triggerAttackRelease(note, '16n', time, amplitude * 0.6);
-      }
-    }, leadNotes);
-    
-    bassPattern.start(0);
-    leadPattern.start(0);
-    
-    if (Tone.Transport.state !== 'started') {
-      Tone.Transport.start();
-    }
-    
-    // Clean up after pattern
-    setTimeout(() => {
-      bassPattern.dispose();
-      leadPattern.dispose();
-    }, 4000);
-  }
-  
-  window.addEventListener('message', async (event) => {
-    const data = JSON.parse(event.data);
-    
-    switch (data.type) {
-      case 'audioUpdate':
-        if (isPlaying) {
-          generateTechnoPattern(data.amplitude, data.frequency, data.tempo);
-        }
-        break;
-        
-      case 'play':
-        isPlaying = true;
-        Tone.Transport.start();
-        break;
-        
-      case 'stop':
-        isPlaying = false;
-        Tone.Transport.stop();
-        Tone.Transport.cancel();
-        break;
-    }
-  });
-  
-  await initializeAudio();
-})();
-</script>
-</html>
-`;
-
-  const handleWebViewMessage = (event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      
-      switch (data.type) {
-        case 'initialized':
-          setIsInitialized(true);
-          break;
-        case 'error':
-          console.error('WebView error:', data.message);
-          break;
-      }
-    } catch (error) {
-      console.error('Failed to parse WebView message:', error);
-    }
+    return points;
   };
 
-  // Generate waveform bars
-  const waveformData = generateWaveformData(currentAmplitude, currentFrequency);
+  const waveformData = generateWaveformData();
 
   return (
     <View style={styles.container}>
-      {/* Hidden WebView for music generation */}
-      <WebView
-        ref={webviewRef}
-        source={{ html: musicEngineHTML }}
-        style={styles.hiddenWebView}
-        onMessage={handleWebViewMessage}
-        javaScriptEnabled
-        domStorageEnabled
-        allowFileAccess
-        originWhitelist={['*']}
-      />
-
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -498,7 +397,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       {/* Status indicator */}
       <View style={styles.statusBar}>
         <Text style={styles.statusText}>
-          {useWebFallback ? 'MOUSE_INPUT' : 'MOTION_INPUT'} • {isPlaying ? 'LIVE' : 'PAUSED'}
+          {Platform.OS === 'web' ? 'MOUSE_INPUT' : 'MOTION_INPUT'} • {isPlaying ? 'LIVE' : 'PAUSED'}
         </Text>
       </View>
     </View>
@@ -509,12 +408,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-  },
-  hiddenWebView: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    opacity: 0,
   },
   header: {
     flexDirection: 'row',
