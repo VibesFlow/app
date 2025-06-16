@@ -71,7 +71,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
   const renderInitialScreen = () => (
     <View style={styles.modalContent}>
       <Text style={styles.modalDescription}>
-        CONNECT WITH HOT PROTOCOL WALLET
+        USE HOT WALLET TO CONNECT
       </Text>
 
       <TouchableOpacity 
@@ -88,25 +88,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
         />
         <View style={styles.buttonContent}>
           <FontAwesome name="fire" size={18} color={COLORS.primary} style={styles.buttonIcon} />
-          <Text style={styles.buttonText}>CONNECT HOT WALLET</Text>
-        </View>
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={[styles.optionButton, styles.secondaryOptionButton]}
-        onPress={handleConnect}
-        activeOpacity={0.7}
-        disabled={connecting}
-      >
-        <LinearGradient
-          colors={['rgba(255,0,160,0.15)', 'rgba(0,0,0,0)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.buttonGradient}
-        />
-        <View style={styles.buttonContent}>
-          <FontAwesome name="mobile" size={18} color={COLORS.secondary} style={styles.buttonIcon} />
-          <Text style={[styles.buttonText, styles.secondaryButtonText]}>HERE WALLET</Text>
+          <Text style={styles.buttonText}>CONNECT WITH HOT</Text>
         </View>
       </TouchableOpacity>
 
