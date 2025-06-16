@@ -216,12 +216,18 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
         } catch (error) {
           console.warn('Sensor setup error:', error);
         }
+        return undefined;
       }
     };
 
-    startSensors();
+    const cleanup = startSensors();
 
     return () => {
+      if (cleanup && typeof cleanup.then === 'function') {
+        cleanup.then((cleanupFn: (() => void) | undefined) => {
+          if (cleanupFn) cleanupFn();
+        });
+      }
       accelSubscription?.remove();
       gyroSubscription?.remove();
     };
@@ -401,6 +407,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
       return () => clearInterval(durationInterval);
     }
+    return undefined;
   }, [isStreaming]);
 
   // Participant simulation
@@ -415,6 +422,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
       return () => clearInterval(participantInterval);
     }
+    return undefined;
   }, [isStreaming]);
 
   // Mobile pattern generation for visualization
