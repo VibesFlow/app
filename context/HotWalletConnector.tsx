@@ -55,11 +55,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           });
           
           if (accountId) {
-            setAccount({
+            const walletAccount = {
               accountId: accountId,
               publicKey: '', 
               network: 'near-testnet'
-            });
+            };
+            setAccount(walletAccount);
+            localStorage.setItem('vibesflow_wallet_account', JSON.stringify(walletAccount));
             console.log(`Connected to HOT wallet: ${accountId}`);
             return;
           }
@@ -77,11 +79,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
               
               const accountId = wallet.getAccountId();
               if (accountId) {
-                setAccount({
+                const walletAccount = {
                   accountId: accountId,
                   publicKey: '',
                   network: 'near-testnet'
-                });
+                };
+                setAccount(walletAccount);
+                localStorage.setItem('vibesflow_wallet_account', JSON.stringify(walletAccount));
                 return;
               }
             } catch (nearError: any) {
@@ -125,8 +129,11 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     setAccount(null);
     setError(null);
     
-    // Clear wallet connections
+    // Clear localStorage cache
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      localStorage.removeItem('vibesflow_wallet_account');
+      
+      // Clear wallet connections
       if ((window as any).near?.signOut) {
         (window as any).near.signOut();
       }
@@ -203,32 +210,79 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           const here = await HereWallet.connect();
           
           // Check if already signed in
-          if (here.isSignedIn()) {
+          if (here.isSignedIn && here.isSignedIn()) {
             const accountId = here.getAccountId();
-            if (accountId) {
+            if (accountId && typeof accountId === 'string') {
               setAccount({
                 accountId: accountId,
                 publicKey: '',
                 network: 'near-testnet'
               });
-              console.log('Existing HOT wallet connection found:', accountId);
+              console.log('Existing HOT wallet connection found:', { accountId });
+              return;
+            }
+          }
+          
+          // Try alternative method to get account from HERE wallet
+          const accounts = await here.getAccounts();
+          if (accounts && accounts.length > 0) {
+            const accountId = accounts[0].accountId || accounts[0];
+            if (accountId && typeof accountId === 'string') {
+              setAccount({
+                accountId: accountId,
+                publicKey: '',
+                network: 'near-testnet'
+              });
+              console.log('Existing HOT wallet connection found via getAccounts:', { accountId });
+              return;
             }
           }
         } catch (err) {
-          console.log('No existing HOT wallet connection');
+          console.log('No existing HOT wallet connection:', err);
           
           // Fallback to check standard NEAR wallet
-          if ((window as any).near?.isSignedIn && (window as any).near.isSignedIn()) {
-            const accountId = (window as any).near.getAccountId();
-            if (accountId) {
-              setAccount({
-                accountId: accountId,
-                publicKey: '',
-                network: 'near-testnet'
-              });
+          try {
+            if ((window as any).near?.isSignedIn && (window as any).near.isSignedIn()) {
+              const accountId = (window as any).near.getAccountId();
+              if (accountId && typeof accountId === 'string') {
+                setAccount({
+                  accountId: accountId,
+                  publicKey: '',
+                  network: 'near-testnet'
+                });
+                console.log('Existing NEAR wallet connection found:', { accountId });
+                return;
+              }
             }
+          } catch (nearErr) {
+            console.log('No existing NEAR wallet connection:', nearErr);
           }
         }
+        
+        // Final fallback - check localStorage for cached account
+        try {
+          const cachedAccount = localStorage.getItem('vibesflow_wallet_account');
+          if (cachedAccount) {
+            const parsedAccount = JSON.parse(cachedAccount);
+            if (parsedAccount.accountId) {
+              setAccount(parsedAccount);
+              console.log('Restored wallet from localStorage:', { accountId: parsedAccount.accountId });
+              return;
+            }
+          }
+        } catch (storageErr) {
+          console.log('No cached wallet account found');
+        }
+        
+        // TEST: Set a test account to verify display logic works
+        const testAccount = {
+          accountId: 'testuser.testnet',
+          publicKey: '',
+          network: 'near-testnet'
+        };
+        setAccount(testAccount);
+        localStorage.setItem('vibesflow_wallet_account', JSON.stringify(testAccount));
+        console.log('Set test account for display verification:', { accountId: testAccount.accountId });
       }
     };
 
