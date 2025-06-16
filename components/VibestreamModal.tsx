@@ -9,11 +9,11 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  TouchableWithoutFeedback,
+  Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { COLORS, BRANDING } from '../theme';
+import { COLORS } from '../theme';
 import { GlitchText, GlitchContainer, AcidButton } from './ui';
 import { useWallet } from '../context/HotWalletConnector';
 
@@ -23,22 +23,40 @@ interface VibestreamModalProps {
 }
 
 type VibeMode = 'Solo' | 'Group';
-type VibeSchedule = 'Now' | 'Schedule';
-type SavePreference = 'Yes' | 'No';
+type VibeSchedule = 'Launch' | 'Schedule';
+type Step = 'mode' | 'group-config' | 'timing';
 
 const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) => {
   const { account, signTransaction } = useWallet();
   
+  const [currentStep, setCurrentStep] = useState<Step>('mode');
   const [mode, setMode] = useState<VibeMode>('Solo');
-  const [schedule, setSchedule] = useState<VibeSchedule>('Now');
-  const [save, setSave] = useState<SavePreference>('Yes');
+  const [schedule, setSchedule] = useState<VibeSchedule>('Launch');
+  const [storeToFilecoin, setStoreToFilecoin] = useState<boolean>(true);
   const [distance, setDistance] = useState<string>('50');
   const [seats, setSeats] = useState<string>('10');
   const [entryFee, setEntryFee] = useState<string>('0');
+  const [payPerStream, setPayPerStream] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   
-  const handleStart = async () => {
+  const handleNext = () => {
+    if (currentStep === 'mode' && mode === 'Group') {
+      setCurrentStep('group-config');
+    } else if (currentStep === 'group-config') {
+      setCurrentStep('timing');
+    }
+  };
+
+  const handleBack = () => {
+    if (currentStep === 'group-config') {
+      setCurrentStep('mode');
+    } else if (currentStep === 'timing') {
+      setCurrentStep(mode === 'Group' ? 'group-config' : 'mode');
+    }
+  };
+
+  const handleLaunch = async () => {
     setError(null);
     
     if (schedule === 'Schedule') {
@@ -51,20 +69,19 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       
       const config = {
         mode: mode,
-        saveHistory: save === 'Yes',
+        storeToFilecoin: mode === 'Solo' ? storeToFilecoin : true,
         distance: mode === 'Group' ? parseFloat(distance) : undefined,
         seats: mode === 'Group' ? parseInt(seats, 10) : undefined,
         entryFee: mode === 'Group' ? parseFloat(entryFee) : undefined,
+        payPerStream: mode === 'Group' ? payPerStream : undefined,
         accountId: account?.accountId
       };
       
-      console.log('Starting Vibestream with config:', config);
+      console.log('Launching Vibestream with config:', config);
       
-      // Simulate vibe session start on NEAR testnet
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       if (mode === 'Group' && parseFloat(entryFee) > 0) {
-        // For paid group sessions, execute NEAR transaction
         const transaction = {
           receiverId: 'vibesflow.testnet',
           actions: [{
@@ -75,10 +92,11 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
                 mode: mode.toLowerCase(),
                 entry_fee: entryFee,
                 max_participants: seats === '∞' ? null : parseInt(seats, 10),
-                distance_meters: parseFloat(distance)
+                distance_meters: parseFloat(distance),
+                pay_per_stream: payPerStream
               },
               gas: '30000000000000',
-              deposit: entryFee + '000000000000000000000000' // Convert to yoctoNEAR
+              deposit: entryFee + '000000000000000000000000'
             }
           }]
         };
@@ -87,123 +105,68 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       }
       
       setLoading(false);
-      onClose(); // Close modal after successful start
+      onClose();
       
     } catch (error) {
-      console.error('Error starting Vibestream:', error);
+      console.error('Error launching Vibestream:', error);
       setLoading(false);
-      setError('FAILED TO START VIBESTREAM. TRY AGAIN.');
+      setError('FAILED TO LAUNCH VIBESTREAM. TRY AGAIN.');
     }
   };
   
-  const renderModeSelection = () => (
-    <View style={styles.optionContainer}>
-      <GlitchText text="MODE" style={styles.optionTitle} intensity="low" />
+  const renderModeStep = () => (
+    <View style={styles.stepContainer}>
+      <GlitchText text="MODE" style={styles.stepTitle} intensity="low" />
+      
       <View style={styles.buttonsRow}>
         <TouchableOpacity
-          style={[styles.optionButton, mode === 'Solo' && styles.activeOptionButton]}
+          style={[styles.modeButton, mode === 'Solo' && styles.activeModeButton]}
           onPress={() => setMode('Solo')}
         >
-          <Text style={[styles.optionButtonText, mode === 'Solo' && styles.activeOptionButtonText]}>
+          <Text style={[styles.modeButtonText, mode === 'Solo' && styles.activeModeButtonText]}>
             SOLO
           </Text>
         </TouchableOpacity>
         
         <TouchableOpacity
-          style={[styles.optionButton, mode === 'Group' && styles.activeOptionButton]}
+          style={[styles.modeButton, mode === 'Group' && styles.activeModeButton]}
           onPress={() => setMode('Group')}
         >
-          <Text style={[styles.optionButtonText, mode === 'Group' && styles.activeOptionButtonText]}>
+          <Text style={[styles.modeButtonText, mode === 'Group' && styles.activeModeButtonText]}>
             GROUP
           </Text>
         </TouchableOpacity>
       </View>
-    </View>
-  );
-  
-  const renderGroupOptions = () => {
-    if (mode !== 'Group') return null;
-    
-    return (
-      <>
-        <View style={styles.optionContainer}>
-          <GlitchText text="DISTANCE (METERS)" style={styles.optionTitle} intensity="low" />
-          <TextInput
-            style={styles.textInput}
-            value={distance}
-            onChangeText={setDistance}
-            keyboardType="numeric"
-            placeholder="UP TO 50 METERS"
-            placeholderTextColor={COLORS.textTertiary}
-          />
+
+      {mode === 'Solo' && (
+        <View style={styles.checkboxContainer}>
+          <TouchableOpacity 
+            style={styles.checkbox}
+            onPress={() => setStoreToFilecoin(!storeToFilecoin)}
+          >
+            <View style={[styles.checkboxBox, storeToFilecoin && styles.checkboxChecked]}>
+              {storeToFilecoin && <FontAwesome name="check" size={12} color={COLORS.background} />}
+            </View>
+            <Text style={styles.checkboxText}>STORE TO FILECOIN</Text>
+          </TouchableOpacity>
         </View>
-        
-        <View style={styles.optionContainer}>
-          <GlitchText text="SEATS" style={styles.optionTitle} intensity="low" />
-          <View style={styles.entryRow}>
-            <TextInput
-              style={[styles.textInput, styles.entryInput]}
-              value={seats}
-              onChangeText={setSeats}
-              keyboardType="numeric"
-              placeholder="MAX PARTICIPANTS"
-              placeholderTextColor={COLORS.textTertiary}
-            />
-            
-            <TouchableOpacity
-              style={styles.noCap}
-              onPress={() => setSeats('∞')}
-            >
-              <Text style={styles.noCapText}>NO LIMIT</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-        
-        <View style={styles.optionContainer}>
-          <View style={styles.optionTitleRow}>
-            <GlitchText text="ENTRY FEE" style={styles.optionTitle} intensity="low" />
-            <Text style={styles.optionSubtitle}>(NEAR)</Text>
-          </View>
-          <View style={styles.entryRow}>
-            <TextInput
-              style={[styles.textInput, styles.entryInput]}
-              value={entryFee}
-              onChangeText={setEntryFee}
-              keyboardType="numeric"
-              placeholder="0.1"
-              placeholderTextColor={COLORS.textTertiary}
-            />
-            
-            <TouchableOpacity
-              style={styles.noCap}
-              onPress={() => setEntryFee('0')}
-            >
-              <Text style={styles.noCapText}>FREE</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </>
-    );
-  };
-  
-  const renderScheduleOptions = () => (
-    <View style={styles.optionContainer}>
-      <GlitchText text="TIMING" style={styles.optionTitle} intensity="low" />
-      <View style={styles.buttonsRow}>
+      )}
+
+      <View style={styles.timingButtons}>
         <TouchableOpacity
-          style={[styles.optionButton, schedule === 'Now' && styles.activeOptionButton]}
-          onPress={() => setSchedule('Now')}
+          style={[styles.timingButton, schedule === 'Launch' && styles.activeTimingButton]}
+          onPress={() => setSchedule('Launch')}
         >
-          <Text style={[styles.optionButtonText, schedule === 'Now' && styles.activeOptionButtonText]}>
-            NOW
+          <Text style={[styles.timingButtonText, schedule === 'Launch' && styles.activeTimingButtonText]}>
+            LAUNCH VIBESTREAM
           </Text>
         </TouchableOpacity>
         
         <TouchableOpacity
-          style={[styles.optionButton, schedule === 'Schedule' && styles.activeOptionButton]}
-          onPress={() => setSchedule('Schedule')}
+          style={[styles.timingButton, styles.disabledButton]}
+          disabled={true}
         >
-          <Text style={[styles.optionButtonText, schedule === 'Schedule' && styles.activeOptionButtonText]}>
+          <Text style={[styles.timingButtonText, styles.disabledButtonText]}>
             SCHEDULE
           </Text>
         </TouchableOpacity>
@@ -211,30 +174,86 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
     </View>
   );
   
-  const renderSaveOption = () => (
-    <View style={styles.optionContainer}>
-      <GlitchText text="SAVE TO BLOCKCHAIN" style={styles.optionTitle} intensity="low" />
-      <View style={styles.buttonsRow}>
-        <TouchableOpacity
-          style={[styles.optionButton, save === 'Yes' && styles.activeOptionButton]}
-          onPress={() => setSave('Yes')}
+  const renderGroupConfigStep = () => (
+    <View style={styles.stepContainer}>
+      <GlitchText text="GROUP CONFIGURATION" style={styles.stepTitle} intensity="low" />
+      
+      <View style={styles.configOption}>
+        <Text style={styles.configLabel}>DISTANCE (METERS)</Text>
+        <TextInput
+          style={styles.configInput}
+          value={distance}
+          onChangeText={setDistance}
+          keyboardType="numeric"
+          placeholder="50"
+          placeholderTextColor={COLORS.textTertiary}
+        />
+      </View>
+      
+      <View style={styles.configOption}>
+        <Text style={styles.configLabel}>SEATS</Text>
+        <View style={styles.inputRow}>
+          <TextInput
+            style={[styles.configInput, styles.flexInput]}
+            value={seats}
+            onChangeText={setSeats}
+            keyboardType="numeric"
+            placeholder="10"
+            placeholderTextColor={COLORS.textTertiary}
+          />
+          <TouchableOpacity
+            style={styles.quickButton}
+            onPress={() => setSeats('∞')}
+          >
+            <Text style={styles.quickButtonText}>NO LIMIT</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      <View style={styles.configOption}>
+        <Text style={styles.configLabel}>ENTRY FEE (NEAR)</Text>
+        <View style={styles.inputRow}>
+          <TextInput
+            style={[styles.configInput, styles.flexInput]}
+            value={entryFee}
+            onChangeText={setEntryFee}
+            keyboardType="numeric"
+            placeholder="0.1"
+            placeholderTextColor={COLORS.textTertiary}
+          />
+          <TouchableOpacity
+            style={styles.quickButton}
+            onPress={() => setEntryFee('0')}
+          >
+            <Text style={styles.quickButtonText}>FREE</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.checkboxContainer}>
+        <TouchableOpacity 
+          style={styles.checkbox}
+          onPress={() => setPayPerStream(!payPerStream)}
         >
-          <Text style={[styles.optionButtonText, save === 'Yes' && styles.activeOptionButtonText]}>
-            YES
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.optionButton, save === 'No' && styles.activeOptionButton]}
-          onPress={() => setSave('No')}
-        >
-          <Text style={[styles.optionButtonText, save === 'No' && styles.activeOptionButtonText]}>
-            NO
-          </Text>
+          <View style={[styles.checkboxBox, payPerStream && styles.checkboxChecked]}>
+            {payPerStream && <FontAwesome name="check" size={12} color={COLORS.background} />}
+          </View>
+          <Text style={styles.checkboxText}>PAY-PER-STREAM</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
+  
+  const renderCurrentStep = () => {
+    switch (currentStep) {
+      case 'mode':
+        return renderModeStep();
+      case 'group-config':
+        return renderGroupConfigStep();
+      default:
+        return renderModeStep();
+    }
+  };
   
   const renderErrorMessage = () => {
     if (!error) return null;
@@ -247,8 +266,24 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
     );
   };
   
+  const canProceed = () => {
+    if (currentStep === 'mode') {
+      return mode === 'Solo' || mode === 'Group';
+    }
+    return true;
+  };
+
   const handleOutsidePress = () => {
     if (loading) return;
+    onClose();
+  };
+
+  const handleModalClose = () => {
+    setCurrentStep('mode');
+    setMode('Solo');
+    setStoreToFilecoin(true);
+    setPayPerStream(false);
+    setError(null);
     onClose();
   };
   
@@ -257,92 +292,78 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       animationType="fade"
       transparent={true}
       visible={visible}
-      onRequestClose={onClose}
+      onRequestClose={handleModalClose}
     >
-      <TouchableWithoutFeedback onPress={handleOutsidePress}>
-        <View style={styles.modalOverlay}>
-          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <GlitchContainer 
-              style={styles.modalContainer}
-              intensity="medium"
-              borderColor={COLORS.primary}
-              backgroundColor={COLORS.background}
-            >
-              <LinearGradient
-                colors={[COLORS.backgroundLight, COLORS.background]}
-                style={styles.modalBackground}
-              />
-              
-              <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                style={styles.keyboardAvoidingView}
+      <Pressable style={styles.modalOverlay} onPress={handleOutsidePress}>
+        <Pressable style={styles.modalContainer} onPress={(e) => e.stopPropagation()}>
+          <GlitchContainer 
+            style={styles.modalContent}
+            intensity="low"
+            borderColor={COLORS.primary}
+            backgroundColor={COLORS.background}
+          >
+            <LinearGradient
+              colors={[COLORS.backgroundLight, COLORS.background]}
+              style={styles.modalBackground}
+            />
+            
+            <View style={styles.header}>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={handleModalClose}
+                disabled={loading}
               >
-                <View style={styles.headerContainer}>
-                  <GlitchText 
-                    text="VIBESTREAM" 
-                    style={styles.title} 
-                    intensity="high" 
-                  />
-                  <Text style={styles.subtitle}>
-                    POWERED BY {BRANDING.blockchain}
-                  </Text>
-                  
-                  <TouchableOpacity 
-                    style={styles.closeButton}
-                    onPress={onClose}
-                    disabled={loading}
-                  >
-                    <FontAwesome name="times" size={20} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </View>
-                
-                <ScrollView 
-                  style={styles.scrollContent}
-                  contentContainerStyle={styles.scrollContentContainer}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {renderErrorMessage()}
-                  {renderModeSelection()}
-                  {renderGroupOptions()}
-                  {renderScheduleOptions()}
-                  {renderSaveOption()}
-                  
-                  <View style={styles.accountInfo}>
-                    <Text style={styles.accountLabel}>CONNECTED:</Text>
-                    <Text style={styles.accountId}>
-                      {account?.accountId || 'NOT CONNECTED'}
-                    </Text>
-                  </View>
-                  
-                  <View style={styles.spacer} />
-                </ScrollView>
-                
-                <View style={styles.footer}>
-                  <AcidButton
-                    text="CANCEL"
-                    onPress={onClose}
-                    type="secondary"
-                    size="medium"
-                    style={styles.cancelButton}
-                    disabled={loading}
-                  />
-                  
-                  <AcidButton
-                    text={loading ? "STARTING..." : "START VIBING"}
-                    onPress={handleStart}
-                    type="primary"
-                    size="medium"
-                    disabled={loading}
-                    style={styles.startButton}
-                    showLoadingIndicator={loading}
-                    pulsate={!loading}
-                  />
-                </View>
-              </KeyboardAvoidingView>
-            </GlitchContainer>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+                <FontAwesome name="times" size={18} color={COLORS.primary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView 
+              style={styles.content}
+              contentContainerStyle={styles.contentContainer}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {renderErrorMessage()}
+              {renderCurrentStep()}
+            </ScrollView>
+            
+            <View style={styles.footer}>
+              {currentStep !== 'mode' && (
+                <AcidButton
+                  text="BACK"
+                  onPress={handleBack}
+                  type="secondary"
+                  size="medium"
+                  style={styles.backButton}
+                  disabled={loading}
+                />
+              )}
+              
+              {currentStep === 'mode' && mode === 'Group' ? (
+                <AcidButton
+                  text="NEXT"
+                  onPress={handleNext}
+                  type="primary"
+                  size="medium"
+                  style={styles.nextButton}
+                  disabled={!canProceed()}
+                />
+              ) : (
+                <AcidButton
+                  text={loading ? "LAUNCHING..." : "LAUNCH VIBESTREAM"}
+                  onPress={handleLaunch}
+                  type="primary"
+                  size="medium"
+                  disabled={loading || !canProceed() || schedule === 'Schedule'}
+                  style={styles.launchButton}
+                  showLoadingIndicator={loading}
+                  pulsate={!loading && canProceed() && schedule === 'Launch'}
+                />
+              )}
+            </View>
+          </GlitchContainer>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 };
@@ -356,8 +377,11 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     width: '90%',
-    maxWidth: 450,
+    maxWidth: 400,
     maxHeight: '85%',
+  },
+  modalContent: {
+    flex: 1,
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -366,120 +390,160 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  keyboardAvoidingView: {
-    flex: 1,
-    width: '100%',
-  },
-  headerContainer: {
-    padding: 20,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: `${COLORS.primary}40`,
-    alignItems: 'center',
-    position: 'relative',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    letterSpacing: 4,
-    color: COLORS.primary,
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    letterSpacing: 2,
-    fontWeight: '600',
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 15,
+    paddingBottom: 0,
   },
   closeButton: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    padding: 5,
+    padding: 8,
   },
-  scrollContent: {
+  content: {
     flex: 1,
   },
-  scrollContentContainer: {
+  contentContainer: {
     padding: 20,
-    paddingBottom: 10,
+    paddingTop: 10,
+    flexGrow: 1,
   },
-  optionContainer: {
-    marginBottom: 25,
+  stepContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
   },
-  optionTitle: {
-    fontSize: 14,
+  stepTitle: {
+    fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.primary,
-    marginBottom: 10,
+    marginBottom: 25,
     letterSpacing: 2,
-  },
-  optionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 10,
-  },
-  optionSubtitle: {
-    fontSize: 12,
-    color: COLORS.secondary,
-    marginLeft: 8,
-    letterSpacing: 1,
+    textAlign: 'center',
   },
   buttonsRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
+    marginBottom: 25,
   },
-  optionButton: {
+  modeButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 15,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     borderWidth: 1,
     borderColor: COLORS.textTertiary,
-    borderRadius: 4,
+    borderRadius: 6,
     alignItems: 'center',
   },
-  activeOptionButton: {
+  activeModeButton: {
     backgroundColor: `${COLORS.primary}20`,
     borderColor: COLORS.primary,
   },
-  optionButtonText: {
+  modeButtonText: {
+    color: COLORS.textSecondary,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 1,
+  },
+  activeModeButtonText: {
+    color: COLORS.primary,
+  },
+  checkboxContainer: {
+    marginBottom: 20,
+  },
+  checkbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: COLORS.textTertiary,
+    borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  checkboxText: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 1,
+  },
+  timingButtons: {
+    gap: 12,
+  },
+  timingButton: {
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderWidth: 1,
+    borderColor: COLORS.textTertiary,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  activeTimingButton: {
+    backgroundColor: `${COLORS.primary}20`,
+    borderColor: COLORS.primary,
+  },
+  disabledButton: {
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderColor: COLORS.textTertiary,
+    opacity: 0.5,
+  },
+  timingButtonText: {
     color: COLORS.textSecondary,
     fontSize: 14,
     fontWeight: '600',
     letterSpacing: 1,
   },
-  activeOptionButtonText: {
+  activeTimingButtonText: {
     color: COLORS.primary,
   },
-  textInput: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  disabledButtonText: {
+    color: COLORS.textTertiary,
+  },
+  configOption: {
+    marginBottom: 20,
+  },
+  configLabel: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  configInput: {
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     borderWidth: 1,
     borderColor: COLORS.textTertiary,
-    borderRadius: 4,
+    borderRadius: 6,
     padding: 12,
     color: COLORS.textPrimary,
     fontSize: 14,
     letterSpacing: 1,
   },
-  entryRow: {
+  inputRow: {
     flexDirection: 'row',
     gap: 10,
   },
-  entryInput: {
+  flexInput: {
     flex: 1,
   },
-  noCap: {
+  quickButton: {
     paddingVertical: 12,
     paddingHorizontal: 16,
     backgroundColor: `${COLORS.accent}20`,
     borderWidth: 1,
     borderColor: COLORS.accent,
-    borderRadius: 4,
+    borderRadius: 6,
     justifyContent: 'center',
   },
-  noCapText: {
+  quickButtonText: {
     color: COLORS.accent,
     fontSize: 12,
     fontWeight: '600',
@@ -491,7 +555,7 @@ const styles = StyleSheet.create({
     backgroundColor: `${COLORS.accent}20`,
     borderWidth: 1,
     borderColor: COLORS.accent,
-    borderRadius: 4,
+    borderRadius: 6,
     padding: 12,
     marginBottom: 20,
     gap: 8,
@@ -503,42 +567,22 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     flex: 1,
   },
-  accountInfo: {
-    marginTop: 10,
-    padding: 15,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    borderWidth: 1,
-    borderColor: `${COLORS.secondary}40`,
-    borderRadius: 4,
-  },
-  accountLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 10,
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  accountId: {
-    color: COLORS.secondary,
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
-  spacer: {
-    height: 20,
-  },
   footer: {
     flexDirection: 'row',
     padding: 20,
     paddingTop: 15,
-    gap: 15,
+    gap: 12,
     borderTopWidth: 1,
-    borderTopColor: `${COLORS.primary}40`,
+    borderTopColor: `${COLORS.primary}30`,
   },
-  cancelButton: {
+  backButton: {
     flex: 1,
   },
-  startButton: {
+  nextButton: {
     flex: 2,
+  },
+  launchButton: {
+    flex: 1,
   },
 });
 
