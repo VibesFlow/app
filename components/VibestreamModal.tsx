@@ -114,6 +114,19 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       {mode === 'solo' ? (
         <View>
           <Text style={styles.stepTitle}>SOLO SETTINGS</Text>
+          
+          <TouchableOpacity
+            style={styles.checkboxContainer}
+            onPress={() => setStoreToFilecoin(!storeToFilecoin)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, storeToFilecoin && styles.checkedBox]}>
+              {storeToFilecoin && (
+                <FontAwesome name="check" size={8} color={COLORS.background} />
+              )}
+            </View>
+            <Text style={styles.checkboxText}>Store to Filecoin</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <View>
@@ -194,38 +207,36 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
                   <Text style={styles.ynCheckboxText}>Y</Text>
                 </TouchableOpacity>
                 
-                {payPerStream && (
-                  <View style={styles.inputContainer}>
-                    <TextInput
-                      style={styles.textInput}
-                      value={streamPrice}
-                      onChangeText={setStreamPrice}
-                      placeholder="0"
-                      placeholderTextColor={COLORS.textTertiary}
-                      keyboardType="decimal-pad"
-                    />
-                    <Text style={styles.inputUnit}>$NEAR</Text>
-                  </View>
-                )}
+                <View style={[styles.priceInputContainer, !payPerStream && styles.disabledInput]}>
+                  <TextInput
+                    style={[styles.textInput, !payPerStream && styles.disabledTextInput]}
+                    value={streamPrice}
+                    onChangeText={setStreamPrice}
+                    placeholder="0"
+                    placeholderTextColor={!payPerStream ? COLORS.textTertiary : COLORS.textSecondary}
+                    keyboardType="decimal-pad"
+                    editable={payPerStream}
+                  />
+                  <Text style={[styles.inputUnit, !payPerStream && styles.disabledInputUnit]}>$NEAR</Text>
+                </View>
               </View>
             </View>
           </View>
 
+          <TouchableOpacity
+            style={styles.checkboxContainer}
+            onPress={() => setStoreToFilecoin(!storeToFilecoin)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, storeToFilecoin && styles.checkedBox]}>
+              {storeToFilecoin && (
+                <FontAwesome name="check" size={8} color={COLORS.background} />
+              )}
+            </View>
+            <Text style={styles.checkboxText}>Store to Filecoin</Text>
+          </TouchableOpacity>
         </View>
       )}
-      
-      <TouchableOpacity
-        style={styles.checkboxContainer}
-        onPress={() => setStoreToFilecoin(!storeToFilecoin)}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.checkbox, storeToFilecoin && styles.checkedBox]}>
-          {storeToFilecoin && (
-            <FontAwesome name="check" size={8} color={COLORS.background} />
-          )}
-        </View>
-        <Text style={styles.checkboxText}>Store to Filecoin</Text>
-      </TouchableOpacity>
 
       <View style={styles.actionButtonsRow}>
         <TouchableOpacity
@@ -495,6 +506,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 1,
+  },
+  priceInputContainer: {
+    width: 80,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  disabledInput: {
+    opacity: 0.4,
+    borderColor: COLORS.textSecondary,
+  },
+  disabledTextInput: {
+    color: COLORS.textSecondary,
+  },
+  disabledInputUnit: {
+    color: COLORS.textSecondary,
   },
   actionButtonsRow: {
     flexDirection: 'row',
