@@ -26,7 +26,7 @@ const generateGlitchLines = (count: number): GlitchLine[] => {
   return lines;
 };
 
-const glitchLines = generateGlitchLines(15);
+const glitchLines: GlitchLine[] = generateGlitchLines(15);
 
 interface SplashScreenProps {
   onStart: () => void;

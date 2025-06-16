@@ -5,8 +5,11 @@ import {
   Text, 
   Modal, 
   TouchableOpacity, 
+  ScrollView,
   ActivityIndicator,
-  Animated
+  Animated,
+  Linking,
+  TextInput
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
@@ -66,7 +69,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
   };
 
   const renderInitialScreen = () => (
-    <>
+    <View style={styles.modalContent}>
       <Text style={styles.modalDescription}>
         USE HOT WALLET TO CONNECT
       </Text>
@@ -78,7 +81,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
         disabled={connecting}
       >
         <LinearGradient
-          colors={['rgba(0,255,65,0.15)', 'rgba(0,0,0,0)']}
+          colors={['rgba(0,255,170,0.15)', 'rgba(0,0,0,0)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.buttonGradient}
@@ -89,22 +92,35 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
         </View>
       </TouchableOpacity>
 
-      {walletError && <Text style={styles.errorText}>{walletError}</Text>}
-    </>
+      {walletError && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{walletError}</Text>
+        </View>
+      )}
+    </View>
   );
 
   const renderConnectingScreen = () => (
-    <View style={styles.loadingContainer}>
-      <ActivityIndicator size="large" color={COLORS.primary} />
-      <GlitchText text="CONNECTING..." style={styles.loadingText} intensity="medium" />
-      <Text style={styles.infoText}>Approve the connection in your HOT Wallet app.</Text>
+    <View style={styles.modalContent}>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <GlitchText text="CONNECTING..." style={styles.loadingText} intensity="medium" />
+        <Text style={styles.infoText}>Approve the connection in your HOT Wallet app.</Text>
+      </View>
     </View>
   );
 
   const renderSuccessScreen = () => (
-    <View style={styles.successContainer}>
-      <FontAwesome name="check-circle" size={60} color={COLORS.primary} />
-      <GlitchText text="CONNECTED!" style={styles.successText} intensity="high" />
+    <View style={styles.modalContent}>
+      <View style={styles.successContainer}>
+        <FontAwesome name="check-circle" size={60} color={COLORS.primary} />
+        <GlitchText text="CONNECTED!" style={styles.successText} intensity="high" />
+        {account && (
+          <Text style={styles.walletAddress}>
+            {account.address.substring(0, 6)}...{account.address.substring(account.address.length - 4)}
+          </Text>
+        )}
+      </View>
     </View>
   );
 
@@ -132,16 +148,21 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
             style={styles.modalGradient}
           />
 
-          <TouchableOpacity 
-            style={styles.closeButton}
-            onPress={onClose}
-          >
-            <FontAwesome name="close" size={24} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-
-          <GlitchText text="VIBESYNC" style={styles.modalTitle} intensity="low" />
+          <View style={styles.modalHeader}>
+            <GlitchText text="VIBESYNC" style={styles.modalTitle} intensity="low" />
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={onClose}
+            >
+              <FontAwesome name="close" size={24} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
 
           {renderContent()}
+
+          <View style={styles.modalFooter}>
+            <Text style={styles.footerText}>SECURED BY BLOCKCHAIN TECHNOLOGY</Text>
+          </View>
 
         </Animated.View>
       </View>
@@ -157,105 +178,157 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContainer: {
-    width: '90%',
+    width: '85%',
     maxWidth: 400,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 255, 65, 0.3)',
-    padding: 25,
-    alignItems: 'center',
+    maxHeight: '80%',
+    borderRadius: 12,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: `rgba(0, 255, 170, 0.5)`,
+    // Add subtle border glow
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   },
   modalGradient: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+    width: '100%',
+    height: '100%',
   },
-  closeButton: {
-    position: 'absolute',
-    top: 15,
-    right: 15,
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: `rgba(0, 255, 170, 0.3)`,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
   modalTitle: {
-    fontSize: 28,
+    fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.primary,
+    textShadowColor: COLORS.primary,
+    textShadowRadius: 5,
+    textShadowOffset: { width: 0, height: 0 },
     letterSpacing: 4,
-    marginBottom: 10,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  modalContent: {
+    padding: 16,
   },
   modalDescription: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
+    fontSize: 14,
+    marginBottom: 16,
+    color: COLORS.textPrimary,
     textAlign: 'center',
-    marginBottom: 30,
     letterSpacing: 1,
   },
   optionButton: {
-    width: '100%',
-    paddingVertical: 15,
-    borderRadius: 10,
+    marginVertical: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: COLORS.primary,
-    marginBottom: 20,
-    overflow: 'hidden',
+    position: 'relative',
+  },
+  secondaryOptionButton: {
+    borderColor: COLORS.secondary,
+  },
+  accentOptionButton: {
+    borderColor: COLORS.accent,
   },
   buttonGradient: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+    width: '100%',
+    height: '100%',
   },
   buttonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 16,
   },
   buttonIcon: {
-    marginRight: 12,
+    marginRight: 8,
   },
   buttonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '600',
     color: COLORS.primary,
     letterSpacing: 2,
   },
-  errorText: {
+  secondaryButtonText: {
+    color: COLORS.secondary,
+  },
+  accentButtonText: {
     color: COLORS.accent,
-    marginTop: 15,
+  },
+  errorContainer: {
+    backgroundColor: 'rgba(255,0,0,0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,0,0,0.3)',
+  },
+  errorText: {
+    color: '#ff6b6b',
+    fontSize: 13,
+    marginBottom: 8,
     textAlign: 'center',
   },
   loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 40,
+    padding: 24,
   },
   loadingText: {
-    marginTop: 20,
-    fontSize: 18,
+    marginTop: 12,
     color: COLORS.primary,
+    fontSize: 14,
     letterSpacing: 2,
   },
   successContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 40,
+    padding: 24,
   },
   successText: {
-    marginTop: 20,
-    fontSize: 24,
-    fontWeight: 'bold',
+    marginTop: 12,
     color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: 'bold',
     letterSpacing: 3,
   },
-  infoText: {
-    fontSize: 14,
+  walletAddress: {
+    marginTop: 8,
     color: COLORS.textSecondary,
+    fontSize: 14,
+  },
+  infoText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 16,
     textAlign: 'center',
-    marginTop: 15,
-  }
+  },
+  modalFooter: {
+    padding: 12,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: `rgba(0, 255, 170, 0.3)`,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  footerText: {
+    fontSize: 10,
+    color: COLORS.accent,
+    opacity: 0.8,
+  },
 });
 
 export default ConnectModal; 
