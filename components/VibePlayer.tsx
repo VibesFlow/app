@@ -212,45 +212,50 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     };
   }, []);
 
-  // Advanced music generation based on sensor data
+  // Enhanced rave music generation system
   const generateAdvancedMusic = () => {
     if (!audioContextRef.current || !isStreaming) return;
 
     const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
     const normalizedMagnitude = Math.min(magnitude, 2) / 2;
 
-    // Dynamic BPM based on movement intensity
-    const newBpm = 120 + normalizedMagnitude * 60;
+    // Techno/Acid BPM range (128-140 BPM)
+    const newBpm = 128 + normalizedMagnitude * 12;
     
-    // Dynamic key changes based on sensor orientation
-    const keyShift = Math.floor(Math.abs(sensorData.y) * 12);
+    // Acid-style key changes
+    const keyShift = Math.floor(Math.abs(sensorData.y) * 7); // Pentatonic-ish
     
-    // Update music state
+    // Update music state with rave patterns
     setMusicState(prev => ({
       ...prev,
       bpm: newBpm,
-      currentChord: prev.scale.slice(0, 3).map(note => (note + keyShift) % 12)
+      currentChord: [0, 3, 7, 10].map(note => (note + keyShift) % 12) // Minor 7th chords
     }));
 
-    // Generate sophisticated bass line
-    const bassNote = musicState.bassLine[Math.floor(Date.now() / 500) % 4];
-    const bassFreq = 55 * Math.pow(2, (bassNote + keyShift) / 12);
-    
-    // Generate harmonic layers
-    const chordFreqs = musicState.currentChord.map(note => 
-      220 * Math.pow(2, (note + keyShift) / 12)
-    );
-
-    // Create oscillators for each layer
-    const createOscillator = (freq: number, type: OscillatorType, gain: number) => {
+    // Create sophisticated audio chain
+    const createRaveOscillator = (freq: number, type: OscillatorType, gain: number, detune: number = 0) => {
       const osc = audioContextRef.current.createOscillator();
       const gainNode = audioContextRef.current.createGain();
+      const distortion = audioContextRef.current.createWaveShaper();
+      
+      // Acid-style distortion curve
+      const samples = 44100;
+      const curve = new Float32Array(samples);
+      const amount = 50;
+      for (let i = 0; i < samples; i++) {
+        const x = (i * 2) / samples - 1;
+        curve[i] = ((3 + amount) * x * 20 * Math.PI / 180) / (Math.PI + amount * Math.abs(x));
+      }
+      distortion.curve = curve;
       
       osc.type = type;
       osc.frequency.value = freq;
+      osc.detune.value = detune;
       gainNode.gain.value = gain * normalizedMagnitude;
       
-      osc.connect(gainNode);
+      // Chain: osc -> distortion -> gain -> filter -> destination
+      osc.connect(distortion);
+      distortion.connect(gainNode);
       if (filterRef.current) {
         gainNode.connect(filterRef.current);
       } else {
@@ -270,18 +275,36 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     oscillatorsRef.current = [];
     gainNodesRef.current = [];
 
-    // Bass layer
-    const bass = createOscillator(bassFreq, 'sawtooth', 0.3);
-    
-    // Harmonic layers
-    chordFreqs.forEach((freq, i) => {
-      createOscillator(freq, 'sine', 0.15);
-      createOscillator(freq * 2, 'triangle', 0.08);
+    // Deep techno bass (40-80Hz)
+    const bassFreq = 40 + (keyShift % 4) * 10;
+    createRaveOscillator(bassFreq, 'sawtooth', 0.4);
+    createRaveOscillator(bassFreq * 2, 'triangle', 0.2, -10); // Sub-octave with detune
+
+    // Acid lead synth (200-800Hz) - TB-303 style
+    const leadFreq = 200 + keyShift * 50 + normalizedMagnitude * 200;
+    createRaveOscillator(leadFreq, 'sawtooth', 0.3, 7);
+    createRaveOscillator(leadFreq * 1.005, 'sawtooth', 0.25, -7); // Slight detune for width
+
+    // High-hat simulation (8kHz+)
+    if (normalizedMagnitude > 0.4) {
+      createRaveOscillator(8000 + Math.random() * 4000, 'square', 0.15);
+    }
+
+    // Rave stab chords
+    musicState.currentChord.forEach((note, i) => {
+      const stabFreq = 440 * Math.pow(2, note / 12);
+      createRaveOscillator(stabFreq, 'square', 0.1, i * 3);
     });
 
-    // High frequency sparkle based on Z-axis
-    if (Math.abs(sensorData.z) > 0.3) {
-      createOscillator(880 + Math.abs(sensorData.z) * 440, 'square', 0.1);
+    // Motion-reactive elements
+    if (Math.abs(sensorData.x) > 0.5) {
+      // X-axis triggers acid sweeps
+      createRaveOscillator(1000 + normalizedMagnitude * 1000, 'sawtooth', 0.2, 15);
+    }
+    
+    if (Math.abs(sensorData.z) > 0.6) {
+      // Z-axis triggers breaks/glitches
+      createRaveOscillator(2000 + Math.random() * 2000, 'square', 0.25);
     }
 
     // Start all oscillators
@@ -289,18 +312,23 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       osc.start();
     });
 
-    // Update filter based on movement
+    // Dynamic filter sweep (TB-303 style)
     if (filterRef.current) {
-      filterRef.current.frequency.value = 400 + normalizedMagnitude * 1200;
-      filterRef.current.Q.value = 1 + normalizedMagnitude * 10;
+      const cutoffFreq = 200 + normalizedMagnitude * 2000 + Math.sin(Date.now() / 200) * 500;
+      const resonance = 5 + normalizedMagnitude * 15;
+      
+      filterRef.current.frequency.value = cutoffFreq;
+      filterRef.current.Q.value = resonance;
+      filterRef.current.type = 'lowpass';
     }
 
-    // Schedule next generation
+    // Longer duration for continuous rave feel
+    const duration = 800 + Math.random() * 400;
     setTimeout(() => {
       oscillatorsRef.current.forEach(osc => {
         try { osc.stop(); } catch (e) {}
       });
-    }, 200 + Math.random() * 300);
+    }, duration);
   };
 
   // Process sensor data and update music
@@ -311,15 +339,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
     setCurrentAmplitude(amplitude);
     setCurrentFrequency(frequency);
-
-    // Generate music continuously when streaming
-    if (isStreaming) {
-      if (Platform.OS === 'web') {
-        generateAdvancedMusic();
-      } else {
-        generateMobilePattern();
-      }
-    }
 
     // Update waveform animation
     Animated.timing(waveformAnimation, {
@@ -336,6 +355,21 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }).start();
 
   }, [sensorData, isStreaming]);
+
+  // Separate effect for music generation to prevent infinite loops
+  useEffect(() => {
+    if (!isStreaming) return;
+
+    const musicInterval = setInterval(() => {
+      if (Platform.OS === 'web') {
+        generateAdvancedMusic();
+      } else {
+        generateMobilePattern();
+      }
+    }, 200);
+
+    return () => clearInterval(musicInterval);
+  }, [isStreaming]);
 
   // Stream duration tracking
   useEffect(() => {
