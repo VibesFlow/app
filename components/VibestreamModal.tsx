@@ -23,7 +23,7 @@ interface VibestreamModalProps {
 
 type VibestreamMode = 'solo' | 'group';
 
-const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) => {
+const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onLaunchVibePlayer }) => {
   const [step, setStep] = useState(1);
   const [mode, setMode] = useState<VibestreamMode>('solo');
   const [storeToFilecoin, setStoreToFilecoin] = useState(true);
@@ -69,7 +69,14 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
       ticketAmount: mode === 'group' ? ticketAmount : undefined,
       streamPrice: mode === 'group' ? streamPrice : undefined,
     });
-    onClose();
+    
+    if (mode === 'solo') {
+      onClose();
+      onLaunchVibePlayer();
+    } else {
+      // For group mode, just close for now (can be expanded later)
+      onClose();
+    }
   };
 
   const isLaunchDisabled = () => {

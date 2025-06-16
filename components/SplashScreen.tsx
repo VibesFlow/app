@@ -32,9 +32,10 @@ const glitchLines: GlitchLine[] = generateGlitchLines(15);
 
 interface SplashScreenProps {
   onStart: () => void;
+  onLaunchVibePlayer: () => void;
 }
 
-const SplashScreen: React.FC<SplashScreenProps> = ({ onStart }) => {
+const SplashScreen: React.FC<SplashScreenProps> = ({ onStart, onLaunchVibePlayer }) => {
   const [connectModalVisible, setConnectModalVisible] = useState(false);
   const [vibestreamModalVisible, setVibestreamModalVisible] = useState(false);
   const [showDisconnectDropdown, setShowDisconnectDropdown] = useState(false);
@@ -170,6 +171,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onStart }) => {
       <VibestreamModal
         visible={vibestreamModalVisible}
         onClose={() => setVibestreamModalVisible(false)}
+        onLaunchVibePlayer={onLaunchVibePlayer}
       />
     </View>
   );

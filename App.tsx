@@ -1,18 +1,33 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import SplashScreen from './components/SplashScreen';
+import VibePlayer from './components/VibePlayer';
 import { COLORS } from './theme';
 import { WalletProvider } from './context/HotWalletConnector';
 
+type AppScreen = 'splash' | 'main' | 'vibe-player';
+
 function AppContent() {
-  const [showSplash, setShowSplash] = useState(true);
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
 
   const handleStart = () => {
-    setShowSplash(false);
+    setCurrentScreen('main');
   };
 
-  if (showSplash) {
-    return <SplashScreen onStart={handleStart} />;
+  const handleLaunchVibePlayer = () => {
+    setCurrentScreen('vibe-player');
+  };
+
+  const handleBackFromVibePlayer = () => {
+    setCurrentScreen('main');
+  };
+
+  if (currentScreen === 'splash') {
+    return <SplashScreen onStart={handleStart} onLaunchVibePlayer={handleLaunchVibePlayer} />;
+  }
+
+  if (currentScreen === 'vibe-player') {
+    return <VibePlayer onBack={handleBackFromVibePlayer} />;
   }
 
   return (
