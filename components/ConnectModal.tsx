@@ -105,7 +105,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
           style={styles.buttonGradient}
         />
         <View style={styles.buttonContent}>
-          <FontAwesome name="wallet" size={18} color={COLORS.secondary} style={styles.buttonIcon} />
+          <FontAwesome name="mobile" size={18} color={COLORS.secondary} style={styles.buttonIcon} />
           <Text style={[styles.buttonText, styles.secondaryButtonText]}>HERE WALLET</Text>
         </View>
       </TouchableOpacity>

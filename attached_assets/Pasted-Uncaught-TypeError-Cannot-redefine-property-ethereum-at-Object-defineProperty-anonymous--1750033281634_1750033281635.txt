@@ -1,0 +1,42 @@
+Uncaught TypeError: Cannot redefine property: ethereum
+    at Object.defineProperty (<anonymous>)
+    at r.inject (evmAsk.js:5:5093)
+    at SP.window.addEventListener.once (evmAsk.js:5:9013)Understand this error
+react-dom-client.development.js:24594 Download the React DevTools for a better development experience: https://react.dev/link/react-devtools
+index.js:24 "shadow*" style props are deprecated. Use "boxShadow".
+warnOnce @ index.js:24Understand this warning
+index.js:24 "textShadow*" style props are deprecated. Use "textShadow".
+warnOnce @ index.js:24Understand this warning
+index.js:71 Running application "main" with appParams:
+ Object 
+Development-level warnings: ON.
+Performance optimizations: OFF.
+HotWalletConnector.tsx:181 No existing HOT wallet connection
+2createIconSet.js:41 "wallet" is not a valid icon name for family "FontAwesome"
+render @ createIconSet.js:41Understand this warning
+assets/:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+createIconSet.js:30 Uncaught (in promise) NetworkError: A network error occurred.Understand this error
+HotWalletConnector.tsx:80 HOT wallet connection error: TypeError: (0 , crypto_2.randomBytes) is not a function
+    at HereWallet.<anonymous> (wallet.js:228:57)
+    at Generator.next (<anonymous>)
+    at GlitchText.tsx:64:34
+    at new Promise (<anonymous>)
+    at __awaiter (GlitchText.tsx:39:9)
+    at HereWallet.authenticate (wallet.js:226:69)
+    at HotWalletConnector.tsx:66:42
+(anonymous) @ HotWalletConnector.tsx:80Understand this error
+createIconSet.js:41 "wallet" is not a valid icon name for family "FontAwesome"
+render @ createIconSet.js:41Understand this warning
+HotWalletConnector.tsx:80 HOT wallet connection error: TypeError: (0 , crypto_2.randomBytes) is not a function
+    at HereWallet.<anonymous> (wallet.js:228:57)
+    at Generator.next (<anonymous>)
+    at GlitchText.tsx:64:34
+    at new Promise (<anonymous>)
+    at __awaiter (GlitchText.tsx:39:9)
+    at HereWallet.authenticate (wallet.js:226:69)
+    at HotWalletConnector.tsx:66:42
+(anonymous) @ HotWalletConnector.tsx:80Understand this error
+createIconSet.js:41 "wallet" is not a valid icon name for family "FontAwesome"

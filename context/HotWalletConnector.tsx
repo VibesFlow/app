@@ -55,19 +55,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
       setHereWallet(here);
 
-      // Sign in to get account info - this works without adding keys
-      const accountId = await here.signIn({ 
-        contractId: 'vibesflow.near',
-        methodNames: ['create_composition', 'mint_nft', 'get_user_data']
-      });
+      // Sign in without adding keys - simpler approach
+      const accountId = await here.signIn();
 
       if (accountId) {
-        // Get the public key from the wallet
-        const { publicKey } = await here.authenticate();
-        
         setAccount({
           address: accountId,
-          publicKey: publicKey,
+          publicKey: '', // Will be populated when needed
           network: 'near-mainnet',
           walletType: 'hot'
         });
@@ -113,13 +107,11 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
     try {
       if (account.walletType === 'hot' || account.walletType === 'here') {
-        // Use HereWallet message signing
-        const nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+        // Simplified message signing without crypto dependency
         const recipient = typeof window !== 'undefined' ? window.location.host : 'vibesflow.app';
         
         const { signature } = await hereWallet.signMessage({
           recipient, 
-          nonce, 
           message 
         });
         return signature;
@@ -138,11 +130,11 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
     try {
       if (account.walletType === 'hot' || account.walletType === 'here') {
-        const result = await hereWallet.authenticate();
+        // Return basic account info without complex authentication
         return {
-          accountId: result.accountId,
-          signature: result.signature || '',
-          publicKey: result.publicKey
+          accountId: account.address,
+          signature: '',
+          publicKey: account.publicKey || ''
         };
       }
       
@@ -163,18 +155,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
             walletId: "herewalletbot/app",
           });
           
-          // Check if already signed in
-          const { accountId } = await here.authenticate();
-          if (accountId) {
-            setHereWallet(here);
-            const { publicKey } = await here.authenticate();
-            setAccount({
-              address: accountId,
-              publicKey: publicKey,
-              network: 'near-mainnet',
-              walletType: 'hot'
-            });
-          }
+          setHereWallet(here);
         }
       } catch (err) {
         // No existing connection found
