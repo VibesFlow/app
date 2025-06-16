@@ -164,7 +164,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
                 <View style={styles.createButton}>
                   <FontAwesome5 
                     name="plus" 
-                    size={32} 
+                    size={40} 
                     color={COLORS.primary} 
                   />
                 </View>
@@ -287,17 +287,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingTop: 60,
     paddingBottom: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.primary + '20',
   },
   backButton: {
     padding: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.textSecondary + '40',
   },
   headerTitle: {
     flex: 1,
     textAlign: 'center',
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '700',
     color: COLORS.text,
-    letterSpacing: 2,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
   },
   placeholder: {
     width: 40,
@@ -309,6 +314,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.accent + '20',
   },
   avatarContainer: {
     marginBottom: SPACING.lg,
@@ -319,16 +326,16 @@ const styles = StyleSheet.create({
   avatar: {
     width: 120,
     height: 120,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.backgroundLight,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: COLORS.primary,
     position: 'relative',
   },
   profileImage: {
-    width: 118,
-    height: 118,
+    width: 116,
+    height: 116,
     resizeMode: 'cover',
   },
   uploadingOverlay: {
@@ -337,38 +344,40 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   accountName: {
-    fontSize: FONT_SIZES.xl,
+    fontSize: FONT_SIZES.xxl,
     fontWeight: '700',
     color: COLORS.text,
     marginBottom: SPACING.xs,
-    letterSpacing: 1,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
   },
   accountType: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.accent,
     marginBottom: SPACING.lg,
-    letterSpacing: 1,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
   },
   statsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.backgroundSecondary,
+    backgroundColor: COLORS.backgroundLight,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
-    borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.primary + '40',
+    borderColor: COLORS.primary,
+    marginTop: SPACING.md,
   },
   statItem: {
     alignItems: 'center',
   },
   statValue: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.xl,
     fontWeight: '700',
     color: COLORS.primary,
     fontFamily: 'monospace',
@@ -377,16 +386,18 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.xs,
     color: COLORS.textSecondary,
     marginTop: 2,
-    letterSpacing: 1,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
   },
   statDivider: {
     width: 1,
-    height: 30,
-    backgroundColor: COLORS.primary + '40',
+    height: 40,
+    backgroundColor: COLORS.primary,
     marginHorizontal: SPACING.lg,
   },
   vibestreamsSection: {
     paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.xl,
     paddingBottom: SPACING.xl,
   },
   sectionTitle: {
@@ -394,13 +405,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.text,
     marginBottom: SPACING.xs,
-    letterSpacing: 2,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
   },
   sectionSubtitle: {
     fontSize: FONT_SIZES.xs,
     color: COLORS.textSecondary,
     marginBottom: SPACING.lg,
-    letterSpacing: 1,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
   },
   grid: {
     flexDirection: 'row',
@@ -413,14 +426,13 @@ const styles = StyleSheet.create({
   },
   gridItemContainer: {
     height: 120,
-    borderRadius: 8,
     overflow: 'hidden',
   },
   createButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.backgroundLight,
     borderWidth: 1,
     borderColor: COLORS.primary,
   },
@@ -430,32 +442,38 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: COLORS.backgroundSecondary,
     borderWidth: 1,
-    borderColor: COLORS.accent + '40',
+    borderColor: COLORS.accent,
     padding: SPACING.sm,
   },
   vibestreamTitle: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text,
-    fontWeight: '600',
+    fontWeight: '700',
     marginTop: SPACING.xs,
     textAlign: 'center',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   vibestreamDate: {
     fontSize: FONT_SIZES.xs,
     color: COLORS.textSecondary,
     marginTop: 2,
+    letterSpacing: 1,
   },
   brandFooter: {
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.xl,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.secondary + '20',
   },
   brandText: {
     fontSize: FONT_SIZES.xs,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    letterSpacing: 1,
-    lineHeight: 16,
+    letterSpacing: 2,
+    lineHeight: 18,
+    textTransform: 'uppercase',
   },
 });
 

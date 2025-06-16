@@ -30,11 +30,15 @@ function AppContent() {
   };
 
   const handleBackToMain = () => {
-    setCurrentScreen('main');
+    setCurrentScreen('splash');
+  };
+
+  const handleOpenProfile = () => {
+    setCurrentScreen('profile');
   };
 
   if (currentScreen === 'splash') {
-    return <SplashScreen onStart={handleStart} onLaunchVibePlayer={handleLaunchVibePlayer} />;
+    return <SplashScreen onStart={handleStart} onLaunchVibePlayer={handleLaunchVibePlayer} onOpenProfile={handleOpenProfile} />;
   }
 
   if (currentScreen === 'loading') {

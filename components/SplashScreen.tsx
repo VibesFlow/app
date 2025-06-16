@@ -33,9 +33,10 @@ const glitchLines: GlitchLine[] = generateGlitchLines(15);
 interface SplashScreenProps {
   onStart: () => void;
   onLaunchVibePlayer: () => void;
+  onOpenProfile: () => void;
 }
 
-const SplashScreen: React.FC<SplashScreenProps> = ({ onStart, onLaunchVibePlayer }) => {
+const SplashScreen: React.FC<SplashScreenProps> = ({ onStart, onLaunchVibePlayer, onOpenProfile }) => {
   const [connectModalVisible, setConnectModalVisible] = useState(false);
   const [vibestreamModalVisible, setVibestreamModalVisible] = useState(false);
   const [showDisconnectDropdown, setShowDisconnectDropdown] = useState(false);
@@ -63,6 +64,11 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onStart, onLaunchVibePlayer
 
   const handleDisconnect = () => {
     disconnect();
+    setShowDisconnectDropdown(false);
+  };
+
+  const handleOpenProfile = () => {
+    onOpenProfile();
     setShowDisconnectDropdown(false);
   };
   
@@ -127,11 +133,18 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onStart, onLaunchVibePlayer
         {showDisconnectDropdown && connected && (
           <View style={styles.disconnectDropdown}>
             <TouchableOpacity 
-              style={styles.disconnectButton}
+              style={styles.dropdownButton}
+              onPress={handleOpenProfile}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.dropdownText}>PROFILE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.dropdownButton}
               onPress={handleDisconnect}
               activeOpacity={0.7}
             >
-              <Text style={styles.disconnectText}>DISCONNECT</Text>
+              <Text style={styles.dropdownText}>DISCONNECT</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -246,22 +259,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 45,
     right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    backgroundColor: COLORS.backgroundLight,
     borderWidth: 1,
-    borderColor: COLORS.accent,
-    borderRadius: 4,
+    borderColor: COLORS.primary,
     padding: 4,
-    minWidth: 120,
+    minWidth: 140,
   },
-  disconnectButton: {
-    padding: 8,
+  dropdownButton: {
+    padding: 12,
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.primary + '20',
   },
-  disconnectText: {
-    color: COLORS.accent,
+  dropdownText: {
+    color: COLORS.primary,
     fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
+    fontWeight: '700',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
   },
   logoContainer: {
     alignItems: 'center',
