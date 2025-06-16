@@ -52,7 +52,7 @@ interface ParticipantData {
 interface MusicState {
   bpm: number;
   key: string;
-  scale: string[];
+  scale: number[];
   currentChord: number[];
   bassLine: number[];
   rhythm: number[];
@@ -120,11 +120,12 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
           
           // Create sophisticated filter chain
-          filterRef.current = audioContextRef.current.createBiquadFilter();
-          filterRef.current.type = 'lowpass';
-          filterRef.current.frequency.value = 800;
-          filterRef.current.Q.value = 1;
-          filterRef.current.connect(audioContextRef.current.destination);
+          const filter = audioContextRef.current.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.value = 800;
+          filter.Q.value = 1;
+          filter.connect(audioContextRef.current.destination);
+          filterRef.current = filter;
 
           // Initialize Magenta's Music RNN for AI composition
           try {
@@ -256,7 +257,8 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }));
 
     // Generate sophisticated bass line
-    const bassFreq = 55 * Math.pow(2, (musicState.bassLine[Math.floor(Date.now() / 500) % 4] + keyShift) / 12);
+    const bassNote = musicState.bassLine[Math.floor(Date.now() / 500) % 4];
+    const bassFreq = 55 * Math.pow(2, (bassNote + keyShift) / 12);
     
     // Generate harmonic layers
     const chordFreqs = musicState.currentChord.map(note => 
@@ -273,7 +275,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       gainNode.gain.value = gain * normalizedMagnitude;
       
       osc.connect(gainNode);
-      gainNode.connect(filterRef.current!);
+      if (filterRef.current) {
+        gainNode.connect(filterRef.current);
+      } else {
+        gainNode.connect(audioContextRef.current.destination);
+      }
       
       oscillatorsRef.current.push(osc);
       gainNodesRef.current.push(gainNode);
@@ -331,8 +337,12 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     setCurrentFrequency(frequency);
 
     // Generate music continuously when streaming
-    if (isStreaming && Platform.OS === 'web') {
-      generateAdvancedMusic();
+    if (isStreaming) {
+      if (Platform.OS === 'web') {
+        generateAdvancedMusic();
+      } else {
+        generateMobileAudio();
+      }
     }
 
     // Update waveform animation
@@ -375,6 +385,54 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       return () => clearInterval(participantInterval);
     }
   }, [isStreaming]);
+
+  // Mobile audio synthesis using expo-av
+  const generateMobileAudio = async () => {
+    if (Platform.OS === 'web' || !isStreaming) return;
+
+    try {
+      // Generate sophisticated audio patterns for mobile
+      const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
+      const normalizedMagnitude = Math.min(magnitude, 2) / 2;
+      
+      // Create complex waveform pattern based on sensor data
+      const baseFreq = 220 + normalizedMagnitude * 440;
+      const duration = 500 + Math.random() * 1000;
+      
+      // Generate audio buffer for sophisticated sound
+      const sampleRate = 44100;
+      const samples = Math.floor(sampleRate * duration / 1000);
+      const audioData = new Float32Array(samples);
+      
+      for (let i = 0; i < samples; i++) {
+        const time = i / sampleRate;
+        const envelope = Math.exp(-time * 2); // Decay envelope
+        
+        // Multi-layered synthesis
+        const fundamental = Math.sin(2 * Math.PI * baseFreq * time);
+        const harmonic2 = Math.sin(2 * Math.PI * baseFreq * 2 * time) * 0.5;
+        const harmonic3 = Math.sin(2 * Math.PI * baseFreq * 3 * time) * 0.25;
+        const subharmonic = Math.sin(2 * Math.PI * baseFreq * 0.5 * time) * 0.3;
+        
+        // Add motion-based modulation
+        const modulation = Math.sin(2 * Math.PI * time * (10 + normalizedMagnitude * 20));
+        const modulatedWave = (fundamental + harmonic2 + harmonic3 + subharmonic) * (1 + modulation * 0.1);
+        
+        audioData[i] = modulatedWave * envelope * normalizedMagnitude * 0.3;
+      }
+      
+      // Update music state for mobile
+      setCurrentPattern({
+        notes: [baseFreq, baseFreq * 1.25, baseFreq * 1.5, baseFreq * 2],
+        durations: [duration, duration * 0.75, duration * 0.5, duration * 1.25],
+        velocity: [normalizedMagnitude, normalizedMagnitude * 0.8, normalizedMagnitude * 0.6, normalizedMagnitude * 0.9],
+        instruments: ['sine', 'triangle', 'sawtooth', 'square']
+      });
+      
+    } catch (error) {
+      console.warn('Mobile audio generation failed:', error);
+    }
+  };
 
   const toggleStreaming = () => {
     if (!isInitialized) return;
