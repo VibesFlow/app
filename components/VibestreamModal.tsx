@@ -136,21 +136,25 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
           </TouchableOpacity>
 
           <View style={styles.actionButtons}>
-            <Button
-              text="LAUNCH VIBESTREAM"
+            <TouchableOpacity
+              style={[styles.actionButton, isLaunchDisabled() && styles.disabledButton]}
               onPress={handleLaunchVibestream}
-              type="primary"
-              size="large"
               disabled={isLaunchDisabled()}
-            />
-            <Button
-              text="SCHEDULE"
-              onPress={() => {}}
-              type="secondary"
-              size="large"
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.actionButtonText, isLaunchDisabled() && styles.disabledText]}>
+                LAUNCH VIBESTREAM
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.disabledButton]}
               disabled={true}
-              style={styles.disabledButton}
-            />
+              activeOpacity={1}
+            >
+              <Text style={[styles.actionButtonText, styles.disabledText]}>
+                SCHEDULE
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -237,28 +241,32 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
         >
           <View style={[styles.checkbox, storeToFilecoin && styles.checkedBox]}>
             {storeToFilecoin && (
-              <FontAwesome name="check" size={12} color={COLORS.background} />
+              <FontAwesome name="check" size={10} color={COLORS.background} />
             )}
           </View>
           <Text style={styles.checkboxText}>Store to Filecoin</Text>
         </TouchableOpacity>
 
         <View style={styles.actionButtons}>
-          <Button
-            text="LAUNCH VIBESTREAM"
+          <TouchableOpacity
+            style={[styles.actionButton, isLaunchDisabled() && styles.disabledButton]}
             onPress={handleLaunchVibestream}
-            type="primary"
-            size="large"
             disabled={isLaunchDisabled()}
-          />
-          <Button
-            text="SCHEDULE"
-            onPress={() => {}}
-            type="secondary"
-            size="large"
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.actionButtonText, isLaunchDisabled() && styles.disabledText]}>
+              LAUNCH VIBESTREAM
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.disabledButton]}
             disabled={true}
-            style={styles.disabledButton}
-          />
+            activeOpacity={1}
+          >
+            <Text style={[styles.actionButtonText, styles.disabledText]}>
+              SCHEDULE
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
@@ -328,17 +336,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContainer: {
-    width: width * 0.9,
-    maxWidth: 400,
-    maxHeight: height * 0.8,
+    width: width * 0.85,
+    maxWidth: 350,
+    maxHeight: height * 0.7,
   },
   modalContent: {
-    borderRadius: 8,
+    borderRadius: 4,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
   },
   gradientBackground: {
-    padding: SPACING.large,
-    minHeight: 400,
+    padding: SPACING.lg,
+    minHeight: 300,
   },
   closeButton: {
     position: 'absolute',
@@ -353,14 +363,14 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.medium,
   },
   modalTitle: {
-    fontSize: FONT_SIZES.large,
+    fontSize: FONT_SIZES.xl,
     fontWeight: '900',
     color: COLORS.primary,
     textAlign: 'center',
-    marginBottom: SPACING.small,
+    marginBottom: SPACING.sm,
   },
   modalSubtitle: {
-    fontSize: FONT_SIZES.small,
+    fontSize: FONT_SIZES.sm,
     color: COLORS.textSecondary,
     textAlign: 'center',
     letterSpacing: 1,
@@ -369,40 +379,40 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   stepTitle: {
-    fontSize: FONT_SIZES.medium,
+    fontSize: FONT_SIZES.md,
     fontWeight: '700',
-    color: COLORS.secondary,
+    color: COLORS.primary,
     textAlign: 'center',
-    marginBottom: SPACING.large,
+    marginBottom: SPACING.lg,
     letterSpacing: 2,
   },
   modeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: SPACING.large,
-    gap: SPACING.medium,
+    marginBottom: SPACING.lg,
+    gap: SPACING.md,
   },
   modeButton: {
     flex: 1,
-    paddingVertical: SPACING.medium,
-    paddingHorizontal: SPACING.large,
-    borderWidth: 2,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderWidth: 1,
     borderColor: COLORS.primary,
     backgroundColor: 'transparent',
     alignItems: 'center',
   },
   selectedMode: {
-    borderColor: COLORS.secondary,
-    backgroundColor: 'rgba(255, 0, 160, 0.1)',
+    borderColor: COLORS.primary,
+    backgroundColor: 'rgba(0, 255, 65, 0.1)',
   },
   modeText: {
-    fontSize: FONT_SIZES.medium,
+    fontSize: FONT_SIZES.sm,
     fontWeight: '700',
     color: COLORS.primary,
-    letterSpacing: 2,
+    letterSpacing: 1,
   },
   selectedModeText: {
-    color: COLORS.secondary,
+    color: COLORS.primary,
   },
   optionsContainer: {
     marginTop: SPACING.medium,
@@ -410,98 +420,116 @@ const styles = StyleSheet.create({
   checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.large,
-    paddingVertical: SPACING.small,
+    marginBottom: SPACING.lg,
+    paddingVertical: SPACING.sm,
   },
   checkbox: {
-    width: 20,
-    height: 20,
-    borderWidth: 2,
+    width: 16,
+    height: 16,
+    borderWidth: 1,
     borderColor: COLORS.primary,
-    marginRight: SPACING.medium,
+    marginRight: SPACING.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkedBox: {
-    backgroundColor: COLORS.secondary,
-    borderColor: COLORS.secondary,
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   checkboxText: {
-    fontSize: FONT_SIZES.small,
-    color: COLORS.text,
-    fontWeight: '600',
-    letterSpacing: 1,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textPrimary,
+    fontWeight: '500',
+    letterSpacing: 0.5,
   },
   actionButtons: {
-    gap: SPACING.medium,
+    gap: SPACING.md,
+  },
+  actionButton: {
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+  },
+  actionButtonText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: COLORS.primary,
+    letterSpacing: 1,
   },
   disabledButton: {
-    opacity: 0.5,
+    opacity: 0.3,
+    borderColor: COLORS.textSecondary,
+  },
+  disabledText: {
+    color: COLORS.textSecondary,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.large,
-    paddingVertical: SPACING.small,
+    marginBottom: SPACING.lg,
+    paddingVertical: SPACING.sm,
   },
   backText: {
-    fontSize: FONT_SIZES.small,
+    fontSize: FONT_SIZES.sm,
     color: COLORS.primary,
     fontWeight: '600',
-    marginLeft: SPACING.small,
-    letterSpacing: 1,
+    marginLeft: SPACING.sm,
+    letterSpacing: 0.5,
   },
   settingsContainer: {
-    gap: SPACING.large,
+    gap: SPACING.md,
   },
   inputGroup: {
     position: 'relative',
   },
   inputLabel: {
-    fontSize: FONT_SIZES.small,
-    color: COLORS.secondary,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.primary,
     fontWeight: '600',
-    marginBottom: SPACING.small,
-    letterSpacing: 1,
+    marginBottom: SPACING.sm,
+    letterSpacing: 0.5,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: COLORS.primary,
-    paddingHorizontal: SPACING.medium,
-    paddingVertical: SPACING.small,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   textInput: {
     flex: 1,
-    fontSize: FONT_SIZES.medium,
-    color: COLORS.text,
-    fontWeight: '600',
-    paddingVertical: SPACING.small,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textPrimary,
+    fontWeight: '500',
+    paddingVertical: SPACING.sm,
   },
   inputUnit: {
-    fontSize: FONT_SIZES.small,
+    fontSize: FONT_SIZES.xs,
     color: COLORS.textSecondary,
-    fontWeight: '600',
-    marginLeft: SPACING.small,
-    letterSpacing: 1,
+    fontWeight: '500',
+    marginLeft: SPACING.sm,
+    letterSpacing: 0.5,
   },
   freeButton: {
     position: 'absolute',
     right: 0,
     top: 24,
-    paddingHorizontal: SPACING.small,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: 2,
-    backgroundColor: COLORS.accent,
-    borderTopRightRadius: 4,
-    borderBottomRightRadius: 4,
+    backgroundColor: COLORS.primary,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
   },
   freeButtonText: {
-    fontSize: 10,
+    fontSize: 9,
     color: COLORS.background,
     fontWeight: '700',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
 });
 
