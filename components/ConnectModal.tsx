@@ -182,18 +182,13 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     width: '85%',
-    maxWidth: 400,
+    maxWidth: 320,
     maxHeight: '80%',
-    borderRadius: 12,
+    borderRadius: 0,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: `rgba(0, 255, 170, 0.5)`,
-    // Add subtle border glow
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
+    borderColor: COLORS.primary,
+    backgroundColor: 'transparent',
   },
   modalGradient: {
     position: 'absolute',

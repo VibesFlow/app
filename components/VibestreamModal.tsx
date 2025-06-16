@@ -29,6 +29,8 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
   const [distance, setDistance] = useState('100');
   const [ticketAmount, setTicketAmount] = useState('0');
   const [streamPrice, setStreamPrice] = useState('0');
+  const [freeTickets, setFreeTickets] = useState(false);
+  const [freeStream, setFreeStream] = useState(false);
 
   const resetModal = () => {
     setStep(1);
@@ -37,6 +39,8 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
     setDistance('100');
     setTicketAmount('0');
     setStreamPrice('0');
+    setFreeTickets(false);
+    setFreeStream(false);
   };
 
   useEffect(() => {
@@ -168,35 +172,62 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose }) =
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>TICKET AMOUNT</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.textInput}
-                  value={ticketAmount}
-                  onChangeText={setTicketAmount}
-                  placeholder="0"
-                  placeholderTextColor={COLORS.textSecondary}
-                  keyboardType="numeric"
-                />
-                <Text style={styles.inputUnit}>tickets</Text>
+              <View style={styles.inputRow}>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.textInput}
+                    value={freeTickets ? '0' : ticketAmount}
+                    onChangeText={setTicketAmount}
+                    placeholder="0"
+                    placeholderTextColor={COLORS.textTertiary}
+                    keyboardType="numeric"
+                    editable={!freeTickets}
+                  />
+                  <Text style={styles.inputUnit}>TICKETS</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.freeCheckboxContainer}
+                  onPress={() => setFreeTickets(!freeTickets)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, freeTickets && styles.checkedBox]}>
+                    {freeTickets && (
+                      <FontAwesome name="check" size={8} color={COLORS.background} />
+                    )}
+                  </View>
+                  <Text style={styles.freeCheckboxText}>FREE</Text>
+                </TouchableOpacity>
               </View>
             </View>
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>STREAM PRICE</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.textInput}
-                  value={streamPrice}
-                  onChangeText={setStreamPrice}
-                  placeholder="0"
-                  placeholderTextColor={COLORS.textSecondary}
-                  keyboardType="decimal-pad"
-                />
-                <Text style={styles.inputUnit}>$NEAR</Text>
+              <View style={styles.inputRow}>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.textInput}
+                    value={freeStream ? '0' : streamPrice}
+                    onChangeText={setStreamPrice}
+                    placeholder="0"
+                    placeholderTextColor={COLORS.textTertiary}
+                    keyboardType="decimal-pad"
+                    editable={!freeStream}
+                  />
+                  <Text style={styles.inputUnit}>$NEAR</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.freeCheckboxContainer}
+                  onPress={() => setFreeStream(!freeStream)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, freeStream && styles.checkedBox]}>
+                    {freeStream && (
+                      <FontAwesome name="check" size={8} color={COLORS.background} />
+                    )}
+                  </View>
+                  <Text style={styles.freeCheckboxText}>FREE</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity style={styles.freeButton} activeOpacity={0.7}>
-                <Text style={styles.freeButtonText}>FREE</Text>
-              </TouchableOpacity>
             </View>
           </View>
 
@@ -331,7 +362,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   selectedMode: {
-    backgroundColor: 'rgba(0, 255, 65, 0.2)',
+    backgroundColor: 'rgba(255, 0, 160, 0.15)',
+    borderColor: COLORS.secondary,
   },
   modeText: {
     fontSize: 12,
@@ -412,7 +444,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     letterSpacing: 1,
   },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   inputContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
@@ -434,6 +472,18 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 8,
     letterSpacing: 0.5,
+  },
+  freeCheckboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 60,
+  },
+  freeCheckboxText: {
+    fontSize: 10,
+    color: COLORS.secondary,
+    fontWeight: '700',
+    marginLeft: 6,
+    letterSpacing: 1,
   },
   freeButton: {
     position: 'absolute',

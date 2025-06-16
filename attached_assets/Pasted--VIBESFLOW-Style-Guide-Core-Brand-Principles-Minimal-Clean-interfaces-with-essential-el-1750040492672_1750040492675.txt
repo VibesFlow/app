@@ -1,0 +1,109 @@
+# VIBESFLOW Style Guide
+
+## Core Brand Principles
+
+- **Minimal**: Clean interfaces with essential elements only
+- **Acid**: Bold, high-contrast neon colors against dark backgrounds
+- **Anarcho-Chaotic**: Unpredictable elements, glitches, asymmetry, and rule-breaking
+
+## Color Palette
+
+- **Primary**: `#00ff41` (Neon green) - Used for primary actions, highlights, and key UI elements
+- **Secondary**: `#ff00a0` (Hot pink) - Used for accents and secondary actions
+- **Accent**: `#0cf` (Cyan) - Used for tertiary elements and alternative highlights
+- **Background**: `#000000` (Black) - Main background color
+- **Background Light**: `#0a0a0a` (Near-black) - Secondary background for subtle contrast
+- **Text Primary**: `#ffffff` (White) - Main text color
+- **Text Secondary**: `#aaaaaa` (Light gray) - Secondary text elements
+- **Text Tertiary**: `#666666` (Dark gray) - Tertiary text elements like placeholders
+
+## Typography
+
+- **All text should be UPPERCASE** for key UI elements (buttons, headers, titles)
+- Use bold font weights (`700` or higher) for important text
+- Add letter spacing (2-3px) to create tension and improve readability
+- For longer content, consider regular case with high line height
+
+## Visual Elements
+
+### Glitch Elements
+- Random horizontal lines with variable opacity (0.1-0.5)
+- Use primary, secondary, and accent colors for glitch effects
+- Apply at random positions, especially at edges and around important elements
+
+### Gradients
+- Dark gradients (black to near-black) for backgrounds
+- Glow effects using the brand colors with low opacity (0.1-0.15)
+- Directional gradients that move from top-left to bottom-right
+
+### Borders
+- Thin borders (1px) using brand colors
+- Buttons should have borders with subtle glow effects
+- Containers should have minimal borders to create separation
+
+## UI Components
+
+### Buttons
+- Rectangular with sharp edges (no rounded corners)
+- Dark backgrounds with colored borders
+- Minimal padding (vertical: 12-18px, horizontal: 20-30px)
+- Glow effects on hover/press
+- Bold, uppercase text with letter spacing
+- Styles:
+  - Primary: Green border and text
+  - Secondary: Pink border and text
+  - Tertiary/Accent: Cyan border and text
+
+### Cards & Containers
+- Dark backgrounds with subtle borders
+- Minimal padding (16-20px)
+- Slight transparency (0.7-0.9 opacity)
+- Optional glitch elements on borders
+- No rounded corners unless part of a specific design element
+
+### Text Inputs
+- Dark backgrounds with colored borders
+- Minimal padding (vertical: 12px, horizontal: 16px)
+- Text should be uppercase where possible
+- Placeholders should be in the Text Tertiary color
+
+### Modals
+- Dark backgrounds with gradient overlays
+- Thin colored borders
+- Sharp corners (no border radius)
+- Clear visual hierarchy with uppercase headings
+- Include glitch elements for visual interest
+
+## Animation Principles
+
+- Pulse animations for buttons and interactive elements
+- Subtle background movement (waving/flowing)
+- Glitch animations (jitter, flicker) for key moments
+- Color shifts that oscillate between primary/secondary/accent
+
+## Iconography
+
+- Use minimal, iconic representations
+- Line icons preferred over filled icons
+- When using icons with text, maintain consistent spacing
+- Apply color effects (glow, pulse) to icons for interactive states
+
+## Layout Principles
+
+- Asymmetrical balance - avoid perfect centering
+- Allow for negative space (breathing room)
+- Use a grid system but occasionally break it for chaos
+- Embrace tension through slight rotations (3-5 degrees)
+
+## Implementation Notes
+
+1. All components should maintain this aesthetic consistently
+2. Glitch effects should be subtle enough not to impact usability
+3. Typography should remain legible despite stylistic choices
+4. Performance considerations: limit heavy effects on mobile devices
+5. Animations should be smooth but unexpected
+
+---
+
+**Brand Manifesto:**  
+DECENTRALIZED FREQUENCIES // COLLECTIVE RESONANCE // AUTONOMOUS WAVES 
