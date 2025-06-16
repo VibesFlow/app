@@ -12,10 +12,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
-import { Audio } from 'expo-av';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
-import * as mm from '@magenta/music';
 
 const { width } = Dimensions.get('window');
 
@@ -86,8 +84,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   
   // Audio system references
   const audioContextRef = useRef<any>(null);
-  const musicRNNRef = useRef<any>(null);
-  const currentSoundRef = useRef<Audio.Sound | null>(null);
   const generationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(Date.now());
   const oscillatorsRef = useRef<OscillatorNode[]>([]);
@@ -107,14 +103,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   useEffect(() => {
     const initMusicSystem = async () => {
       try {
-        // Configure audio for high-quality playback
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: false,
-        });
-
         // Initialize Web Audio API for advanced synthesis
         if (Platform.OS === 'web' && typeof window !== 'undefined' && window.AudioContext) {
           audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -126,15 +114,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           filter.Q.value = 1;
           filter.connect(audioContextRef.current.destination);
           filterRef.current = filter;
-
-          // Initialize Magenta's Music RNN for AI composition
-          try {
-            musicRNNRef.current = new mm.MusicRNN('https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/basic_rnn');
-            await musicRNNRef.current.initialize();
-            console.log('Magenta RNN initialized for AI composition');
-          } catch (error) {
-            console.warn('Magenta RNN init failed, using advanced procedural generation:', error);
-          }
         }
 
         setIsInitialized(true);
@@ -148,9 +127,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     initMusicSystem();
 
     return () => {
-      if (currentSoundRef.current) {
-        currentSoundRef.current.unloadAsync();
-      }
       if (generationIntervalRef.current) {
         clearInterval(generationIntervalRef.current);
       }
@@ -341,7 +317,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       if (Platform.OS === 'web') {
         generateAdvancedMusic();
       } else {
-        generateMobileAudio();
+        generateMobilePattern();
       }
     }
 
@@ -386,42 +362,18 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }
   }, [isStreaming]);
 
-  // Mobile audio synthesis using expo-av
-  const generateMobileAudio = async () => {
+  // Mobile pattern generation for visualization
+  const generateMobilePattern = () => {
     if (Platform.OS === 'web' || !isStreaming) return;
 
     try {
-      // Generate sophisticated audio patterns for mobile
       const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
       const normalizedMagnitude = Math.min(magnitude, 2) / 2;
       
-      // Create complex waveform pattern based on sensor data
       const baseFreq = 220 + normalizedMagnitude * 440;
       const duration = 500 + Math.random() * 1000;
       
-      // Generate audio buffer for sophisticated sound
-      const sampleRate = 44100;
-      const samples = Math.floor(sampleRate * duration / 1000);
-      const audioData = new Float32Array(samples);
-      
-      for (let i = 0; i < samples; i++) {
-        const time = i / sampleRate;
-        const envelope = Math.exp(-time * 2); // Decay envelope
-        
-        // Multi-layered synthesis
-        const fundamental = Math.sin(2 * Math.PI * baseFreq * time);
-        const harmonic2 = Math.sin(2 * Math.PI * baseFreq * 2 * time) * 0.5;
-        const harmonic3 = Math.sin(2 * Math.PI * baseFreq * 3 * time) * 0.25;
-        const subharmonic = Math.sin(2 * Math.PI * baseFreq * 0.5 * time) * 0.3;
-        
-        // Add motion-based modulation
-        const modulation = Math.sin(2 * Math.PI * time * (10 + normalizedMagnitude * 20));
-        const modulatedWave = (fundamental + harmonic2 + harmonic3 + subharmonic) * (1 + modulation * 0.1);
-        
-        audioData[i] = modulatedWave * envelope * normalizedMagnitude * 0.3;
-      }
-      
-      // Update music state for mobile
+      // Update music pattern for mobile visualization
       setCurrentPattern({
         notes: [baseFreq, baseFreq * 1.25, baseFreq * 1.5, baseFreq * 2],
         durations: [duration, duration * 0.75, duration * 0.5, duration * 1.25],
@@ -430,7 +382,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       });
       
     } catch (error) {
-      console.warn('Mobile audio generation failed:', error);
+      console.warn('Mobile pattern generation failed:', error);
     }
   };
 
