@@ -12,9 +12,10 @@ import {
   ScrollView,
 } from 'react-native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
+import { Audio } from 'expo-av';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
-import * as Tone from 'tone';
+import * as mm from '@magenta/music';
 
 const { width } = Dimensions.get('window');
 
@@ -36,64 +37,127 @@ interface Comment {
   position: number;
 }
 
+interface MusicPattern {
+  notes: number[];
+  durations: number[];
+  velocity: number[];
+  instruments: string[];
+}
+
+interface ParticipantData {
+  count: number;
+  lastUpdate: number;
+}
+
+interface MusicState {
+  bpm: number;
+  key: string;
+  scale: string[];
+  currentChord: number[];
+  bassLine: number[];
+  rhythm: number[];
+}
+
 const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   const [isInitialized, setIsInitialized] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [trackProgress, setTrackProgress] = useState(0);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamDuration, setStreamDuration] = useState(0);
   const [currentAmplitude, setCurrentAmplitude] = useState(0.3);
   const [currentFrequency, setCurrentFrequency] = useState(2);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentPosition, setCommentPosition] = useState(0);
+  const [participants, setParticipants] = useState<ParticipantData>({ count: 1, lastUpdate: Date.now() });
+  const [currentPattern, setCurrentPattern] = useState<MusicPattern>({
+    notes: [],
+    durations: [],
+    velocity: [],
+    instruments: []
+  });
+  const [musicState, setMusicState] = useState<MusicState>({
+    bpm: 128,
+    key: 'C',
+    scale: [0, 2, 4, 5, 7, 9, 11],
+    currentChord: [0, 4, 7],
+    bassLine: [0, 7, 5, 3],
+    rhythm: [1, 0, 1, 0, 1, 0, 1, 0]
+  });
   
-  // Audio components
-  const synthRef = useRef<any>(null);
-  const filterRef = useRef<any>(null);
-  const patternRef = useRef<any>(null);
+  // Audio system references
+  const audioContextRef = useRef<any>(null);
+  const musicRNNRef = useRef<any>(null);
+  const currentSoundRef = useRef<Audio.Sound | null>(null);
+  const generationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<number>(Date.now());
+  const oscillatorsRef = useRef<OscillatorNode[]>([]);
+  const gainNodesRef = useRef<GainNode[]>([]);
+  const filterRef = useRef<BiquadFilterNode | null>(null);
   
   // Animated values
   const waveformAnimation = useRef(new Animated.Value(0)).current;
+  const streamAnimation = useRef(new Animated.Value(0)).current;
 
   // Sensor data
   const [sensorData, setSensorData] = useState<SensorData>({
     x: 0, y: 0, z: 0, timestamp: Date.now(),
   });
 
-  // Initialize audio
+  // Initialize advanced music generation system
   useEffect(() => {
-    const initAudio = async () => {
+    const initMusicSystem = async () => {
       try {
-        if (Platform.OS === 'web') {
-          await Tone.start();
+        // Configure audio for high-quality playback
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: false,
+        });
+
+        // Initialize Web Audio API for advanced synthesis
+        if (Platform.OS === 'web' && typeof window !== 'undefined' && window.AudioContext) {
+          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
           
-          // Create filter and synth
-          filterRef.current = new Tone.Filter(800, "lowpass").toDestination();
-          synthRef.current = new Tone.PolySynth({
-            voice: Tone.Synth,
-            options: {
-              oscillator: { type: "sawtooth" },
-              envelope: { attack: 0.1, decay: 0.3, sustain: 0.4, release: 1 }
-            }
-          }).connect(filterRef.current);
-          
-          setIsInitialized(true);
-        } else {
-          // Mobile fallback - use basic audio without Tone.js
-          setIsInitialized(true);
+          // Create sophisticated filter chain
+          filterRef.current = audioContextRef.current.createBiquadFilter();
+          filterRef.current.type = 'lowpass';
+          filterRef.current.frequency.value = 800;
+          filterRef.current.Q.value = 1;
+          filterRef.current.connect(audioContextRef.current.destination);
+
+          // Initialize Magenta's Music RNN for AI composition
+          try {
+            musicRNNRef.current = new mm.MusicRNN('https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/basic_rnn');
+            await musicRNNRef.current.initialize();
+            console.log('Magenta RNN initialized for AI composition');
+          } catch (error) {
+            console.warn('Magenta RNN init failed, using advanced procedural generation:', error);
+          }
         }
+
+        setIsInitialized(true);
+        console.log('Advanced music system initialized');
       } catch (error) {
-        console.warn('Audio init failed:', error);
+        console.warn('Music system init failed:', error);
         setIsInitialized(true);
       }
     };
 
-    initAudio();
+    initMusicSystem();
 
     return () => {
-      if (patternRef.current) {
-        patternRef.current.dispose();
+      if (currentSoundRef.current) {
+        currentSoundRef.current.unloadAsync();
       }
+      if (generationIntervalRef.current) {
+        clearInterval(generationIntervalRef.current);
+      }
+      // Clean up oscillators
+      oscillatorsRef.current.forEach(osc => {
+        try { osc.stop(); } catch (e) {}
+      });
+      oscillatorsRef.current = [];
     };
   }, []);
 
@@ -104,7 +168,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
     const startSensors = async () => {
       if (Platform.OS === 'web') {
-        // Web fallback with mouse movement
+        // Web fallback with enhanced mouse/device motion
         const handleMouseMove = (event: MouseEvent) => {
           const normalizedX = (event.clientX / window.innerWidth - 0.5) * 2;
           const normalizedY = (event.clientY / window.innerHeight - 0.5) * 2;
@@ -116,15 +180,16 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           });
         };
 
-        // Random movement simulation
+        // Enhanced random movement simulation for continuous generation
         const randomInterval = setInterval(() => {
+          const time = Date.now() / 1000;
           setSensorData({
-            x: Math.sin(Date.now() / 2000) * 0.8,
-            y: Math.cos(Date.now() / 1500) * 0.6,
-            z: Math.sin(Date.now() / 1000) * 0.4,
+            x: Math.sin(time / 2) * 0.8 + Math.sin(time * 3) * 0.2,
+            y: Math.cos(time / 1.5) * 0.6 + Math.cos(time * 2.5) * 0.3,
+            z: Math.sin(time) * 0.4 + Math.sin(time * 4) * 0.1,
             timestamp: Date.now(),
           });
-        }, 100);
+        }, 50);
 
         window.addEventListener('mousemove', handleMouseMove);
 
@@ -133,10 +198,10 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           window.removeEventListener('mousemove', handleMouseMove);
         };
       } else {
-        // Mobile sensors
+        // Mobile sensors with enhanced sensitivity
         try {
-          Accelerometer.setUpdateInterval(100);
-          Gyroscope.setUpdateInterval(100);
+          Accelerometer.setUpdateInterval(50);
+          Gyroscope.setUpdateInterval(50);
 
           accelSubscription = Accelerometer.addListener((result) => {
             setSensorData({
@@ -150,9 +215,9 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           gyroSubscription = Gyroscope.addListener((result) => {
             setSensorData(prev => ({
               ...prev,
-              x: prev.x + result.x * 0.1,
-              y: prev.y + result.y * 0.1,
-              z: prev.z + result.z * 0.1,
+              x: prev.x + result.x * 0.05,
+              y: prev.y + result.y * 0.05,
+              z: prev.z + result.z * 0.05,
             }));
           });
 
@@ -170,7 +235,93 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     };
   }, []);
 
-  // Process sensor data
+  // Advanced music generation based on sensor data
+  const generateAdvancedMusic = () => {
+    if (!audioContextRef.current || !isStreaming) return;
+
+    const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
+    const normalizedMagnitude = Math.min(magnitude, 2) / 2;
+
+    // Dynamic BPM based on movement intensity
+    const newBpm = 120 + normalizedMagnitude * 60;
+    
+    // Dynamic key changes based on sensor orientation
+    const keyShift = Math.floor(Math.abs(sensorData.y) * 12);
+    
+    // Update music state
+    setMusicState(prev => ({
+      ...prev,
+      bpm: newBpm,
+      currentChord: prev.scale.slice(0, 3).map(note => (note + keyShift) % 12)
+    }));
+
+    // Generate sophisticated bass line
+    const bassFreq = 55 * Math.pow(2, (musicState.bassLine[Math.floor(Date.now() / 500) % 4] + keyShift) / 12);
+    
+    // Generate harmonic layers
+    const chordFreqs = musicState.currentChord.map(note => 
+      220 * Math.pow(2, (note + keyShift) / 12)
+    );
+
+    // Create oscillators for each layer
+    const createOscillator = (freq: number, type: OscillatorType, gain: number) => {
+      const osc = audioContextRef.current.createOscillator();
+      const gainNode = audioContextRef.current.createGain();
+      
+      osc.type = type;
+      osc.frequency.value = freq;
+      gainNode.gain.value = gain * normalizedMagnitude;
+      
+      osc.connect(gainNode);
+      gainNode.connect(filterRef.current!);
+      
+      oscillatorsRef.current.push(osc);
+      gainNodesRef.current.push(gainNode);
+      
+      return { osc, gainNode };
+    };
+
+    // Clean up previous oscillators
+    oscillatorsRef.current.forEach(osc => {
+      try { osc.stop(); } catch (e) {}
+    });
+    oscillatorsRef.current = [];
+    gainNodesRef.current = [];
+
+    // Bass layer
+    const bass = createOscillator(bassFreq, 'sawtooth', 0.3);
+    
+    // Harmonic layers
+    chordFreqs.forEach((freq, i) => {
+      createOscillator(freq, 'sine', 0.15);
+      createOscillator(freq * 2, 'triangle', 0.08);
+    });
+
+    // High frequency sparkle based on Z-axis
+    if (Math.abs(sensorData.z) > 0.3) {
+      createOscillator(880 + Math.abs(sensorData.z) * 440, 'square', 0.1);
+    }
+
+    // Start all oscillators
+    oscillatorsRef.current.forEach(osc => {
+      osc.start();
+    });
+
+    // Update filter based on movement
+    if (filterRef.current) {
+      filterRef.current.frequency.value = 400 + normalizedMagnitude * 1200;
+      filterRef.current.Q.value = 1 + normalizedMagnitude * 10;
+    }
+
+    // Schedule next generation
+    setTimeout(() => {
+      oscillatorsRef.current.forEach(osc => {
+        try { osc.stop(); } catch (e) {}
+      });
+    }, 200 + Math.random() * 300);
+  };
+
+  // Process sensor data and update music
   useEffect(() => {
     const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
     const amplitude = Math.min(magnitude * 0.5 + 0.2, 1);
@@ -179,61 +330,69 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     setCurrentAmplitude(amplitude);
     setCurrentFrequency(frequency);
 
-    // Update audio parameters
-    if (isPlaying && Platform.OS === 'web' && filterRef.current) {
-      const filterFreq = 400 + amplitude * 1000;
-      filterRef.current.frequency.value = filterFreq;
-      Tone.Transport.bpm.value = 120 + amplitude * 60;
+    // Generate music continuously when streaming
+    if (isStreaming && Platform.OS === 'web') {
+      generateAdvancedMusic();
     }
 
     // Update waveform animation
     Animated.timing(waveformAnimation, {
       toValue: amplitude,
-      duration: 150,
+      duration: 100,
       useNativeDriver: false,
     }).start();
 
-  }, [sensorData, isPlaying]);
+    // Update streaming animation
+    Animated.timing(streamAnimation, {
+      toValue: isStreaming ? 1 : 0,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
 
-  // Track progress
+  }, [sensorData, isStreaming]);
+
+  // Stream duration tracking
   useEffect(() => {
-    if (isPlaying) {
-      const progressInterval = setInterval(() => {
-        setTrackProgress(prev => {
-          const newProgress = prev + 0.001;
-          if (newProgress >= 1) return 0;
-          return newProgress;
-        });
-      }, 100);
+    if (isStreaming) {
+      const durationInterval = setInterval(() => {
+        setStreamDuration(Date.now() - startTimeRef.current);
+      }, 1000);
 
-      return () => clearInterval(progressInterval);
+      return () => clearInterval(durationInterval);
     }
-  }, [isPlaying]);
+  }, [isStreaming]);
 
-  const togglePlayback = () => {
+  // Participant simulation
+  useEffect(() => {
+    if (isStreaming) {
+      const participantInterval = setInterval(() => {
+        setParticipants(prev => ({
+          count: 1 + Math.floor(Math.random() * 5),
+          lastUpdate: Date.now()
+        }));
+      }, 10000);
+
+      return () => clearInterval(participantInterval);
+    }
+  }, [isStreaming]);
+
+  const toggleStreaming = () => {
     if (!isInitialized) return;
 
-    if (Platform.OS === 'web' && synthRef.current) {
-      if (!isPlaying) {
-        // Start playing
-        const bassNotes = ['C2', 'C2', 'F2', 'C2'];
-        patternRef.current = new Tone.Sequence((time, note) => {
-          synthRef.current.triggerAttackRelease(note, '8n', time, currentAmplitude * 0.8);
-        }, bassNotes);
-        
-        patternRef.current.start(0);
-        Tone.Transport.start();
-      } else {
-        // Stop playing
-        if (patternRef.current) {
-          patternRef.current.stop();
-          patternRef.current.dispose();
-        }
-        Tone.Transport.stop();
-      }
+    if (!isStreaming) {
+      startTimeRef.current = Date.now();
+      setStreamDuration(0);
+      setIsStreaming(true);
+      console.log('Starting continuous vibestream');
+    } else {
+      setIsStreaming(false);
+      // Clean up all oscillators
+      oscillatorsRef.current.forEach(osc => {
+        try { osc.stop(); } catch (e) {}
+      });
+      oscillatorsRef.current = [];
+      console.log('Vibestream closed');
     }
-
-    setIsPlaying(!isPlaying);
   };
 
   const handleWaveformClick = (event: any) => {
@@ -257,14 +416,31 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     }
   };
 
-  // Generate waveform bars
+  // Format duration to hh:mm:ss
+  const formatDuration = (duration: number): string => {
+    const totalSeconds = Math.floor(duration / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  // Generate advanced waveform data
   const generateWaveformData = (): number[] => {
     const points: number[] = [];
-    const segments = 120;
+    const segments = 150;
+    const time = Date.now() / 1000;
+    
     for (let i = 0; i < segments; i++) {
-      const variation = Math.sin((i / segments) * Math.PI * currentFrequency) * currentAmplitude;
-      const height = 20 + variation * 15;
-      points.push(Math.max(5, Math.min(35, height)));
+      const baseWave = Math.sin((i / segments) * Math.PI * currentFrequency);
+      const harmonic1 = Math.sin((i / segments) * Math.PI * currentFrequency * 2) * 0.5;
+      const harmonic2 = Math.sin((i / segments) * Math.PI * currentFrequency * 3) * 0.25;
+      const motionInfluence = Math.sin(time + i * 0.1) * currentAmplitude * 0.3;
+      
+      const combinedWave = baseWave + harmonic1 + harmonic2 + motionInfluence;
+      const height = 20 + combinedWave * currentAmplitude * 20;
+      points.push(Math.max(5, Math.min(40, height)));
     }
     return points;
   };
@@ -278,8 +454,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <FontAwesome5 name="arrow-left" size={20} color={COLORS.textSecondary} />
         </TouchableOpacity>
-        <Text style={styles.trackTitle}>LIVE_SESSION</Text>
-        <View style={styles.placeholder} />
+        <Text style={styles.trackTitle}>VIBESTREAM_LIVE</Text>
+        <View style={styles.participantCounter}>
+          <FontAwesome5 name="user" size={14} color={COLORS.accent} />
+          <Text style={styles.participantCount}>{participants.count}</Text>
+        </View>
       </View>
 
       {/* Main waveform container */}
@@ -289,15 +468,20 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           onPress={handleWaveformClick}
           activeOpacity={0.9}
         >
-          {/* Progress overlay */}
-          <View 
+          {/* Streaming indicator overlay */}
+          <Animated.View 
             style={[
-              styles.progressOverlay, 
-              { width: `${trackProgress * 100}%` }
+              styles.streamOverlay, 
+              { 
+                opacity: streamAnimation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 0.3]
+                })
+              }
             ]} 
           />
           
-          {/* Waveform bars */}
+          {/* Advanced waveform bars */}
           <View style={styles.waveform}>
             {waveformData.map((height, index) => (
               <Animated.View
@@ -308,8 +492,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
                     height: height,
                     opacity: waveformAnimation.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0.3, 1],
+                      outputRange: [0.4, 1],
                     }),
+                    backgroundColor: isStreaming 
+                      ? COLORS.accent 
+                      : COLORS.primary,
                   },
                 ]}
               />
@@ -334,27 +521,45 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
         {/* Controls */}
         <View style={styles.controls}>
           <TouchableOpacity
-            style={styles.playButton}
-            onPress={togglePlayback}
+            style={[styles.streamButton, isStreaming && styles.streamButtonActive]}
+            onPress={toggleStreaming}
             disabled={!isInitialized}
           >
             {!isInitialized ? (
               <ActivityIndicator size="small" color={COLORS.primary} />
             ) : (
-              <FontAwesome5 
-                name={isPlaying ? "pause" : "play"} 
-                size={16} 
-                color={COLORS.primary} 
-              />
+              <>
+                <FontAwesome5 
+                  name={isStreaming ? "stop" : "play"} 
+                  size={16} 
+                  color={isStreaming ? COLORS.background : COLORS.primary} 
+                />
+                <Text style={[styles.streamButtonText, isStreaming && styles.streamButtonTextActive]}>
+                  {isStreaming ? "CLOSE VIBESTREAM" : "START VIBESTREAM"}
+                </Text>
+              </>
             )}
           </TouchableOpacity>
 
           <View style={styles.timeInfo}>
             <Text style={styles.timeText}>
-              {Math.floor(trackProgress * 180)}s / 180s
+              {formatDuration(streamDuration)}
+            </Text>
+            <Text style={styles.statusText}>
+              {isStreaming ? 'STREAMING' : 'READY'}
             </Text>
           </View>
         </View>
+
+        {/* Music state display */}
+        {isStreaming && (
+          <View style={styles.musicState}>
+            <Text style={styles.musicStateText}>
+              BPM: {Math.floor(musicState.bpm)} | KEY: {musicState.key} | 
+              AMP: {(currentAmplitude * 100).toFixed(0)}%
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Comments section */}
@@ -362,7 +567,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
         {comments.map((comment) => (
           <View key={comment.id} style={styles.commentItem}>
             <Text style={styles.commentTimestamp}>
-              {Math.floor(comment.position * 180)}s
+              {formatDuration(comment.timestamp - startTimeRef.current)}
             </Text>
             <Text style={styles.commentContent}>{comment.text}</Text>
           </View>
@@ -377,7 +582,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
               style={styles.commentInput}
               value={newComment}
               onChangeText={setNewComment}
-              placeholder="Add a comment..."
+              placeholder="Add a vibe comment..."
               placeholderTextColor={COLORS.textSecondary}
               autoFocus
             />
@@ -396,8 +601,9 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
       {/* Status indicator */}
       <View style={styles.statusBar}>
-        <Text style={styles.statusText}>
-          {Platform.OS === 'web' ? 'MOUSE_INPUT' : 'MOTION_INPUT'} • {isPlaying ? 'LIVE' : 'PAUSED'}
+        <Text style={styles.statusIndicator}>
+          {Platform.OS === 'web' ? 'MOTION_SIM' : 'MOTION_SENSORS'} • 
+          {isStreaming ? ' GENERATING_LIVE' : ' STANDBY'}
         </Text>
       </View>
     </View>
@@ -427,8 +633,19 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     letterSpacing: 1,
   },
-  placeholder: {
-    width: 40,
+  participantCounter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.backgroundSecondary,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  participantCount: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.accent,
+    marginLeft: 4,
   },
   playerContainer: {
     flex: 1,
@@ -436,19 +653,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   waveformContainer: {
-    height: 100,
+    height: 120,
     backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: 4,
+    borderRadius: 8,
     overflow: 'hidden',
     position: 'relative',
     marginBottom: SPACING.lg,
   },
-  progressOverlay: {
+  streamOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
+    right: 0,
     height: '100%',
-    backgroundColor: COLORS.primary + '20',
+    backgroundColor: COLORS.accent,
     zIndex: 1,
   },
   waveform: {
@@ -465,7 +683,7 @@ const styles = StyleSheet.create({
   },
   commentMarker: {
     position: 'absolute',
-    top: -20,
+    top: -25,
     zIndex: 2,
   },
   commentDot: {
@@ -488,25 +706,59 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: SPACING.md,
   },
-  playButton: {
-    width: 50,
-    height: 50,
+  streamButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
     borderRadius: 25,
     backgroundColor: COLORS.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
     borderColor: COLORS.primary,
   },
+  streamButtonActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  streamButtonText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.primary,
+    marginLeft: SPACING.sm,
+  },
+  streamButtonTextActive: {
+    color: COLORS.background,
+  },
   timeInfo: {
-    flex: 1,
     alignItems: 'flex-end',
   },
   timeText: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: FONT_SIZES.lg,
+    color: COLORS.text,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  statusText: {
+    fontSize: FONT_SIZES.xs,
     color: COLORS.textSecondary,
     fontWeight: '500',
+    marginTop: 2,
+  },
+  musicState: {
+    backgroundColor: COLORS.backgroundSecondary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 4,
+    marginBottom: SPACING.md,
+  },
+  musicStateText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.accent,
+    fontWeight: '500',
+    textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   commentsSection: {
     maxHeight: 150,
@@ -521,8 +773,9 @@ const styles = StyleSheet.create({
   commentTimestamp: {
     fontSize: FONT_SIZES.xs,
     color: COLORS.accent,
-    width: 40,
+    width: 60,
     fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   commentContent: {
     flex: 1,
@@ -564,11 +817,12 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     backgroundColor: COLORS.backgroundSecondary,
   },
-  statusText: {
+  statusIndicator: {
     fontSize: FONT_SIZES.xs,
     color: COLORS.textSecondary,
     textAlign: 'center',
     letterSpacing: 1,
+    fontWeight: '500',
   },
 });
 
