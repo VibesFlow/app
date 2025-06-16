@@ -86,8 +86,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   const audioContextRef = useRef<any>(null);
   const generationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(Date.now());
-  const oscillatorsRef = useRef<OscillatorNode[]>([]);
-  const gainNodesRef = useRef<GainNode[]>([]);
   const filterRef = useRef<BiquadFilterNode | null>(null);
   
   // Animated values
@@ -130,11 +128,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       if (generationIntervalRef.current) {
         clearInterval(generationIntervalRef.current);
       }
-      // Clean up oscillators
-      oscillatorsRef.current.forEach(osc => {
-        try { osc.stop(); } catch (e) {}
-      });
-      oscillatorsRef.current = [];
     };
   }, []);
 
@@ -212,7 +205,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     };
   }, []);
 
-  // Stable rave music generation system
+  // Stable techno music generation system
   const generateAdvancedMusic = () => {
     if (!audioContextRef.current || !isStreaming) return;
 
@@ -220,50 +213,40 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
       const normalizedMagnitude = Math.min(magnitude, 2) / 2;
 
-      // Techno/Acid BPM range (128-140 BPM)
-      const newBpm = 128 + normalizedMagnitude * 12;
-      
-      // Acid-style key changes
-      const keyShift = Math.floor(Math.abs(sensorData.y) * 7);
-      
-      // Update music state
-      setMusicState(prev => ({
-        ...prev,
-        bpm: newBpm,
-        currentChord: [0, 3, 7, 10].map(note => (note + keyShift) % 12)
-      }));
+      // Generate multiple layers for rich rave sound
+      const layers = [
+        { freq: 60 + (Math.floor(sensorData.y * 10) % 8) * 10, type: 'sawtooth', gain: 0.4 }, // Bass
+        { freq: 220 + normalizedMagnitude * 200, type: 'square', gain: 0.2 }, // Lead
+        { freq: 880 + normalizedMagnitude * 440, type: 'triangle', gain: 0.15 }, // High
+      ];
 
-      // Create stable single oscillator with envelope
-      const osc = audioContextRef.current.createOscillator();
-      const gainNode = audioContextRef.current.createGain();
-      
-      // Simple but effective rave bass
-      const bassFreq = 55 + (keyShift % 8) * 15;
-      osc.type = 'sawtooth';
-      osc.frequency.value = bassFreq;
-      
-      // Envelope for natural sound
-      const now = audioContextRef.current.currentTime;
-      gainNode.gain.setValueAtTime(0, now);
-      gainNode.gain.linearRampToValueAtTime(normalizedMagnitude * 0.3, now + 0.1);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
-      
-      // Connect audio chain
-      osc.connect(gainNode);
-      if (filterRef.current) {
-        gainNode.connect(filterRef.current);
-        // Dynamic filter sweep
-        const cutoffFreq = 300 + normalizedMagnitude * 1500;
-        filterRef.current.frequency.setValueAtTime(cutoffFreq, now);
-        filterRef.current.Q.value = 5 + normalizedMagnitude * 10;
-      } else {
-        gainNode.connect(audioContextRef.current.destination);
-      }
-      
-      // Play and auto-cleanup
-      osc.start(now);
-      osc.stop(now + 1.2);
-      
+      layers.forEach((layer, i) => {
+        const osc = audioContextRef.current.createOscillator();
+        const gainNode = audioContextRef.current.createGain();
+        
+        osc.type = layer.type as OscillatorType;
+        osc.frequency.value = layer.freq;
+        
+        const now = audioContextRef.current.currentTime;
+        const duration = 0.8 + Math.random() * 0.4;
+        
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(layer.gain * normalizedMagnitude, now + 0.05);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        
+        osc.connect(gainNode);
+        if (filterRef.current) {
+          gainNode.connect(filterRef.current);
+          filterRef.current.frequency.value = 400 + normalizedMagnitude * 1000;
+          filterRef.current.Q.value = 3 + normalizedMagnitude * 8;
+        } else {
+          gainNode.connect(audioContextRef.current.destination);
+        }
+        
+        osc.start(now + i * 0.1);
+        osc.stop(now + duration);
+      });
+
     } catch (error) {
       console.warn('Music generation failed:', error);
     }
