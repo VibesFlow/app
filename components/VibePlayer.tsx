@@ -276,28 +276,42 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
   }, [sensorData, isStreaming]);
 
-  // Stable music generation system
+  // Immediate and continuous music generation system
   useEffect(() => {
     if (!isStreaming || !isInitialized) return;
 
     let musicInterval: NodeJS.Timeout;
     
     if (Platform.OS === 'web' && audioContextRef.current) {
+      // Generate first sound immediately
+      try {
+        generateAdvancedMusic();
+      } catch (error) {
+        console.warn('Initial music generation error:', error);
+      }
+      
       musicInterval = setInterval(() => {
         try {
           generateAdvancedMusic();
         } catch (error) {
           console.warn('Music generation error:', error);
         }
-      }, 500); // Slower interval for stability
+      }, 350); // Faster interval for continuous rave sound
     } else {
+      // Mobile pattern generation
+      try {
+        generateMobilePattern();
+      } catch (error) {
+        console.warn('Initial pattern generation error:', error);
+      }
+      
       musicInterval = setInterval(() => {
         try {
           generateMobilePattern();
         } catch (error) {
           console.warn('Pattern generation error:', error);
         }
-      }, 300);
+      }, 250);
     }
 
     return () => {
@@ -361,26 +375,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
       setStreamDuration(0);
       setIsStreaming(true);
       console.log('Starting continuous vibestream');
-      
-      // Enable audio context on user interaction
-      if (Platform.OS === 'web' && audioContextRef.current) {
-        const enableAudio = async () => {
-          if (audioContextRef.current.state === 'suspended') {
-            await audioContextRef.current.resume();
-            console.log('Audio context resumed');
-          }
-        };
-        
-        // Try to enable audio immediately
-        enableAudio();
-        
-        // Also enable on any click
-        const handleClick = () => {
-          enableAudio();
-          document.removeEventListener('click', handleClick);
-        };
-        document.addEventListener('click', handleClick);
-      }
     }
   }, [isInitialized]);
 

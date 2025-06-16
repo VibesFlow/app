@@ -91,7 +91,10 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
     }
   };
 
-  const handleLaunchVibestream = () => {
+  const handleLaunchVibestream = async () => {
+    // Enable audio first
+    await enableAudio();
+    
     console.log('Launching Vibestream with:', {
       mode,
       storeToFilecoin: mode === 'solo' ? storeToFilecoin : undefined,
@@ -110,7 +113,6 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
   };
 
   const isLaunchDisabled = () => {
-    if (!audioEnabled) return true;
     if (mode === 'group') {
       return !distance || distance === '0' || !ticketAmount || !streamPrice;
     }
@@ -276,23 +278,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
         </View>
       )}
 
-      {!audioEnabled && (
-        <TouchableOpacity
-          style={styles.enableAudioButton}
-          onPress={enableAudio}
-          activeOpacity={0.7}
-        >
-          <FontAwesome name="volume-up" size={16} color={COLORS.background} />
-          <Text style={styles.enableAudioText}>ENABLE AUDIO</Text>
-        </TouchableOpacity>
-      )}
 
-      {audioEnabled && (
-        <View style={styles.audioEnabledContainer}>
-          <FontAwesome name="check-circle" size={12} color={COLORS.secondary} />
-          <Text style={styles.audioEnabledText}>Audio Ready</Text>
-        </View>
-      )}
 
       <TouchableOpacity
         style={styles.checkboxContainer}
@@ -315,7 +301,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
           activeOpacity={0.7}
         >
           <Text style={[styles.actionButtonText, isLaunchDisabled() && styles.disabledText]}>
-            LAUNCH
+            {Platform.OS === 'web' ? 'ENABLE AUDIO & LAUNCH' : 'LAUNCH'}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
