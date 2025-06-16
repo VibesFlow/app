@@ -14,7 +14,6 @@ import {
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
-import * as Tone from 'tone';
 
 const { width } = Dimensions.get('window');
 
@@ -51,6 +50,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
   const synthRef = useRef<any>(null);
   const filterRef = useRef<any>(null);
   const patternRef = useRef<any>(null);
+  const ToneRef = useRef<any>(null);
   
   // Animated values
   const waveformAnimation = useRef(new Animated.Value(0)).current;
@@ -65,12 +65,14 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     const initAudio = async () => {
       try {
         if (Platform.OS === 'web') {
-          await Tone.start();
+          // Dynamic import for web only
+          ToneRef.current = await import('tone');
+          await ToneRef.current.start();
           
           // Create filter and synth
-          filterRef.current = new Tone.Filter(800, "lowpass").toDestination();
-          synthRef.current = new Tone.PolySynth({
-            voice: Tone.Synth,
+          filterRef.current = new ToneRef.current.Filter(800, "lowpass").toDestination();
+          synthRef.current = new ToneRef.current.PolySynth({
+            voice: ToneRef.current.Synth,
             options: {
               oscillator: { type: "sawtooth" },
               envelope: { attack: 0.1, decay: 0.3, sustain: 0.4, release: 1 }
@@ -79,7 +81,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
           
           setIsInitialized(true);
         } else {
-          // Mobile fallback - use basic audio without Tone.js
+          // Mobile - just visual feedback without audio
           setIsInitialized(true);
         }
       } catch (error) {
@@ -91,7 +93,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     initAudio();
 
     return () => {
-      if (patternRef.current) {
+      if (patternRef.current && Platform.OS === 'web') {
         patternRef.current.dispose();
       }
     };
@@ -159,6 +161,10 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
         } catch (error) {
           console.warn('Sensor setup error:', error);
         }
+        
+        return () => {
+          // Cleanup for mobile
+        };
       }
     };
 
@@ -180,10 +186,10 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
     setCurrentFrequency(frequency);
 
     // Update audio parameters
-    if (isPlaying && Platform.OS === 'web' && filterRef.current) {
+    if (isPlaying && Platform.OS === 'web' && filterRef.current && ToneRef.current) {
       const filterFreq = 400 + amplitude * 1000;
       filterRef.current.frequency.value = filterFreq;
-      Tone.Transport.bpm.value = 120 + amplitude * 60;
+      ToneRef.current.Transport.bpm.value = 120 + amplitude * 60;
     }
 
     // Update waveform animation
@@ -208,28 +214,32 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack }) => {
 
       return () => clearInterval(progressInterval);
     }
+    
+    return () => {
+      // Cleanup when not playing
+    };
   }, [isPlaying]);
 
   const togglePlayback = () => {
     if (!isInitialized) return;
 
-    if (Platform.OS === 'web' && synthRef.current) {
+    if (Platform.OS === 'web' && synthRef.current && ToneRef.current) {
       if (!isPlaying) {
         // Start playing
         const bassNotes = ['C2', 'C2', 'F2', 'C2'];
-        patternRef.current = new Tone.Sequence((time, note) => {
+        patternRef.current = new ToneRef.current.Sequence((time: any, note: any) => {
           synthRef.current.triggerAttackRelease(note, '8n', time, currentAmplitude * 0.8);
         }, bassNotes);
         
         patternRef.current.start(0);
-        Tone.Transport.start();
+        ToneRef.current.Transport.start();
       } else {
         // Stop playing
         if (patternRef.current) {
           patternRef.current.stop();
           patternRef.current.dispose();
         }
-        Tone.Transport.stop();
+        ToneRef.current.Transport.stop();
       }
     }
 
