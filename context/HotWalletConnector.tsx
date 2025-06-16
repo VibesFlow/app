@@ -1,3 +1,4 @@
+import 'react-native-get-random-values';
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Platform } from 'react-native';
 import { HereWallet } from '@here-wallet/core';
