@@ -156,142 +156,142 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
 
       <Text style={styles.stepTitle}>{mode === 'solo' ? 'SOLO SETTINGS' : 'GROUP SETTINGS'}</Text>
       
-      {mode === 'group' && (
-        <View style={styles.settingsContainer}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>DISTANCE</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.textInput}
-                value={distance}
-                onChangeText={setDistance}
-                placeholder="100"
-                placeholderTextColor={COLORS.textTertiary}
-                keyboardType="numeric"
-              />
-              <Text style={styles.inputUnit}>MT</Text>
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>TICKETS</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.textInput}
-                value={ticketAmount}
-                onChangeText={setTicketAmount}
-                placeholder="0"
-                placeholderTextColor={COLORS.textTertiary}
-                keyboardType="numeric"
-              />
-              <Text style={styles.inputUnit}>AMT</Text>
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>TICKET PRICE?</Text>
-            <View style={styles.payPerStreamContainer}>
-              <TouchableOpacity
-                style={styles.ynCheckboxContainer}
-                onPress={() => setFreeTickets(true)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.checkbox, freeTickets && styles.checkedBox]}>
-                  {freeTickets && (
-                    <FontAwesome name="check" size={8} color={COLORS.background} />
-                  )}
-                </View>
-                <Text style={styles.ynCheckboxText}>N</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.ynCheckboxContainer}
-                onPress={() => setFreeTickets(false)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.checkbox, !freeTickets && styles.checkedBox]}>
-                  {!freeTickets && (
-                    <FontAwesome name="check" size={8} color={COLORS.background} />
-                  )}
-                </View>
-                <Text style={styles.ynCheckboxText}>Y</Text>
-              </TouchableOpacity>
-              
-              <View style={[styles.priceInputContainer, freeTickets && styles.disabledInput]}>
+      <View style={styles.settingsContainer}>
+        {mode === 'group' && (
+          <>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>DISTANCE</Text>
+              <View style={styles.inputContainer}>
                 <TextInput
-                  style={[styles.textInput, freeTickets && styles.disabledTextInput]}
-                  value={ticketPrice}
-                  onChangeText={setTicketPrice}
-                  placeholder="0"
-                  placeholderTextColor={freeTickets ? COLORS.textTertiary : COLORS.textSecondary}
-                  keyboardType="decimal-pad"
-                  editable={!freeTickets}
+                  style={styles.textInput}
+                  value={distance}
+                  onChangeText={setDistance}
+                  placeholder="100"
+                  placeholderTextColor={COLORS.textTertiary}
+                  keyboardType="numeric"
                 />
-                <Text style={[styles.inputUnit, freeTickets && styles.disabledInputUnit]}>$NEAR</Text>
+                <Text style={styles.inputUnit}>MT</Text>
               </View>
             </View>
-          </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>PAY-PER-STREAM?</Text>
-            <View style={styles.payPerStreamContainer}>
-              <TouchableOpacity
-                style={styles.ynCheckboxContainer}
-                onPress={() => setPayPerStream(false)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.checkbox, !payPerStream && styles.checkedBox]}>
-                  {!payPerStream && (
-                    <FontAwesome name="check" size={8} color={COLORS.background} />
-                  )}
-                </View>
-                <Text style={styles.ynCheckboxText}>N</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.ynCheckboxContainer}
-                onPress={() => setPayPerStream(true)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.checkbox, payPerStream && styles.checkedBox]}>
-                  {payPerStream && (
-                    <FontAwesome name="check" size={8} color={COLORS.background} />
-                  )}
-                </View>
-                <Text style={styles.ynCheckboxText}>Y</Text>
-              </TouchableOpacity>
-              
-              <View style={[styles.priceInputContainer, !payPerStream && styles.disabledInput]}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>TICKETS</Text>
+              <View style={styles.inputContainer}>
                 <TextInput
-                  style={[styles.textInput, !payPerStream && styles.disabledTextInput]}
-                  value={streamPrice}
-                  onChangeText={setStreamPrice}
+                  style={styles.textInput}
+                  value={ticketAmount}
+                  onChangeText={setTicketAmount}
                   placeholder="0"
-                  placeholderTextColor={!payPerStream ? COLORS.textTertiary : COLORS.textSecondary}
-                  keyboardType="decimal-pad"
-                  editable={payPerStream}
+                  placeholderTextColor={COLORS.textTertiary}
+                  keyboardType="numeric"
                 />
-                <Text style={[styles.inputUnit, !payPerStream && styles.disabledInputUnit]}>$NEAR</Text>
+                <Text style={styles.inputUnit}>AMT</Text>
               </View>
             </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>TICKET PRICE?</Text>
+              <View style={styles.payPerStreamContainer}>
+                <TouchableOpacity
+                  style={styles.ynCheckboxContainer}
+                  onPress={() => setFreeTickets(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, freeTickets && styles.checkedBox]}>
+                    {freeTickets && (
+                      <FontAwesome name="check" size={8} color={COLORS.background} />
+                    )}
+                  </View>
+                  <Text style={styles.ynCheckboxText}>N</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.ynCheckboxContainer}
+                  onPress={() => setFreeTickets(false)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, !freeTickets && styles.checkedBox]}>
+                    {!freeTickets && (
+                      <FontAwesome name="check" size={8} color={COLORS.background} />
+                    )}
+                  </View>
+                  <Text style={styles.ynCheckboxText}>Y</Text>
+                </TouchableOpacity>
+                
+                <View style={[styles.priceInputContainer, freeTickets && styles.disabledInput]}>
+                  <TextInput
+                    style={[styles.textInput, freeTickets && styles.disabledTextInput]}
+                    value={ticketPrice}
+                    onChangeText={setTicketPrice}
+                    placeholder="0"
+                    placeholderTextColor={freeTickets ? COLORS.textTertiary : COLORS.textSecondary}
+                    keyboardType="decimal-pad"
+                    editable={!freeTickets}
+                  />
+                  <Text style={[styles.inputUnit, freeTickets && styles.disabledInputUnit]}>$NEAR</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>PAY-PER-STREAM?</Text>
+              <View style={styles.payPerStreamContainer}>
+                <TouchableOpacity
+                  style={styles.ynCheckboxContainer}
+                  onPress={() => setPayPerStream(false)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, !payPerStream && styles.checkedBox]}>
+                    {!payPerStream && (
+                      <FontAwesome name="check" size={8} color={COLORS.background} />
+                    )}
+                  </View>
+                  <Text style={styles.ynCheckboxText}>N</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.ynCheckboxContainer}
+                  onPress={() => setPayPerStream(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, payPerStream && styles.checkedBox]}>
+                    {payPerStream && (
+                      <FontAwesome name="check" size={8} color={COLORS.background} />
+                    )}
+                  </View>
+                  <Text style={styles.ynCheckboxText}>Y</Text>
+                </TouchableOpacity>
+                
+                <View style={[styles.priceInputContainer, !payPerStream && styles.disabledInput]}>
+                  <TextInput
+                    style={[styles.textInput, !payPerStream && styles.disabledTextInput]}
+                    value={streamPrice}
+                    onChangeText={setStreamPrice}
+                    placeholder="0"
+                    placeholderTextColor={!payPerStream ? COLORS.textTertiary : COLORS.textSecondary}
+                    keyboardType="decimal-pad"
+                    editable={payPerStream}
+                  />
+                  <Text style={[styles.inputUnit, !payPerStream && styles.disabledInputUnit]}>$NEAR</Text>
+                </View>
+              </View>
+            </View>
+          </>
+        )}
+
+        <TouchableOpacity
+          style={styles.checkboxContainer}
+          onPress={() => setStoreToFilecoin(!storeToFilecoin)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.checkbox, storeToFilecoin && styles.checkedBox]}>
+            {storeToFilecoin && (
+              <FontAwesome name="check" size={8} color={COLORS.background} />
+            )}
           </View>
-        </View>
-      )}
-
-
-
-      <TouchableOpacity
-        style={styles.checkboxContainer}
-        onPress={() => setStoreToFilecoin(!storeToFilecoin)}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.checkbox, storeToFilecoin && styles.checkedBox]}>
-          {storeToFilecoin && (
-            <FontAwesome name="check" size={8} color={COLORS.background} />
-          )}
-        </View>
-        <Text style={styles.checkboxText}>Store to Filecoin</Text>
-      </TouchableOpacity>
+          <Text style={styles.checkboxText}>STORE TO FILECOIN</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.actionButtonsRow}>
         <TouchableOpacity
@@ -367,9 +367,8 @@ const styles = StyleSheet.create({
     width: width * 0.85,
     maxWidth: 320,
     backgroundColor: 'transparent',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: COLORS.primary,
-    borderRadius: 8,
     overflow: 'hidden',
   },
   gradientBackground: {
@@ -399,12 +398,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   stepTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: COLORS.primary,
     textAlign: 'center',
-    marginBottom: 20,
-    letterSpacing: 2,
+    marginBottom: 24,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
   },
   modeContainer: {
     flexDirection: 'row',
@@ -434,8 +434,10 @@ const styles = StyleSheet.create({
   checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    paddingVertical: 8,
+    marginTop: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.primary + '20',
   },
   checkbox: {
     width: 14,
@@ -452,8 +454,9 @@ const styles = StyleSheet.create({
   checkboxText: {
     fontSize: 12,
     color: COLORS.textPrimary,
-    fontWeight: '500',
-    letterSpacing: 0.5,
+    fontWeight: '700',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
   },
   actionButtons: {
     gap: 12,
@@ -492,7 +495,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   settingsContainer: {
-    gap: 16,
+    gap: 20,
+    marginBottom: 20,
   },
   inputGroup: {
     position: 'relative',
@@ -500,9 +504,10 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 11,
     color: COLORS.primary,
-    fontWeight: '600',
-    marginBottom: 6,
-    letterSpacing: 1,
+    fontWeight: '700',
+    marginBottom: 8,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
   },
   inputRow: {
     flexDirection: 'row',

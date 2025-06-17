@@ -215,6 +215,7 @@ const UserProfile: React.FC<UserProfileProps> = ({
                   <Image 
                     source={{ uri: profileImageUri }} 
                     style={styles.profileImage}
+                    resizeMode="cover"
                   />
                 ) : (
                   <FontAwesome5 
