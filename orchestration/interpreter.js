@@ -8,18 +8,12 @@ export class SensorInterpreter {
   constructor() {
     this.lastInterpretation = null;
     this.genreHistory = [];
-    this.intensitySmoothing = 0.2; // Much less smoothing for ultra-responsive changes
+    this.intensitySmoothing = 0.5; // Less smoothing for more responsive changes
     this.lastMagnitude = 0;
-    this.transitionThreshold = 0.02; // Ultra-low threshold for instant micro-transitions
-    
-    // Enhanced micro-movement detection
-    this.microMovementThreshold = 0.005; // Detect extremely subtle movements
-    this.accelerationSensitivity = 0.001; // Detect tiny accelerations
-    this.velocityHistory = [];
-    this.maxHistoryLength = 10;
+    this.transitionThreshold = 0.08; // MUCH lower threshold for instant transitions
     
     // Predefined RAVE-OPTIMIZED musical styles from Lyria documentation
-    // ENHANCED FOR MAXIMUM ENERGY, RESPONSIVENESS, AND PSYCHEDELIC VARIETY
+    // ENHANCED FOR MAXIMUM ENERGY AND RESPONSIVENESS
     this.raveGenres = {
       'rave-techno': {
         base: 'Techno',
@@ -37,22 +31,6 @@ export class SensorInterpreter {
         densityRange: [0.6, 0.9],
         brightnessRange: [0.6, 1.0]
       },
-      'psychedelic-techno': {
-        base: 'Techno',
-        instruments: ['Buchla Synths', 'Moog Synths', 'Resonant Filters', 'Delay Effects', 'Reverb'],
-        moods: ['Psychedelic', 'Dreamy', 'Ethereal', 'Spacey', 'Trippy'],
-        bpmRange: [125, 135],
-        densityRange: [0.4, 0.8],
-        brightnessRange: [0.3, 0.9]
-      },
-      'minimal-acid': {
-        base: 'Minimal Techno',
-        instruments: ['303 Acid Bass', 'Subtle Percussion', 'Clean Distortion', 'Filter Sweeps'],
-        moods: ['Minimal', 'Hypnotic', 'Clean', 'Subtle', 'Evolving'],
-        bpmRange: [120, 130],
-        densityRange: [0.3, 0.6],
-        brightnessRange: [0.4, 0.8]
-      },
       'hardcore-rave': {
         base: 'Hardcore',
         instruments: ['Boomy Bass', 'TR-909 Drum Machine', 'Crunchy Distortion', 'Glitchy Effects'],
@@ -60,30 +38,6 @@ export class SensorInterpreter {
         bpmRange: [170, 190],
         densityRange: [0.8, 1.0],
         brightnessRange: [0.8, 1.0]
-      },
-      'ambient-techno': {
-        base: 'Ambient Techno',
-        instruments: ['Atmospheric Pads', 'Subtle Beats', 'Texture Synths', 'Clean Reverb'],
-        moods: ['Ambient', 'Atmospheric', 'Dreamy', 'Spacey', 'Evolving'],
-        bpmRange: [100, 120],
-        densityRange: [0.2, 0.5],
-        brightnessRange: [0.2, 0.7]
-      },
-      'glitch-techno': {
-        base: 'Glitch',
-        instruments: ['Glitchy Effects', 'Digital Distortion', 'Stuttering Beats', 'Granular Synths'],
-        moods: ['Glitchy', 'Digital', 'Stuttering', 'Broken', 'Experimental'],
-        bpmRange: [130, 145],
-        densityRange: [0.6, 0.9],
-        brightnessRange: [0.5, 1.0]
-      },
-      'progressive-house': {
-        base: 'Progressive House',
-        instruments: ['Warm Bass', 'Lush Pads', 'Organic Percussion', 'Melodic Synths'],
-        moods: ['Progressive', 'Melodic', 'Warm', 'Emotional', 'Building'],
-        bpmRange: [118, 128],
-        densityRange: [0.5, 0.8],
-        brightnessRange: [0.6, 0.9]
       },
       'drum-bass-rave': {
         base: 'Drum & Bass',
@@ -115,31 +69,19 @@ export class SensorInterpreter {
   // Main interpretation function - converts sensor data to musical parameters
   interpretSensorData(sensorData) {
     try {
-      // Enhanced magnitude calculation with micro-movement detection
+      // Calculate smoothed magnitude for stability
       const rawMagnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
-      
-      // Track velocity and acceleration for enhanced responsiveness
-      this.trackVelocityHistory(sensorData);
-      const velocityMagnitude = this.calculateVelocityMagnitude(sensorData);
-      const accelerationMagnitude = this.calculateAccelerationMagnitude(sensorData);
-      
-      // Combine movement types for comprehensive responsiveness
-      const combinedMagnitude = rawMagnitude + (velocityMagnitude * 0.5) + (accelerationMagnitude * 0.3);
-      const magnitude = this.applySmoothingFilter(combinedMagnitude, this.lastMagnitude, this.intensitySmoothing);
+      const magnitude = this.applySmoothingFilter(rawMagnitude, this.lastMagnitude, this.intensitySmoothing);
       this.lastMagnitude = magnitude;
 
-      // Enhanced normalization with extended sensitivity range
-      const normalizedMagnitude = Math.min(magnitude, 8) / 8; // Increased range for more variety
+      // Normalize magnitude to 0-1 range with extended sensitivity
+      const normalizedMagnitude = Math.min(magnitude, 5) / 5;
 
-      // Detect micro-movements for subtle musical changes
-      const isMicroMovement = this.detectMicroMovement(rawMagnitude, velocityMagnitude, accelerationMagnitude);
-      const isAccelerating = accelerationMagnitude > this.accelerationSensitivity;
-
-      // Generate enhanced style prompt with psychedelic variety
-      const stylePrompt = this.generateEnhancedStylePrompt(sensorData, normalizedMagnitude, isMicroMovement, isAccelerating);
+      // Generate style prompt with smooth transitions
+      const stylePrompt = this.generateSmoothedStylePrompt(sensorData, normalizedMagnitude);
       
-      // Generate enhanced Lyria configuration parameters
-      const lyriaConfig = this.generateEnhancedLyriaConfig(sensorData, normalizedMagnitude, isMicroMovement, isAccelerating);
+      // Generate Lyria configuration parameters
+      const lyriaConfig = this.generateLyriaConfig(sensorData, normalizedMagnitude);
       
       // Generate weighted prompts for smooth transitions
       const weightedPrompts = this.generateWeightedPrompts(stylePrompt, normalizedMagnitude);
@@ -150,16 +92,12 @@ export class SensorInterpreter {
         lyriaConfig,
         magnitude: normalizedMagnitude,
         rawMagnitude,
-        velocityMagnitude,
-        accelerationMagnitude,
-        isMicroMovement,
-        isAccelerating,
         timestamp: Date.now(),
         sensorSource: sensorData.source,
-        // Enhanced metadata for orchestrator
+        // Additional metadata for orchestrator
         hasTransition: this.detectStyleTransition(stylePrompt),
-        intensity: this.categorizeEnhancedIntensity(normalizedMagnitude, isMicroMovement, isAccelerating),
-        movement: this.analyzeEnhancedMovementPattern(sensorData, velocityMagnitude, accelerationMagnitude)
+        intensity: this.categorizeIntensity(normalizedMagnitude),
+        movement: this.analyzeMovementPattern(sensorData)
       };
 
       this.lastInterpretation = interpretation;
@@ -230,208 +168,10 @@ export class SensorInterpreter {
     return style;
   }
 
-  // Track velocity history for enhanced responsiveness
-  trackVelocityHistory(sensorData) {
-    if (sensorData.velocity) {
-      this.velocityHistory.push(sensorData.velocity);
-      if (this.velocityHistory.length > this.maxHistoryLength) {
-        this.velocityHistory.shift();
-      }
-    }
-  }
-
-  // Calculate velocity magnitude from sensor data
-  calculateVelocityMagnitude(sensorData) {
-    if (sensorData.velocity) {
-      return Math.sqrt(sensorData.velocity.x ** 2 + sensorData.velocity.y ** 2);
-    }
-    return 0;
-  }
-
-  // Calculate acceleration magnitude from sensor data
-  calculateAccelerationMagnitude(sensorData) {
-    if (sensorData.acceleration) {
-      return Math.sqrt(sensorData.acceleration.x ** 2 + sensorData.acceleration.y ** 2);
-    }
-    return 0;
-  }
-
-  // Detect micro-movements for subtle musical changes
-  detectMicroMovement(rawMagnitude, velocityMagnitude, accelerationMagnitude) {
-    return rawMagnitude > this.microMovementThreshold ||
-           velocityMagnitude > this.microMovementThreshold ||
-           accelerationMagnitude > this.accelerationSensitivity;
-  }
-
-  // Generate enhanced style prompt with psychedelic variety
-  generateEnhancedStylePrompt(sensorData, normalizedMagnitude, isMicroMovement, isAccelerating) {
-    let selectedGenre;
-
-    // Enhanced genre selection based on movement characteristics
-    if (isAccelerating && normalizedMagnitude > 0.7) {
-      // High energy, fast movements - hardcore/glitch
-      selectedGenre = this.selectFromGenres(['hardcore-rave', 'glitch-techno', 'rave-techno']);
-    } else if (isMicroMovement && normalizedMagnitude < 0.3) {
-      // Subtle movements - psychedelic/ambient
-      selectedGenre = this.selectFromGenres(['psychedelic-techno', 'ambient-techno', 'minimal-acid']);
-    } else if (normalizedMagnitude > 0.5) {
-      // Medium-high energy - main rave genres
-      selectedGenre = this.selectFromGenres(['acid-rave', 'rave-techno', 'progressive-house']);
-    } else {
-      // Low energy - chill/progressive
-      selectedGenre = this.selectFromGenres(['minimal-acid', 'ambient-techno', 'progressive-house']);
-    }
-
-    const genre = this.raveGenres[selectedGenre];
-    
-    // Enhanced instrument selection based on movement
-    const selectedInstruments = this.selectEnhancedInstrumentsByMovement(sensorData, genre.instruments, isMicroMovement, isAccelerating);
-    
-    // Enhanced mood selection
-    const selectedMoods = this.selectEnhancedMoodsByIntensity(genre.moods, normalizedMagnitude, isMicroMovement);
-
-    return `${genre.base} with ${selectedInstruments.join(', ')} creating ${selectedMoods.join(', ')} vibes`;
-  }
-
-  // Generate enhanced Lyria configuration with micro-movement responsiveness
-  generateEnhancedLyriaConfig(sensorData, normalizedMagnitude, isMicroMovement, isAccelerating) {
-    const selectedGenreName = this.selectGenreByMovement(normalizedMagnitude, isMicroMovement, isAccelerating);
-    const genre = this.raveGenres[selectedGenreName];
-
-    // Enhanced BPM calculation with acceleration influence
-    let baseBpm = genre.bpmRange[0] + (genre.bpmRange[1] - genre.bpmRange[0]) * normalizedMagnitude;
-    if (isAccelerating) {
-      baseBpm += 5; // Boost BPM for acceleration
-    }
-    if (isMicroMovement && normalizedMagnitude < 0.2) {
-      baseBpm -= 3; // Reduce BPM for subtle movements
-    }
-
-    // Enhanced density with micro-movement sensitivity
-    let baseDensity = genre.densityRange[0] + (genre.densityRange[1] - genre.densityRange[0]) * normalizedMagnitude;
-    if (isMicroMovement) {
-      baseDensity *= 0.8; // Reduce density for subtle movements
-    }
-
-    // Enhanced brightness with movement characteristics
-    let baseBrightness = genre.brightnessRange[0] + (genre.brightnessRange[1] - genre.brightnessRange[0]) * normalizedMagnitude;
-    if (sensorData.source === 'camera-enhanced' && sensorData.motionDirection) {
-      baseBrightness += sensorData.motionDirection.magnitude * 0.2; // Camera motion influences brightness
-    }
-
-    // Enhanced guidance with responsiveness
-    let guidance = 0.3 + normalizedMagnitude * 0.4; // Base guidance
-    if (isAccelerating) {
-      guidance += 0.1; // More guidance for fast movements
-    }
-
-    return {
-      bpm: Math.round(Math.max(80, Math.min(200, baseBpm))),
-      density: Math.max(0.1, Math.min(1.0, baseDensity)),
-      brightness: Math.max(0.0, Math.min(1.0, baseBrightness)),
-      guidance: Math.max(0.1, Math.min(0.8, guidance))
-    };
-  }
-
-  // Enhanced intensity categorization
-  categorizeEnhancedIntensity(normalizedMagnitude, isMicroMovement, isAccelerating) {
-    if (isAccelerating && normalizedMagnitude > 0.8) return 'explosive';
-    if (normalizedMagnitude > 0.7) return 'intense';
-    if (normalizedMagnitude > 0.5) return 'energetic';
-    if (normalizedMagnitude > 0.3) return 'moderate';
-    if (isMicroMovement) return 'subtle';
-    return 'ambient';
-  }
-
-  // Enhanced movement pattern analysis
-  analyzeEnhancedMovementPattern(sensorData, velocityMagnitude, accelerationMagnitude) {
-    const pattern = {
-      type: 'unknown',
-      direction: { x: 0, y: 0, z: 0 },
-      intensity: 0,
-      characteristics: []
-    };
-
-    // Analyze movement type
-    if (accelerationMagnitude > this.accelerationSensitivity) {
-      pattern.type = 'acceleration';
-      pattern.characteristics.push('accelerating');
-    } else if (velocityMagnitude > this.microMovementThreshold) {
-      pattern.type = 'velocity';
-      pattern.characteristics.push('flowing');
-    } else {
-      pattern.type = 'position';
-      pattern.characteristics.push('static');
-    }
-
-    // Enhanced direction analysis
-    pattern.direction = {
-      x: sensorData.x || 0,
-      y: sensorData.y || 0,
-      z: sensorData.z || 0
-    };
-
-    // Calculate pattern intensity
-    pattern.intensity = Math.sqrt(
-      pattern.direction.x ** 2 + 
-      pattern.direction.y ** 2 + 
-      pattern.direction.z ** 2
-    );
-
-    // Add movement characteristics
-    if (pattern.intensity > 0.5) pattern.characteristics.push('dynamic');
-    if (Math.abs(pattern.direction.x) > Math.abs(pattern.direction.y)) {
-      pattern.characteristics.push('horizontal');
-    } else {
-      pattern.characteristics.push('vertical');
-    }
-
-    return pattern;
-  }
-
-  // Select from specific genres
-  selectFromGenres(genreNames) {
-    return genreNames[Math.floor(Math.random() * genreNames.length)];
-  }
-
-  // Select genre based on movement characteristics
-  selectGenreByMovement(normalizedMagnitude, isMicroMovement, isAccelerating) {
-    if (isAccelerating && normalizedMagnitude > 0.7) {
-      return this.selectFromGenres(['hardcore-rave', 'glitch-techno']);
-    } else if (isMicroMovement && normalizedMagnitude < 0.3) {
-      return this.selectFromGenres(['psychedelic-techno', 'ambient-techno', 'minimal-acid']);
-    } else if (normalizedMagnitude > 0.5) {
-      return this.selectFromGenres(['acid-rave', 'rave-techno']);
-    } else {
-      return this.selectFromGenres(['progressive-house', 'minimal-acid']);
-    }
-  }
-
-  // Enhanced instrument selection based on movement
-  selectEnhancedInstrumentsByMovement(sensorData, availableInstruments, isMicroMovement, isAccelerating) {
+  // Select instruments based on movement direction and type
+  selectInstrumentsByMovement(sensorData, availableInstruments) {
     const instruments = [];
-    const movementThreshold = 0.02; // Much lower threshold for micro-movements
-
-    if (isAccelerating) {
-      // For acceleration, prefer driving instruments
-      const drivingInstruments = availableInstruments.filter(inst => 
-        inst.toLowerCase().includes('bass') || 
-        inst.toLowerCase().includes('909') ||
-        inst.toLowerCase().includes('distortion')
-      );
-      instruments.push(...drivingInstruments.slice(0, 2));
-    }
-
-    if (isMicroMovement) {
-      // For subtle movements, prefer atmospheric instruments
-      const atmosphericInstruments = availableInstruments.filter(inst => 
-        inst.toLowerCase().includes('synth') || 
-        inst.toLowerCase().includes('pad') ||
-        inst.toLowerCase().includes('reverb') ||
-        inst.toLowerCase().includes('delay')
-      );
-      instruments.push(...atmosphericInstruments.slice(0, 2));
-    }
+    const movementThreshold = 0.1; // ULTRA-SENSITIVE for instant rave response
 
     // X-axis movement (side-to-side) - bass instruments
     if (Math.abs(sensorData.x) > movementThreshold) {
@@ -448,8 +188,8 @@ export class SensorInterpreter {
     if (Math.abs(sensorData.y) > movementThreshold) {
       const harmonicInstruments = availableInstruments.filter(inst => 
         inst.toLowerCase().includes('synth') || 
-        inst.toLowerCase().includes('moog') ||
-        inst.toLowerCase().includes('buchla')
+        inst.toLowerCase().includes('pad') ||
+        inst.toLowerCase().includes('piano')
       );
       if (harmonicInstruments.length > 0) {
         instruments.push(harmonicInstruments[0]);
@@ -468,47 +208,7 @@ export class SensorInterpreter {
       }
     }
 
-    // Ensure we have at least one instrument
-    if (instruments.length === 0) {
-      instruments.push(availableInstruments[0]);
-    }
-
     return [...new Set(instruments)]; // Remove duplicates
-  }
-
-  // Enhanced mood selection based on intensity and movement
-  selectEnhancedMoodsByIntensity(availableMoods, normalizedMagnitude, isMicroMovement) {
-    const moods = [];
-
-    if (normalizedMagnitude > 0.7) {
-      // High intensity moods
-      const highEnergyMoods = availableMoods.filter(mood => 
-        mood.toLowerCase().includes('upbeat') ||
-        mood.toLowerCase().includes('fast') ||
-        mood.toLowerCase().includes('huge') ||
-        mood.toLowerCase().includes('fat')
-      );
-      moods.push(...highEnergyMoods.slice(0, 2));
-    }
-
-    if (isMicroMovement || normalizedMagnitude < 0.3) {
-      // Subtle/psychedelic moods
-      const subtleMoods = availableMoods.filter(mood => 
-        mood.toLowerCase().includes('psychedelic') ||
-        mood.toLowerCase().includes('dreamy') ||
-        mood.toLowerCase().includes('ambient') ||
-        mood.toLowerCase().includes('ethereal') ||
-        mood.toLowerCase().includes('spacey')
-      );
-      moods.push(...subtleMoods.slice(0, 2));
-    }
-
-    if (moods.length === 0) {
-      // Fallback to first available moods
-      moods.push(...availableMoods.slice(0, 2));
-    }
-
-    return [...new Set(moods)]; // Remove duplicates
   }
 
   // Select moods based on intensity level

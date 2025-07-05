@@ -5,7 +5,6 @@
  */
 
 import { Platform } from 'react-native';
-import { backgroundChunkProcessor } from '../orchestration/bgProcessing.js';
 
 interface ChunkMetadata {
   rtaId: string;
@@ -51,9 +50,6 @@ class AudioChunkService {
     this.backendUrl = process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://1fssfea9c9.execute-api.us-east-1.amazonaws.com/prod';
     console.log(`🔧 Audio chunk service initialized with backend: ${this.backendUrl}`);
     
-    // Initialize background processor for isolated chunk processing
-    this.initializeBackgroundProcessor();
-    
     // Handle page visibility changes for background processing
     if (typeof window !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
@@ -61,43 +57,6 @@ class AudioChunkService {
           this.processBackgroundQueue();
         }
       });
-    }
-  }
-
-  // Initialize background chunk processor for isolated processing
-  private async initializeBackgroundProcessor(): Promise<void> {
-    try {
-      const success = await backgroundChunkProcessor.initialize({
-        compressionSettings: {
-          quality: 0.7,
-          bitRate: 128000,
-          sampleRate: 48000,
-          channels: 2
-        }
-      });
-
-      if (success) {
-        console.log('🚀 Background chunk processor initialized successfully');
-        
-        // Set up event handlers
-        backgroundChunkProcessor.onProcessComplete = (chunkId, result, metrics) => {
-          console.log(`✅ Chunk ${chunkId} processed in background`);
-          console.log(`   Processing time: ${metrics.processingTime.toFixed(1)}ms`);
-          console.log(`   Compression: ${(metrics.compressionRatio * 100).toFixed(1)}%`);
-        };
-        
-        backgroundChunkProcessor.onProcessError = (chunkId, error) => {
-          console.error(`❌ Background processing failed for ${chunkId}:`, error);
-        };
-        
-        backgroundChunkProcessor.onWorkerReady = (capabilities) => {
-          console.log('🎛️ Background processor capabilities:', capabilities);
-        };
-      } else {
-        console.warn('⚠️ Background processor initialization failed, using main thread fallback');
-      }
-    } catch (error) {
-      console.warn('Background processor setup failed:', error);
     }
   }
 
@@ -253,7 +212,7 @@ class AudioChunkService {
   }
 
   /**
-   * Process accumulated audio into a 60-second chunk using background processing
+   * Process accumulated audio into a 60-second chunk and send to backend
    */
   private async processAccumulatedAudio(isFinalChunk: boolean): Promise<void> {
     // Prevent duplicate processing
@@ -277,7 +236,19 @@ class AudioChunkService {
       
       const chunkTimestamp = this.bufferStartTime;
       
-      console.log(`🔄 Queuing ${isFinalChunk ? 'final ' : ''}chunk for background processing: ${chunkId}`);
+      console.log(`🔄 Processing ${isFinalChunk ? 'final ' : ''}chunk: ${chunkId}`);
+
+      // Concatenate all audio buffers
+      const totalLength = this.audioBuffer.reduce((sum, buffer) => sum + buffer.byteLength, 0);
+      const combinedBuffer = new ArrayBuffer(totalLength);
+      const combinedArray = new Uint8Array(combinedBuffer);
+      
+      let offset = 0;
+      for (const buffer of this.audioBuffer) {
+        const array = new Uint8Array(buffer);
+        combinedArray.set(array, offset);
+        offset += array.length;
+      }
 
       // Create chunk metadata
       const metadata: ChunkMetadata = {
@@ -294,81 +265,18 @@ class AudioChunkService {
       // Mark chunk as processed to prevent duplicates
       this.processedChunkIds.add(chunkId);
 
-      // Copy current audio buffers for background processing
-      const audioBuffersCopy = this.audioBuffer.map(buffer => buffer.slice());
-
-      // Reset buffer IMMEDIATELY to prevent reprocessing and allow continuous recording
+      // Reset buffer IMMEDIATELY to prevent reprocessing
       this.audioBuffer = [];
       this.bufferStartTime = Date.now();
       this.chunkSequence++;
 
-      // Queue for background processing using Web Worker
-      if (backgroundChunkProcessor.isInitialized) {
-        try {
-          await backgroundChunkProcessor.queueChunk({
-            chunkId,
-            audioBuffers: audioBuffersCopy,
-            metadata,
-            backendUrl: this.backendUrl,
-            isFinalChunk
-          });
-          
-          console.log(`🚀 Chunk ${chunkId} queued for background Web Worker processing`);
-        } catch (error) {
-          console.warn(`Background processor failed, using fallback: ${error}`);
-          // Fallback to main thread processing
-          await this.processFallbackChunk(chunkId, audioBuffersCopy, metadata, isFinalChunk);
-        }
-      } else {
-        // Fallback to main thread processing
-        console.log(`⚠️ Background processor not available, using main thread for ${chunkId}`);
-        await this.processFallbackChunk(chunkId, audioBuffersCopy, metadata, isFinalChunk);
-      }
+      // Post chunk to backend (this continues in background even if UI closes)
+      this.postChunkToBackend(chunkId, combinedBuffer, metadata, isFinalChunk);
 
     } catch (error) {
       console.error(`❌ Error processing audio chunk:`, error);
     } finally {
       this.isProcessing = false;
-    }
-  }
-
-  // Fallback processing on main thread when background processor fails
-  private async processFallbackChunk(
-    chunkId: string, 
-    audioBuffers: ArrayBuffer[], 
-    metadata: ChunkMetadata, 
-    isFinalChunk: boolean
-  ): Promise<void> {
-    try {
-      // Concatenate audio buffers on main thread
-      const totalLength = audioBuffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
-      const combinedBuffer = new ArrayBuffer(totalLength);
-      const combinedArray = new Uint8Array(combinedBuffer);
-      
-      let offset = 0;
-      for (const buffer of audioBuffers) {
-        const array = new Uint8Array(buffer);
-        combinedArray.set(array, offset);
-        offset += array.length;
-      }
-
-      // Add to background queue for processing
-      this.backgroundQueue.push({
-        chunkId,
-        buffer: combinedBuffer,
-        metadata,
-        isFinal: isFinalChunk
-      });
-      
-      // Try immediate background processing if possible
-      if (!this.isBackgroundProcessing) {
-        this.processBackgroundQueue();
-      }
-
-      console.log(`📋 Chunk ${chunkId} queued for fallback processing (${this.backgroundQueue.length} in queue)`);
-      
-    } catch (error) {
-      console.error(`Fallback chunk processing failed for ${chunkId}:`, error);
     }
   }
 

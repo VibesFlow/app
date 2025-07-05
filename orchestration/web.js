@@ -5,7 +5,6 @@
  */
 
 import { Platform } from 'react-native';
-import { audioBufferManager } from './buffer.js';
 
 export class WebOrchestrator {
   constructor() {
@@ -23,56 +22,30 @@ export class WebOrchestrator {
     this.decayInterval = null;
     this.motionInterval = null;
     this.isInitialized = false;
-    
-    // Enhanced sensor tracking for micro-movements
-    this.mouseVelocity = { x: 0, y: 0 };
-    this.mouseAcceleration = { x: 0, y: 0 };
-    this.lastVelocity = { x: 0, y: 0 };
-    this.motionSensitivity = 0.01; // Much lower threshold for micro-movements
-    this.accelerationThreshold = 0.005;
   }
 
-  // Initialize Web Audio Context with advanced buffer management
+  // Initialize Web Audio Context with minimal latency
   async initializeAudioContext() {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return false;
 
     try {
-      console.log('🔧 Initializing advanced audio buffer manager...');
-      const success = await audioBufferManager.initialize();
-      if (!success) {
-        throw new Error('Advanced audio buffer manager initialization failed');
+      // Use the most optimized audio context settings
+      this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        latencyHint: 'interactive', // Ultra-low latency mode
+        sampleRate: 48000, // Match Lyria output
+      });
+      
+      // Resume immediately for minimal delay
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
       }
-
-      this.audioContext = audioBufferManager.audioContext;
       
-      console.log('🎵 Advanced Web Audio Context initialized with buffer management');
-      console.log(`   Sample Rate: ${this.audioContext.sampleRate}Hz`);
-      console.log(`   Base Latency: ${(this.audioContext.baseLatency * 1000).toFixed(1)}ms`);
-      console.log(`   Buffer Manager Status:`, audioBufferManager.getStatus());
-      
+      console.log('Web Audio Context initialized:', this.audioContext.state);
       this.isInitialized = true;
       return true;
     } catch (error) {
-      console.error('Advanced Web Audio Context init failed:', error);
-      
-      // Fallback to basic audio context
-      try {
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
-          latencyHint: 'interactive',
-          sampleRate: 48000,
-        });
-        
-        if (this.audioContext.state === 'suspended') {
-          await this.audioContext.resume();
-        }
-        
-        console.log('Fallback audio context initialized');
-        this.isInitialized = true;
-        return true;
-      } catch (fallbackError) {
-        console.error('All audio initialization methods failed:', fallbackError);
-        return false;
-      }
+      console.warn('Web Audio Context init failed:', error);
+      return false;
     }
   }
 
@@ -92,7 +65,7 @@ export class WebOrchestrator {
     });
   }
 
-  // Enhanced mouse tracking with micro-movement and acceleration detection
+  // Enhanced mouse tracking with optimized sensitivity for rave responsiveness
   initializeMouseTracking() {
     if (Platform.OS !== 'web') return;
 
@@ -102,70 +75,32 @@ export class WebOrchestrator {
       const deltaX = event.clientX - this.lastMouseX;
       const deltaY = event.clientY - this.lastMouseY;
       
-      // Calculate velocity (pixels per millisecond)
-      const velocityX = deltaX / deltaTime;
-      const velocityY = deltaY / deltaTime;
+      // Optimized velocity calculation with rave-specific scaling
+      const velocityX = (deltaX / deltaTime) * 150; // Increased sensitivity
+      const velocityY = (deltaY / deltaTime) * 150;
+      const velocityMagnitude = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
       
-      // Calculate acceleration
-      const accelX = (velocityX - this.lastVelocity.x) / deltaTime;
-      const accelY = (velocityY - this.lastVelocity.y) / deltaTime;
+      // Enhanced micro-movement detection
+      const baseIntensity = Math.min(velocityMagnitude * 0.2, 0.7);
       
-      // Normalize movement relative to screen size with enhanced sensitivity
-      const normalizedX = deltaX / window.innerWidth;
-      const normalizedY = deltaY / window.innerHeight;
-      
-      // Apply micro-movement amplification
-      const amplificationFactor = 5.0; // Significantly amplify subtle movements
-      const amplifiedX = normalizedX * amplificationFactor;
-      const amplifiedY = normalizedY * amplificationFactor;
-      
-      // Enhanced motion detection
-      const motionMagnitude = Math.sqrt(amplifiedX ** 2 + amplifiedY ** 2);
-      const accelMagnitude = Math.sqrt(accelX ** 2 + accelY ** 2);
-      const isSubtleMotion = motionMagnitude > this.motionSensitivity;
-      const isAccelerating = accelMagnitude > this.accelerationThreshold;
-      
-      // Adaptive sensitivity - more responsive for micro-movements
-      const responseFactor = isSubtleMotion || isAccelerating ? 2.0 : 1.0;
-      const finalX = amplifiedX * responseFactor;
-      const finalY = amplifiedY * responseFactor;
-      const finalZ = motionMagnitude * responseFactor;
-      
-      // Enhanced sensor data with motion characteristics
       const sensorData = {
-        x: Math.max(-8, Math.min(8, finalX)),
-        y: Math.max(-8, Math.min(8, finalY)),
-        z: Math.max(0.1, Math.min(8, finalZ)),
-        velocity: { x: velocityX, y: velocityY },
-        acceleration: { x: accelX, y: accelY },
+        x: Math.max(-5, Math.min(5, velocityX)),
+        y: Math.max(-5, Math.min(5, velocityY)),
+        z: Math.max(baseIntensity, Math.min(5, velocityMagnitude)),
         timestamp: currentTime,
-        source: 'mouse-enhanced',
-        motionType: isAccelerating ? 'acceleration' : isSubtleMotion ? 'subtle' : 'static',
-        intensity: motionMagnitude,
-        responseFactor
+        source: 'mouse'
       };
 
       this.emitSensorData(sensorData);
       
-      // Apply real-time psychedelic effects
-      if (audioBufferManager.isInitialized) {
-        audioBufferManager.applyPsychedelicEffects(sensorData);
-      }
-      
-      // Update tracking variables
       this.lastMouseX = event.clientX;
       this.lastMouseY = event.clientY;
       this.lastMouseTime = currentTime;
-      this.lastVelocity = { x: velocityX, y: velocityY };
-      this.mouseVelocity = { x: velocityX, y: velocityY };
-      this.mouseAcceleration = { x: accelX, y: accelY };
     };
 
     // Use passive listeners for maximum performance
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
-    console.log('🖱️ Enhanced mouse tracking initialized with micro-movement detection');
-    console.log(`   Motion sensitivity: ${this.motionSensitivity}`);
-    console.log(`   Acceleration threshold: ${this.accelerationThreshold}`);
+    console.log('Mouse tracking initialized with rave optimization');
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
@@ -216,28 +151,17 @@ export class WebOrchestrator {
           }
           
           const motionIntensity = totalDiff / (320 * 240 * 3 / 32);
-          const normalizedMotion = Math.min(motionIntensity / 20, 5); // Doubled sensitivity
+          const normalizedMotion = Math.min(motionIntensity / 40, 3); // Increased sensitivity
           
-          if (normalizedMotion > 0.02) { // Much lower threshold for micro-movements
-            // Enhanced motion data with directional analysis
-            const motionVector = this.analyzeMotionDirection(currentImageData, this.previousImageData);
-            
+          if (normalizedMotion > 0.05) { // Lower threshold for micro-movements
             const sensorData = {
-              x: normalizedMotion * 0.8 + motionVector.x,
-              y: normalizedMotion * 0.6 + motionVector.y,
-              z: normalizedMotion * 1.5,
-              motionDirection: motionVector,
-              intensity: normalizedMotion,
+              x: normalizedMotion * 0.6,
+              y: normalizedMotion * 0.4,
+              z: normalizedMotion * 1.2,
               timestamp: Date.now(),
-              source: 'camera-enhanced'
+              source: 'camera'
             };
-            
             this.emitSensorData(sensorData);
-            
-            // Apply camera-based effects
-            if (audioBufferManager.isInitialized) {
-              audioBufferManager.applyPsychedelicEffects(sensorData);
-            }
           }
         }
         
@@ -354,24 +278,12 @@ export class WebOrchestrator {
     return new Uint8Array(header);
   }
 
-  // Ultra-low latency audio playback with advanced buffering
+  // Ultra-low latency audio playback
   async playAudioChunk(audioData) {
-    if (!this.isInitialized || Platform.OS !== 'web') return false;
+    if (!this.isInitialized || Platform.OS !== 'web') return;
 
     try {
-      // Use advanced audio buffer manager for seamless playback
-      if (audioBufferManager.isInitialized) {
-        const success = await audioBufferManager.queueAudioChunk(audioData);
-        if (success) {
-          console.log('🎵 Audio chunk queued successfully with advanced buffering');
-          return true;
-        }
-        console.warn('Advanced buffer manager failed, falling back to basic playback');
-      } else {
-        console.warn('Advanced buffer manager not initialized, using fallback playback');
-      }
-
-      // Fallback to basic playback if buffer manager fails
+      // Optimized base64 to PCM conversion
       const binaryString = atob(audioData);
       const pcmData = new Uint8Array(binaryString.length);
       
@@ -403,60 +315,17 @@ export class WebOrchestrator {
         if (oldAudio) {
           oldAudio.pause();
           oldAudio.src = '';
-          URL.revokeObjectURL(audioUrl);
+          URL.revokeObjectURL(oldAudio.src);
         }
       }
       
       // Play with minimal delay
       await audio.play();
       
-      console.log('Audio chunk played with fallback method');
-      return true;
+      console.log('Audio chunk played successfully');
       
     } catch (error) {
       console.error('Audio playback failed:', error);
-      return false;
-    }
-  }
-
-  // Analyze motion direction for enhanced camera tracking
-  analyzeMotionDirection(currentImageData, previousImageData) {
-    try {
-      const width = currentImageData.width;
-      const height = currentImageData.height;
-      const currentPixels = currentImageData.data;
-      const prevPixels = previousImageData.data;
-      
-      let leftMotion = 0, rightMotion = 0, upMotion = 0, downMotion = 0;
-      
-      // Sample motion in different regions
-      for (let y = 0; y < height; y += 8) {
-        for (let x = 0; x < width; x += 8) {
-          const i = (y * width + x) * 4;
-          const diff = Math.abs(currentPixels[i] - prevPixels[i]) +
-                      Math.abs(currentPixels[i + 1] - prevPixels[i + 1]) +
-                      Math.abs(currentPixels[i + 2] - prevPixels[i + 2]);
-          
-          // Accumulate motion by region
-          if (x < width / 2) leftMotion += diff;
-          else rightMotion += diff;
-          
-          if (y < height / 2) upMotion += diff;
-          else downMotion += diff;
-        }
-      }
-      
-      // Calculate directional bias
-      const horizontalBias = (rightMotion - leftMotion) / (width * height);
-      const verticalBias = (downMotion - upMotion) / (width * height);
-      
-      return {
-        x: horizontalBias * 0.01, // Scale for subtle directional influence
-        y: verticalBias * 0.01,
-        magnitude: Math.sqrt(horizontalBias ** 2 + verticalBias ** 2)
-      };
-    } catch (error) {
-      return { x: 0, y: 0, magnitude: 0 };
     }
   }
 

@@ -6,7 +6,6 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { Platform } from 'react-native';
-import { performanceMonitor } from './performance.js';
 
 export class LyriaOrchestrator {
   constructor() {
@@ -23,7 +22,7 @@ export class LyriaOrchestrator {
     // Performance optimization
     this.lastConfig = {};
     this.lastStyle = '';
-    this.lastInterpretation = null;
+    this.updateQueue = [];
     this.batchInterval = null;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
@@ -33,11 +32,6 @@ export class LyriaOrchestrator {
     this.transitionBuffer = [];
     this.isTransitioning = false;
     this.transitionDuration = 2000; // 2 seconds for smooth transitions
-
-    // Performance monitoring
-    this.performanceMetrics = {};
-    this.lastConfigUpdate = 0;
-    this.pendingUpdates = [];
   }
 
   // Initialize orchestrator with API key
@@ -95,9 +89,6 @@ export class LyriaOrchestrator {
     try {
       console.log('Connecting to Lyria RealTime API...');
       
-      // Start performance monitoring
-      performanceMonitor.startMonitoring();
-      
       // Initialize GoogleGenAI client with optimized settings
       const genAI = new GoogleGenAI({
         apiKey: this.apiKey,
@@ -122,7 +113,6 @@ export class LyriaOrchestrator {
       this.startBatchProcessing();
       
       console.log('Successfully connected to Lyria RealTime API');
-      console.log('🔍 Performance monitoring active');
       return true;
 
     } catch (error) {
@@ -236,8 +226,8 @@ export class LyriaOrchestrator {
       return false;
     }
 
-    // Add update to pending updates for batched processing
-    this.pendingUpdates.push({
+    // Add update to queue for batched processing
+    this.updateQueue.push({
       interpretation,
       timestamp: Date.now()
     });
@@ -245,203 +235,104 @@ export class LyriaOrchestrator {
     return true;
   }
 
-  // Start batched update processing for optimal performance
+  // Process updates in batches for ULTRA-LOW LATENCY
   startBatchProcessing() {
-    if (this.batchInterval) return;
-    
     this.batchInterval = setInterval(() => {
-      this.processBatchedUpdates();
-    }, 50); // Process updates every 50ms for ultra-responsive feedback
-    
-    console.log('🔄 Batched update processing started for optimal performance');
+      if (this.updateQueue.length === 0) return;
+
+      // Get the most recent update (discard stale ones)
+      const latestUpdate = this.updateQueue[this.updateQueue.length - 1];
+      this.updateQueue = [];
+
+      this.processUpdate(latestUpdate.interpretation);
+    }, 50); // FASTER processing - every 50ms for maximum rave responsiveness
   }
 
-  // Process batched updates with enhanced performance monitoring
-  processBatchedUpdates() {
-    if (this.pendingUpdates.length === 0) return;
-    
-    const startTime = performance.now();
-    
+  // Process individual update with intelligent change detection
+  async processUpdate(interpretation) {
     try {
-      // Process all pending updates
-      const updates = [...this.pendingUpdates];
-      this.pendingUpdates = [];
-      
-      for (const update of updates) {
-        this.processUpdate(update);
-      }
-      
-      // Update performance metrics
-      const processingTime = performance.now() - startTime;
-      this.updatePerformanceMetrics(processingTime, updates.length);
-      
-    } catch (error) {
-      console.error('Batch processing error:', error);
-    }
-  }
+      let hasUpdates = false;
 
-  // Process individual update with enhanced sensor mapping
-  processUpdate(update) {
-    try {
-      const { interpretation, timestamp } = update;
-      
-      // Store current interpretation for change detection
-      const previousInterpretation = this.lastInterpretation;
-      this.lastInterpretation = interpretation;
-      
-      // Enhanced sensor response with micro-movement detection
-      if (interpretation.isMicroMovement) {
-        // Apply subtle parameter changes for micro-movements
-        this.applySubtleParameterChanges(interpretation);
-      } else {
-        // Apply standard parameter updates
-        this.applyStandardParameterChanges(interpretation);
+      // Check for style/prompt changes
+      if (this.hasStyleChanged(interpretation)) {
+        await this.updatePrompts(interpretation);
+        hasUpdates = true;
       }
-      
-      // Handle acceleration-based effects
-      if (interpretation.isAccelerating) {
-        this.applyAccelerationEffects(interpretation);
+
+      // Check for configuration changes
+      if (this.hasConfigChanged(interpretation)) {
+        await this.updateConfiguration(interpretation);
+        hasUpdates = true;
       }
-      
-      // Update configuration if significant changes detected
-      if (this.detectSignificantChange(interpretation, previousInterpretation)) {
-        this.updateConfiguration(interpretation);
-      }
-      
-      // Update weighted prompts if style transition detected
-      if (interpretation.hasTransition) {
-        this.updateWeightedPrompts(interpretation);
+
+      if (hasUpdates) {
+        console.log('Lyria updated with new parameters');
       }
 
     } catch (error) {
-      console.warn('Update processing failed:', error);
+      console.error('Update processing error:', error);
+      this.emit('onError', error);
     }
   }
 
-  // Apply subtle parameter changes for micro-movements
-  applySubtleParameterChanges(interpretation) {
-    if (!this.session) return;
+  // Check if style has changed significantly
+  hasStyleChanged(interpretation) {
+    if (!this.lastStyle) return true;
     
-    try {
-      // Micro-adjustments to density and brightness
-      const config = {
-        ...this.lastConfig,
-        density: Math.max(0.1, Math.min(1.0, this.lastConfig.density + (interpretation.magnitude - 0.5) * 0.1)),
-        brightness: Math.max(0.0, Math.min(1.0, this.lastConfig.brightness + (interpretation.magnitude - 0.5) * 0.05))
-      };
-      
-      // Apply micro-changes without triggering major updates
-      this.session.setMusicGenerationConfig({
-        musicGenerationConfig: config
-      }).catch(error => console.debug('Micro-update failed:', error));
-      
-      console.debug(`🔬 Micro-movement update: density=${config.density.toFixed(3)}, brightness=${config.brightness.toFixed(3)}`);
-      
-    } catch (error) {
-      console.debug('Subtle parameter update failed:', error);
+    // For smooth transitions, check if we need weighted prompts
+    if (interpretation.hasTransition) {
+      return true;
     }
+    
+    return interpretation.stylePrompt !== this.lastStyle;
   }
 
-  // Apply standard parameter changes for normal movements
-  applyStandardParameterChanges(interpretation) {
-    if (!this.session) return;
-    
-    try {
+  // Check if configuration has changed significantly - ULTRA-SENSITIVE for rave
+  hasConfigChanged(interpretation) {
     const config = interpretation.lyriaConfig;
-      
-      // Check if changes are significant enough to apply
-      const densityChange = Math.abs(config.density - this.lastConfig.density);
-      const brightnessChange = Math.abs(config.brightness - this.lastConfig.brightness);
-      
-      if (densityChange > 0.05 || brightnessChange > 0.05) {
-        this.session.setMusicGenerationConfig({
-          musicGenerationConfig: config
-        }).catch(error => console.warn('Standard update failed:', error));
-        
-        this.lastConfig = { ...config };
-        
-        console.log(`🎵 Standard movement update: BPM=${config.bpm}, density=${config.density.toFixed(2)}, brightness=${config.brightness.toFixed(2)}`);
-      }
-      
-    } catch (error) {
-      console.warn('Standard parameter update failed:', error);
-    }
+    const lastConfig = this.lastConfig;
+
+    // MUCH more sensitive change detection for instant rave response
+    const bpmChanged = Math.abs((lastConfig.bpm || 0) - config.bpm) > 1; // Was 3, now 1
+    const densityChanged = Math.abs((lastConfig.density || 0) - config.density) > 0.02; // Was 0.05, now 0.02
+    const brightnessChanged = Math.abs((lastConfig.brightness || 0) - config.brightness) > 0.02; // Was 0.05, now 0.02
+    const guidanceChanged = Math.abs((lastConfig.guidance || 0) - config.guidance) > 0.1; // Was 0.3, now 0.1
+
+    return bpmChanged || densityChanged || brightnessChanged || guidanceChanged;
   }
 
-  // Apply acceleration-based effects
-  applyAccelerationEffects(interpretation) {
+  // Update prompts with smooth transitions
+  async updatePrompts(interpretation) {
     if (!this.session) return;
 
     try {
-      // Temporary BPM boost for acceleration
-      const boostedConfig = {
-        ...interpretation.lyriaConfig,
-        bpm: Math.min(200, interpretation.lyriaConfig.bpm + 10),
-        guidance: Math.min(0.8, interpretation.lyriaConfig.guidance + 0.1)
-      };
+      // Use weighted prompts for smooth transitions
+      const result = this.session.setWeightedPrompts({
+        weightedPrompts: interpretation.weightedPrompts
+      });
       
-      this.session.setMusicGenerationConfig({
-        musicGenerationConfig: boostedConfig
-      }).catch(error => console.debug('Acceleration effect failed:', error));
+      if (result && typeof result.catch === 'function') {
+        result.catch((error) => console.warn('Failed to update prompts:', error));
+      }
+
+      this.lastStyle = interpretation.stylePrompt;
       
-      // Revert after short duration
-      setTimeout(() => {
-        this.session.setMusicGenerationConfig({
-          musicGenerationConfig: interpretation.lyriaConfig
-        }).catch(error => console.debug('Acceleration revert failed:', error));
-      }, 2000);
-      
-      console.log(`🚀 Acceleration effect: BPM boost to ${boostedConfig.bpm}`);
+      // Handle transitions
+      if (interpretation.hasTransition) {
+        this.handleStyleTransition(interpretation);
+      }
 
     } catch (error) {
-      console.warn('Acceleration effects failed:', error);
+      console.warn('Prompt update failed:', error);
     }
   }
 
-  // Detect significant changes that warrant style updates
-  detectSignificantChange(interpretation, previousInterpretation) {
-    if (!previousInterpretation) return true;
-    
-    const intensityChange = Math.abs(interpretation.magnitude - previousInterpretation.magnitude);
-    const movementTypeChange = interpretation.movement.type !== previousInterpretation.movement.type;
-    const hasTransition = interpretation.hasTransition;
-    
-    return intensityChange > 0.2 || movementTypeChange || hasTransition;
-  }
-
-  // Update performance metrics
-  updatePerformanceMetrics(processingTime, updateCount) {
-    this.performanceMetrics = this.performanceMetrics || {
-      averageProcessingTime: 0,
-      maxProcessingTime: 0,
-      totalUpdates: 0,
-      updateFrequency: 0
-    };
-    
-    this.performanceMetrics.totalUpdates += updateCount;
-    this.performanceMetrics.maxProcessingTime = Math.max(this.performanceMetrics.maxProcessingTime, processingTime);
-    this.performanceMetrics.averageProcessingTime = 
-      (this.performanceMetrics.averageProcessingTime * 0.9) + (processingTime * 0.1);
-    
-    // Log performance warnings
-    if (processingTime > 20) { // 20ms threshold
-      console.warn(`⚠️ Slow batch processing: ${processingTime.toFixed(1)}ms for ${updateCount} updates`);
-    }
-  }
-
-  // Enhanced update configuration with performance optimization
+  // Update configuration parameters
   async updateConfiguration(interpretation) {
     if (!this.session) return;
 
     try {
       const config = interpretation.lyriaConfig;
-      
-      // Throttle configuration updates to prevent overwhelming Lyria
-      const now = Date.now();
-      if (now - this.lastConfigUpdate < 100) { // 100ms throttle
-        return;
-      }
-      this.lastConfigUpdate = now;
       
       const result = this.session.setMusicGenerationConfig({
         musicGenerationConfig: config
@@ -453,13 +344,11 @@ export class LyriaOrchestrator {
 
       this.lastConfig = { ...config };
 
-      console.log('🎛️ Configuration updated:', {
+      console.log('Config updated:', {
         bpm: config.bpm,
         density: config.density.toFixed(2),
         brightness: config.brightness.toFixed(2),
-        guidance: config.guidance.toFixed(2),
-        intensity: interpretation.intensity,
-        movement: interpretation.movement.type
+        guidance: config.guidance.toFixed(2)
       });
 
     } catch (error) {
@@ -467,44 +356,16 @@ export class LyriaOrchestrator {
     }
   }
 
-  // Enhanced weighted prompts update with style transitions
-  async updateWeightedPrompts(interpretation) {
-    if (!this.session || !interpretation.hasTransition) return;
+  // Handle style transitions with buffering
+  handleStyleTransition(interpretation) {
+    if (this.isTransitioning) return;
 
-    try {
-      // Only update prompts on significant style transitions
-      const result = this.session.setWeightedPrompts({
-        weightedPrompts: interpretation.weightedPrompts
-      });
-      
-      if (result && typeof result.catch === 'function') {
-        result.catch((error) => console.warn('Failed to update prompts:', error));
-      }
-
-      console.log(`🎨 Style transition: ${interpretation.stylePrompt}`);
-
-    } catch (error) {
-      console.warn('Weighted prompts update failed:', error);
-    }
-  }
-
-  // Get enhanced orchestrator status
-  getStatus() {
-    return {
-      isConnected: this.isConnected,
-      isStreaming: this.isStreaming,
-      reconnectAttempts: this.reconnectAttempts,
-      lastConfigUpdate: this.lastConfigUpdate,
-      pendingUpdates: this.pendingUpdates.length,
-      performanceMetrics: this.performanceMetrics || {},
-      lastInterpretation: this.lastInterpretation ? {
-        intensity: this.lastInterpretation.intensity,
-        movement: this.lastInterpretation.movement.type,
-        isMicroMovement: this.lastInterpretation.isMicroMovement,
-        isAccelerating: this.lastInterpretation.isAccelerating,
-        timestamp: this.lastInterpretation.timestamp
-      } : null
-    };
+    this.isTransitioning = true;
+    
+    // Implement cross-fading logic here if needed
+    setTimeout(() => {
+      this.isTransitioning = false;
+    }, this.transitionDuration);
   }
 
   // Determine if reconnection should be attempted
@@ -612,9 +473,6 @@ export class LyriaOrchestrator {
   async disconnect() {
     console.log('Disconnecting from Lyria...');
     
-    // Stop performance monitoring
-    performanceMonitor.stopMonitoring();
-    
     // Stop batch processing
     if (this.batchInterval) {
       clearInterval(this.batchInterval);
@@ -638,50 +496,32 @@ export class LyriaOrchestrator {
 
     this.isConnected = false;
     this.isStreaming = false;
-    this.pendingUpdates = [];
-    this.lastInterpretation = null;
+    this.updateQueue = [];
     this.reconnectAttempts = 0;
     
     this.emit('onStateChange', { connected: false, streaming: false });
     console.log('Disconnected from Lyria');
   }
 
+  // Get current connection status
+  getStatus() {
+    return {
+      connected: this.isConnected,
+      streaming: this.isStreaming,
+      reconnectAttempts: this.reconnectAttempts,
+      queueLength: this.updateQueue.length
+    };
+  }
+
   // Cleanup all resources
   cleanup() {
-    // Stop performance monitoring
-    performanceMonitor.stopMonitoring();
-    
-    // Stop batch processing
-    if (this.batchInterval) {
-      clearInterval(this.batchInterval);
-      this.batchInterval = null;
-    }
-
-    // Clear pending updates
-    this.pendingUpdates = [];
-
-    // Disconnect session
-    if (this.session) {
-      try {
-        this.session.disconnect();
-      } catch (error) {
-        console.warn('Session disconnect error:', error);
-      }
-      this.session = null;
-    }
-
-    // Reset state
-    this.isConnected = false;
-    this.isStreaming = false;
+    this.disconnect();
     this.callbacks = {
       onAudioChunk: [],
-      onStateChange: [],
-      onError: []
+      onError: [],
+      onStateChange: []
     };
-
-    console.log('🧹 Lyria Orchestrator cleanup completed');
-    console.log('📊 Final performance summary:');
-    performanceMonitor.logSummary();
+    console.log('Lyria orchestrator cleanup completed');
   }
 }
 
