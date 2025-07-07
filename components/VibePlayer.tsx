@@ -10,11 +10,13 @@ import {
   Platform,
   TextInput,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
 import GlitchContainer from './ui/GlitchContainer';
 import GlitchText from './ui/GlitchText';
+import { useFilCDN } from '../context/filcdn';
 
 // Import orchestration modules
 import { 
@@ -33,6 +35,7 @@ interface VibePlayerProps {
   onBack: () => void;
   rtaID?: string;
   config?: any;
+  mode?: 'live' | 'playback'; // NEW: Support for RTA playback mode
 }
 
 interface SensorData {
@@ -63,12 +66,24 @@ interface ParticipantData {
   accounts: string[]; // List of participant account IDs
 }
 
+// NEW: RTA Playback State
+interface RTAPlaybackState {
+  currentChunkIndex: number;
+  totalChunks: number;
+  isPlaying: boolean;
+  isPaused: boolean;
+  currentTime: number;
+  totalDuration: number;
+  audioElement: HTMLAudioElement | null;
+  chunkQueue: string[]; // Array of FilCDN URLs
+}
+
 // Google Lyria API configuration
 const LYRIA_API_KEY = process.env.EXPO_PUBLIC_LYRIA_API_KEY || '';
 
-const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config }) => {
+const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = 'live' }) => {
   // =============================================================================
-  // SECTION: STATE MANAGEMENT (CLEANED AND OPTIMIZED)
+  // SECTION: STATE MANAGEMENT (ENHANCED WITH RTA PLAYBACK)
   // =============================================================================
   const [isInitialized, setIsInitialized] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -90,10 +105,26 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config }) => {
     velocity: [],
     instruments: []
   });
+
+  // NEW: RTA Playback State
+  const [rtaPlayback, setRtaPlayback] = useState<RTAPlaybackState>({
+    currentChunkIndex: 0,
+    totalChunks: 0,
+    isPlaying: false,
+    isPaused: false,
+    currentTime: 0,
+    totalDuration: 0,
+    audioElement: null,
+    chunkQueue: []
+  });
+
+  // NEW: FilCDN integration
+  const { getVibestreamByRTA, downloadChunk } = useFilCDN();
   
   // References for timing and cleanup
   const startTimeRef = useRef<number>(Date.now());
   const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const rtaProgressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // =============================================================================
   // SECTION: UI ANIMATIONS
@@ -243,6 +274,8 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config }) => {
 
       // Start audio chunk service for backend upload
       if (rtaID && config?.creator) {
+        // Reload backend URL to ensure we're using latest environment variables
+        audioChunkService.reloadBackendUrl();
         audioChunkService.startCollecting(rtaID, config.creator);
         console.log('🎵 Audio chunk service started for RTA:', rtaID);
       }
@@ -368,7 +401,8 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config }) => {
       const participantInterval = setInterval(() => {
         setParticipants(prev => ({
           count: 1 + Math.floor(Math.random() * 5),
-          lastUpdate: Date.now()
+          lastUpdate: Date.now(),
+          accounts: prev.accounts // Keep existing accounts
         }));
       }, 10000);
 

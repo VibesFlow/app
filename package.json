@@ -4,6 +4,7 @@
   "main": "index.js",
   "private": true,
   "scripts": {
+    "build:web": "expo build:web",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
@@ -63,6 +64,7 @@
     "react-native": "0.79.5",
     "react-native-blob-util": "^0.21.2",
     "react-native-config": "^1.5.5",
+    "react-native-crypto": "^2.2.1",
     "react-native-device-info": "^14.0.4",
     "react-native-dotenv": "^3.4.11",
     "react-native-get-random-values": "^1.11.0",
@@ -82,13 +84,16 @@
     "@babel/plugin-transform-logical-assignment-operators": "^7.23.4",
     "@babel/plugin-transform-modules-commonjs": "^7.27.1",
     "@babel/plugin-transform-react-jsx": "^7.27.1",
+    "@expo/webpack-config": "^19.0.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.23",
     "@types/morgan": "^1.9.10",
     "@types/react": "~19.0.10",
     "patch-package": "^8.0.0",
     "postinstall-postinstall": "^2.1.0",
-    "typescript": "~5.8.3"
+    "typescript": "~5.8.3",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1"
   },
   "overrides": {
     "rimraf": "^4.4.1",

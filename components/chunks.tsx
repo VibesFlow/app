@@ -91,6 +91,8 @@ class AudioChunkService {
   constructor() {
     this.backendUrl = (process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai') + '/upload';
     console.log(`🔧 Audio chunk service initialized with enhanced intelligent processing`);
+    console.log(`🌐 Backend URL initialized: ${this.backendUrl}`);
+    console.log(`🔍 Environment EXPO_PUBLIC_RAWCHUNKS_URL: ${process.env.EXPO_PUBLIC_RAWCHUNKS_URL}`);
     
     // Initialize background compression worker if available
     this.initializeEnhancedCompressionWorker();
@@ -903,6 +905,17 @@ class AudioChunkService {
   setBackendUrl(url: string): void {
     this.backendUrl = url;
     console.log(`🔧 Backend URL updated: ${url}`);
+  }
+
+  /**
+   * Reload backend URL from environment variables
+   */
+  reloadBackendUrl(): void {
+    const newUrl = (process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai') + '/upload';
+    if (newUrl !== this.backendUrl) {
+      this.backendUrl = newUrl;
+      console.log(`🔄 Backend URL reloaded from environment: ${newUrl}`);
+    }
   }
 
   /**

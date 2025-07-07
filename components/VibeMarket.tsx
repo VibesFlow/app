@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import GlitchContainer from './ui/GlitchContainer';
 import GlitchText from './ui/GlitchText';
 import AuthenticatedImage from './ui/AuthenticatedImage';
 import { useFilCDN } from '../context/filcdn';
+import RTAPlayer from './RTAPlayer';
 
 const { width, height } = Dimensions.get('window');
 
@@ -33,6 +34,10 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
     downloadChunk,
     getVibestreamsByCreator 
   } = useFilCDN();
+
+  // RTA Player state
+  const [selectedRTA, setSelectedRTA] = useState<string | null>(null);
+  const [showRTAPlayer, setShowRTAPlayer] = useState(false);
 
   useEffect(() => {
     // Refresh vibestreams when component mounts
@@ -131,32 +136,24 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
     console.log('🎵 Selected vibestream:', stream.rta_id);
     
     Alert.alert(
-      'Vibestream Details',
-      `RTA ID: ${stream.rta_id}\nCreator: ${stream.creator}\nDuration: ${stream.rta_duration}\nChunks: ${stream.chunks}\nStatus: ${stream.is_complete ? 'Complete' : 'Streaming'}\nStorage: ${stream.total_size_mb.toFixed(1)}MB\nProof Set: ${stream.synapse_proof_set_id}\n\nFilCDN Base: ${stream.filcdn_base}`,
+      'Vibestream Playback',
+      `Play "${stream.rta_id}" with ${stream.chunks} chunks?\n\nCreator: ${stream.creator}\nDuration: ${stream.rta_duration}\nProof Set: ${stream.synapse_proof_set_id}`,
       [
         { text: 'Cancel', style: 'cancel' },
         { 
-          text: 'View on FilCDN', 
+          text: 'View Info', 
           onPress: () => {
-            console.log('🌐 Opening FilCDN:', stream.filcdn_base);
-            if (Platform.OS === 'web') {
-              window.open(stream.filcdn_base, '_blank');
-            }
+            Alert.alert(
+              'RTA Details',
+              `RTA ID: ${stream.rta_id}\nCreator: ${stream.creator}\nDuration: ${stream.rta_duration}\nChunks: ${stream.chunks}\nStatus: ${stream.is_complete ? 'Complete' : 'Streaming'}\nStorage: ${stream.total_size_mb.toFixed(1)}MB\nProof Set: ${stream.synapse_proof_set_id}\n\nFilCDN Base: ${stream.filcdn_base}`
+            );
           }
         },
         {
-          text: 'Download First Chunk',
-          onPress: async () => {
-            if (stream.chunks_detail && stream.chunks_detail.length > 0) {
-              try {
-                console.log('📥 Downloading first chunk...');
-                const firstChunk = stream.chunks_detail[0];
-                await downloadChunk(firstChunk.cid);
-                Alert.alert('Success', `Downloaded chunk ${firstChunk.chunk_id} successfully!`);
-              } catch (error) {
-                Alert.alert('Error', `Failed to download chunk: ${(error as Error).message}`);
-              }
-            }
+          text: 'Play RTA',
+          onPress: () => {
+            setSelectedRTA(stream.rta_id);
+            setShowRTAPlayer(true);
           }
         }
       ]
@@ -167,6 +164,28 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
     console.log('🔄 Refreshing vibestreams...');
     refreshVibestreams();
   };
+
+  const handleRTAPlayerBack = () => {
+    setShowRTAPlayer(false);
+    setSelectedRTA(null);
+  };
+
+  const handleRTAPlayerError = (error: string) => {
+    Alert.alert('Playback Error', error);
+    setShowRTAPlayer(false);
+    setSelectedRTA(null);
+  };
+
+  // Show RTA Player if selected
+  if (showRTAPlayer && selectedRTA) {
+    return (
+      <RTAPlayer 
+        rtaId={selectedRTA} 
+        onBack={handleRTAPlayerBack}
+        onError={handleRTAPlayerError}
+      />
+    );
+  }
 
   return (
     <View style={styles.container}>
