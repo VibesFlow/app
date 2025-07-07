@@ -149,7 +149,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config }) => {
 
         // Initialize web orchestrator
         if (Platform.OS === 'web') {
-          await webOrchestrator.initializeAudioContext();
+          await webOrchestrator.initializeWebAudio();
           
           // Set up sensor data handling from web
           webOrchestrator.onSensorData((data) => {

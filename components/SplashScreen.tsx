@@ -34,9 +34,15 @@ interface SplashScreenProps {
   onStart: () => void;
   onLaunchVibePlayer: () => void;
   onOpenProfile: () => void;
+  onOpenVibeMarket: () => void;
 }
 
-const SplashScreen: React.FC<SplashScreenProps> = ({ onStart, onLaunchVibePlayer, onOpenProfile }) => {
+const SplashScreen: React.FC<SplashScreenProps> = ({ 
+  onStart, 
+  onLaunchVibePlayer, 
+  onOpenProfile, 
+  onOpenVibeMarket 
+}) => {
   const [connectModalVisible, setConnectModalVisible] = useState(false);
   const [vibestreamModalVisible, setVibestreamModalVisible] = useState(false);
   const [showDisconnectDropdown, setShowDisconnectDropdown] = useState(false);
@@ -52,6 +58,10 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onStart, onLaunchVibePlayer
     } else {
       setConnectModalVisible(true);
     }
+  };
+
+  const handleVibeMarket = () => {
+    onOpenVibeMarket();
   };
 
   const handleWalletClick = () => {
@@ -159,15 +169,26 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onStart, onLaunchVibePlayer
         <Text style={styles.slogan}>{BRANDING.slogan}</Text>
       </View>
       
-      {/* Start vibing button - restyled */}
-      <TouchableOpacity 
-        style={styles.startButton}
-        onPress={handleStartVibing}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.startButtonText}>START_VIBING</Text>
-        <View style={styles.buttonGlow} />
-      </TouchableOpacity>
+      {/* Action buttons */}
+      <View style={styles.buttonsContainer}>
+        <TouchableOpacity 
+          style={styles.startButton}
+          onPress={handleStartVibing}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.startButtonText}>START_VIBING</Text>
+          <View style={styles.buttonGlow} />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.marketButton}
+          onPress={handleVibeMarket}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.marketButtonText}>VIBE_MARKET</Text>
+          <View style={styles.marketButtonGlow} />
+        </TouchableOpacity>
+      </View>
       
       {/* Bottom manifesto text */}
       <Text style={styles.manifestoText}>
@@ -315,21 +336,35 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginBottom: 20,
   },
+  buttonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+    paddingHorizontal: 20,
+    marginBottom: 40,
+    gap: 15,
+    zIndex: 5,
+  },
   startButton: {
+    flex: 1,
     paddingVertical: 18,
-    paddingHorizontal: 30,
+    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: COLORS.primary,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     position: 'relative',
-    marginBottom: 40,
-    zIndex: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 56,
   },
   startButtonText: {
     color: COLORS.primary,
-    fontSize: 20,
+    fontSize: width < 400 ? 16 : 18,
     fontWeight: 'bold',
-    letterSpacing: 2,
+    letterSpacing: 1.5,
+    textAlign: 'center',
   },
   buttonGlow: {
     position: 'absolute',
@@ -338,6 +373,35 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     backgroundColor: COLORS.primary,
+    opacity: 0.15,
+    zIndex: -1,
+  },
+  marketButton: {
+    flex: 1,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: COLORS.secondary,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 56,
+  },
+  marketButtonText: {
+    color: COLORS.secondary,
+    fontSize: width < 400 ? 16 : 18,
+    fontWeight: 'bold',
+    letterSpacing: 1.5,
+    textAlign: 'center',
+  },
+  marketButtonGlow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: COLORS.secondary,
     opacity: 0.15,
     zIndex: -1,
   },

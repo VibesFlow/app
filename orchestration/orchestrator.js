@@ -6,32 +6,87 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { Platform } from 'react-native';
+import { EventEmitter } from 'events';
 
-export class LyriaOrchestrator {
+export class LyriaOrchestrator extends EventEmitter {
   constructor() {
+    super();
     this.session = null;
+    this.apiKey = null;
     this.isConnected = false;
     this.isStreaming = false;
-    this.apiKey = null;
+    this.connectionRetries = 0;
+    this.maxRetries = 3;
+    this.retryDelay = 1000;
+    this.autoReconnect = true;
+    this.enableSmoothing = true;
+    this.connectionState = 'disconnected';
+    this.currentPlaylist = null;
     this.callbacks = {
       onAudioChunk: [],
       onError: [],
       onStateChange: []
     };
     
-    // Performance optimization
-    this.lastConfig = {};
-    this.lastStyle = '';
+    // Performance tracking
+    this.processingMetrics = {
+      recentTimes: [],
+      average: 0,
+      isHeavy: false
+    };
+    
+    // Adaptive batching parameters
+    this.minBatchInterval = 200; // 200ms when processing chunks
+    this.maxBatchInterval = 50;  // 50ms when idle
+    this.adaptiveBatchInterval = this.maxBatchInterval;
+    
+    // Chunk processing state
+    this.isProcessingChunk = false;
+    this.processingStartTime = 0;
+    
+    // ENHANCED ADAPTIVE BATCHING with processing state awareness
     this.updateQueue = [];
-    this.batchInterval = null;
+    this.chunkProcessingStartTime = 0;
+    this.lastChunkTimestamp = 0;
+    this.processingBatchInterval = 100; // Slower updates during processing
+    this.idleBatchInterval = 40; // Faster updates during idle
+    this.currentBatchInterval = 40;
+    
+    // INTELLIGENT SMOOTHING SYSTEM
+    this.smoothingBuffer = [];
+    this.maxSmoothingBuffer = 8; // Increased buffer size
+    this.lastInterpretation = null;
+    this.lastConfig = {};
+    this.lastStyle = null;
+    this.lastUpdateTime = 0;
+    this.isTransitioning = false;
+    this.transitionDuration = 1500; // Reduced for more responsiveness
+    
+    // PROCESSING STATE MONITORING
+    this.processingStateMonitor = {
+      chunkCount: 0,
+      averageProcessingTime: 0,
+      recentProcessingTimes: [],
+      maxProcessingTimes: 10,
+      heavyProcessingThreshold: 100, // ms
+      isHeavyProcessing: false
+    };
+    
+    // CONNECTION MANAGEMENT
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
+    this.maxReconnectAttempts = 3;
     this.reconnectDelay = 1000;
     
-    // Smooth transition management
-    this.transitionBuffer = [];
-    this.isTransitioning = false;
-    this.transitionDuration = 2000; // 2 seconds for smooth transitions
+    // Initialize orchestrator
+    this.initializeOrchestrator();
+  }
+
+  async initializeOrchestrator() {
+    try {
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
   // Initialize orchestrator with API key
@@ -44,7 +99,6 @@ export class LyriaOrchestrator {
     }
 
     try {
-      console.log('Initializing Lyria orchestrator');
       return true;
     } catch (error) {
       console.error('Orchestrator initialization failed:', error);
@@ -52,9 +106,28 @@ export class LyriaOrchestrator {
     }
   }
 
-  // Register callback for audio chunks
+  // Register callback for audio chunks with processing state tracking
   onAudioChunk(callback) {
-    this.callbacks.onAudioChunk.push(callback);
+    this.callbacks.onAudioChunk.push((data) => {
+      // Track chunk processing periods for adaptive batching
+      this.isProcessingChunk = true;
+      this.processingStartTime = Date.now();
+      
+      // Increase batch interval during chunk processing to reduce interruptions
+      this.adaptiveBatchInterval = this.minBatchInterval;
+      
+      try {
+        callback(data);
+      } catch (error) {
+        console.warn('Audio chunk callback error:', error);
+      }
+      
+      // Reset processing state after 200ms
+      setTimeout(() => {
+        this.isProcessingChunk = false;
+        this.adaptiveBatchInterval = this.maxBatchInterval; // Return to responsive mode
+      }, 200);
+    });
   }
 
   // Register callback for errors
@@ -87,8 +160,6 @@ export class LyriaOrchestrator {
     }
 
     try {
-      console.log('Connecting to Lyria RealTime API...');
-      
       // Initialize GoogleGenAI client with optimized settings
       const genAI = new GoogleGenAI({
         apiKey: this.apiKey,
@@ -109,54 +180,337 @@ export class LyriaOrchestrator {
       this.reconnectAttempts = 0;
       this.emit('onStateChange', { connected: true, streaming: false });
       
-      // Start batched update processing for optimal performance
-      this.startBatchProcessing();
+      // Start ADAPTIVE batched update processing
+      this.startAdaptiveBatchProcessing();
       
-      console.log('Successfully connected to Lyria RealTime API');
+      console.info('✅ Successfully connected to Lyria RealTime API');
       return true;
 
     } catch (error) {
-      console.error('Failed to connect to Lyria:', error);
+      console.error('❌ Failed to connect to Lyria API:', error);
       this.handleConnectionError(error);
       return false;
     }
   }
 
-  // Handle incoming messages from Lyria with optimized audio processing
+  // ENHANCED message handling with processing state tracking
   handleMessage(message) {
     try {
-      if (message.serverContent?.audioChunks?.length > 0) {
+      console.log('🔍 Received Lyria message:', message);
+      
+      // Handle audio chunks with multiple possible formats
+      let audioData = null;
+      
+      // Try different possible audio data locations
+      if (message.serverContent?.audioData) {
+        audioData = message.serverContent.audioData;
+      } else if (message.serverContent?.audioChunks?.length > 0) {
         const audioChunk = message.serverContent.audioChunks[0];
-        
-        // Optimized audio chunk processing
-        let audioData = null;
         if (audioChunk.audioChunk) {
           audioData = audioChunk.audioChunk;
         } else if (audioChunk.data) {
           audioData = audioChunk.data;
         }
-
-        if (audioData) {
-          // Emit audio chunk with minimal delay
-          this.emit('onAudioChunk', audioData);
-          
-          // Update streaming state if not already set
-          if (!this.isStreaming) {
-            this.isStreaming = true;
-            this.emit('onStateChange', { connected: true, streaming: true });
-          }
+      } else if (message.serverContent?.audioChunk) {
+        audioData = message.serverContent.audioChunk;
+      }
+      
+      // Debug: Log the structure of the serverContent to help identify where audio data might be
+      if (!audioData && message.serverContent) {
+        console.log('🔍 No audio data found. ServerContent structure:', Object.keys(message.serverContent));
+        if (message.serverContent.audioChunks) {
+          console.log('🔍 AudioChunks structure:', message.serverContent.audioChunks);
         }
       }
       
-      // Handle other message types (metadata, status, etc.)
+      if (audioData) {
+        // TRACK CHUNK PROCESSING STATE
+        this.updateChunkProcessingState(true);
+        
+        // Monitor processing performance
+        const processingStartTime = Date.now();
+        
+        // Emit audio chunk
+        this.emit('onAudioChunk', audioData);
+        
+        // Track processing time
+        const processingTime = Date.now() - processingStartTime;
+        this.updateProcessingMetrics(processingTime);
+        
+        // Update streaming state if not already set
+        if (!this.isStreaming) {
+          this.isStreaming = true;
+          this.emit('onStateChange', { connected: true, streaming: true });
+          console.info('🎵 Lyria streaming state updated to: true');
+        }
+        
+        // Update chunk processing state with delay
+        setTimeout(() => {
+          this.updateChunkProcessingState(false);
+        }, 200); // 200ms window for chunk processing
+      }
+      
+      // Handle other message types
       if (message.serverContent?.status) {
-        console.log('Lyria status:', message.serverContent.status);
+        console.info('Lyria status:', message.serverContent.status);
       }
       
     } catch (error) {
       console.error('Message handling error:', error);
       this.emit('onError', error);
     }
+  }
+
+  // INTELLIGENT PROCESSING STATE MANAGEMENT
+  updateChunkProcessingState(isProcessing) {
+    if (isProcessing) {
+      this.isProcessingChunk = true;
+      this.chunkProcessingStartTime = Date.now();
+      this.lastChunkTimestamp = Date.now();
+      this.processingStateMonitor.chunkCount++;
+      
+      // Adjust batch interval for processing state
+      this.currentBatchInterval = this.processingBatchInterval;
+      
+      console.log('🎵 Chunk processing started');
+    } else {
+      this.isProcessingChunk = false;
+      
+      // Adjust batch interval back to idle
+      this.currentBatchInterval = this.idleBatchInterval;
+      
+      console.log('🎵 Chunk processing ended');
+    }
+  }
+
+  // PROCESSING PERFORMANCE MONITORING
+  updateProcessingMetrics(processingTime) {
+    const metrics = this.processingStateMonitor;
+    
+    // Add to recent processing times
+    metrics.recentProcessingTimes.push(processingTime);
+    
+    // Keep only recent measurements
+    if (metrics.recentProcessingTimes.length > metrics.maxProcessingTimes) {
+      metrics.recentProcessingTimes.shift();
+    }
+    
+    // Calculate average processing time
+    metrics.averageProcessingTime = metrics.recentProcessingTimes.reduce((sum, time) => sum + time, 0) / metrics.recentProcessingTimes.length;
+    
+    // Detect heavy processing periods
+    metrics.isHeavyProcessing = metrics.averageProcessingTime > metrics.heavyProcessingThreshold;
+    
+    // Adjust batch intervals based on processing load
+    if (metrics.isHeavyProcessing) {
+      this.processingBatchInterval = Math.min(this.processingBatchInterval * 1.1, 150); // Slower during heavy processing
+    } else {
+      this.processingBatchInterval = Math.max(this.processingBatchInterval * 0.98, 80); // Faster during light processing
+    }
+  }
+
+  // ENHANCED ADAPTIVE BATCH PROCESSING with intelligent load balancing
+  startAdaptiveBatchProcessing() {
+    const processUpdates = () => {
+      if (this.updateQueue.length === 0) {
+        // Schedule next check with current adaptive interval
+        setTimeout(processUpdates, this.currentBatchInterval);
+        return;
+      }
+
+      // INTELLIGENT FILTERING: During chunk processing, be more selective about updates
+      let updateToProcess;
+      
+      if (this.isProcessingChunk || this.processingStateMonitor.isHeavyProcessing) {
+        // During chunk processing, only process significant changes
+        const significantUpdates = this.updateQueue.filter(update => {
+          return this.isSignificantChange(update.interpretation);
+        });
+        
+        if (significantUpdates.length > 0) {
+          updateToProcess = significantUpdates[significantUpdates.length - 1];
+          // Remove processed updates
+          this.updateQueue = this.updateQueue.filter(u => !significantUpdates.includes(u));          
+        } else {
+          // No significant updates during processing, skip this cycle
+          setTimeout(processUpdates, this.currentBatchInterval);
+          return;
+        }
+      } else {
+        // During idle periods, process the most recent update
+        updateToProcess = this.updateQueue[this.updateQueue.length - 1];
+        this.updateQueue = [];
+      }
+
+      if (updateToProcess) {
+        this.processSmoothedUpdate(updateToProcess.interpretation);
+      }
+
+      // Schedule next processing cycle with adaptive interval
+      setTimeout(processUpdates, this.currentBatchInterval);
+    };
+
+    processUpdates();
+  }
+
+  // ENHANCED SIGNIFICANCE DETECTION for processing state
+  isSignificantChange(interpretation) {
+    if (!this.lastInterpretation) return true;
+    
+    const config = interpretation.lyriaConfig;
+    const lastConfig = this.lastConfig;
+    
+    // ADAPTIVE THRESHOLDS based on processing state
+    const bpmThreshold = this.isProcessingChunk ? 8 : 4;
+    const densityThreshold = this.isProcessingChunk ? 0.2 : 0.1;
+    const brightnessThreshold = this.isProcessingChunk ? 0.2 : 0.1;
+    const guidanceThreshold = this.isProcessingChunk ? 0.3 : 0.15;
+    
+    // Only consider MAJOR changes during chunk processing
+    const majorBpmChange = Math.abs((lastConfig.bpm || 0) - config.bpm) > bpmThreshold;
+    const majorDensityChange = Math.abs((lastConfig.density || 0) - config.density) > densityThreshold;
+    const majorBrightnessChange = Math.abs((lastConfig.brightness || 0) - config.brightness) > brightnessThreshold;
+    const majorGuidanceChange = Math.abs((lastConfig.guidance || 0) - config.guidance) > guidanceThreshold;
+    const majorStyleChange = interpretation.stylePrompt !== this.lastStyle;
+    
+    return majorBpmChange || majorDensityChange || majorBrightnessChange || majorGuidanceChange || majorStyleChange;
+  }
+
+  // ENHANCED SMOOTHING with processing state awareness
+  async processSmoothedUpdate(interpretation) {
+    try {
+      const now = Date.now();
+      const timeSinceLastUpdate = now - this.lastUpdateTime;
+      
+      // Add to smoothing buffer
+      this.smoothingBuffer.push({
+        interpretation,
+        timestamp: now,
+        isProcessing: this.isProcessingChunk
+      });
+      
+      // Keep only recent entries in smoothing buffer
+      this.smoothingBuffer = this.smoothingBuffer.filter(entry => 
+        now - entry.timestamp < 2000 // Extended to 2 seconds for better smoothing
+      );
+      
+      // Limit buffer size
+      if (this.smoothingBuffer.length > this.maxSmoothingBuffer) {
+        this.smoothingBuffer = this.smoothingBuffer.slice(-this.maxSmoothingBuffer);
+      }
+      
+      // Apply smoothing if we have enough data points
+      let smoothedInterpretation = interpretation;
+      if (this.smoothingBuffer.length > 2) {
+        smoothedInterpretation = this.applySmoothingToInterpretation(interpretation);
+      }
+      
+      let hasUpdates = false;
+
+      // Check for style/prompt changes with smoothing
+      if (this.hasStyleChanged(smoothedInterpretation)) {
+        await this.updatePromptsSmoothed(smoothedInterpretation);
+        hasUpdates = true;
+      }
+
+      // Check for configuration changes with smoothing
+      if (this.hasConfigChanged(smoothedInterpretation)) {
+        await this.updateConfigurationSmoothed(smoothedInterpretation);
+        hasUpdates = true;
+      }
+
+      if (hasUpdates) {
+        this.lastUpdateTime = now;
+        this.lastInterpretation = smoothedInterpretation;
+      }
+
+    } catch (error) {
+      console.error('Smoothed update processing error:', error);
+      this.emit('onError', error);
+    }
+  }
+
+  // ENHANCED SMOOTHING with processing state awareness
+  applySmoothingToInterpretation(currentInterpretation) {
+    if (this.smoothingBuffer.length < 2) return currentInterpretation;
+    
+    const recentInterpretations = this.smoothingBuffer.map(entry => entry.interpretation);
+    
+    // ADAPTIVE SMOOTHING FACTOR based on processing state
+    let smoothingFactor = 0.3; // Default: 30% new value, 70% average
+    
+    if (this.isProcessingChunk) {
+      smoothingFactor = 0.2; // More smoothing during chunk processing
+    } else if (this.processingStateMonitor.isHeavyProcessing) {
+      smoothingFactor = 0.25; // Medium smoothing during heavy processing
+    }
+    
+    // Smooth numerical config values
+    const smoothedConfig = { ...currentInterpretation.lyriaConfig };
+    
+    // Smooth BPM with processing state awareness
+    const avgBpm = recentInterpretations.reduce((sum, interp) => sum + interp.lyriaConfig.bpm, 0) / recentInterpretations.length;
+    smoothedConfig.bpm = Math.round(smoothedConfig.bpm * smoothingFactor + avgBpm * (1 - smoothingFactor));
+    
+    // Smooth density with processing state awareness
+    const avgDensity = recentInterpretations.reduce((sum, interp) => sum + interp.lyriaConfig.density, 0) / recentInterpretations.length;
+    smoothedConfig.density = parseFloat((smoothedConfig.density * smoothingFactor + avgDensity * (1 - smoothingFactor)).toFixed(3));
+    
+    // Smooth brightness with processing state awareness
+    const avgBrightness = recentInterpretations.reduce((sum, interp) => sum + interp.lyriaConfig.brightness, 0) / recentInterpretations.length;
+    smoothedConfig.brightness = parseFloat((smoothedConfig.brightness * smoothingFactor + avgBrightness * (1 - smoothingFactor)).toFixed(3));
+    
+    // Smooth guidance with processing state awareness
+    const avgGuidance = recentInterpretations.reduce((sum, interp) => sum + (interp.lyriaConfig.guidance || 0), 0) / recentInterpretations.length;
+    smoothedConfig.guidance = parseFloat((smoothedConfig.guidance * smoothingFactor + avgGuidance * (1 - smoothingFactor)).toFixed(3));
+    
+    return {
+      ...currentInterpretation,
+      lyriaConfig: smoothedConfig
+    };
+  }
+
+  // ENHANCED CHANGE DETECTION with processing state awareness
+  hasConfigChanged(interpretation) {
+    const config = interpretation.lyriaConfig;
+    const lastConfig = this.lastConfig;
+
+    // ADAPTIVE THRESHOLDS: Higher thresholds during chunk processing for smoother experience
+    const bpmThreshold = this.isProcessingChunk ? 4 : 2;
+    const densityThreshold = this.isProcessingChunk ? 0.1 : 0.05;
+    const brightnessThreshold = this.isProcessingChunk ? 0.1 : 0.05;
+    const guidanceThreshold = this.isProcessingChunk ? 0.25 : 0.15;
+    const temperatureThreshold = this.isProcessingChunk ? 0.2 : 0.1;
+
+    const bpmChanged = Math.abs((lastConfig.bpm || 0) - config.bpm) > bpmThreshold;
+    const densityChanged = Math.abs((lastConfig.density || 0) - config.density) > densityThreshold;
+    const brightnessChanged = Math.abs((lastConfig.brightness || 0) - config.brightness) > brightnessThreshold;
+    const guidanceChanged = Math.abs((lastConfig.guidance || 0) - config.guidance) > guidanceThreshold;
+    const temperatureChanged = Math.abs((lastConfig.temperature || 0) - (config.temperature || 0)) > temperatureThreshold;
+
+    return bpmChanged || densityChanged || brightnessChanged || guidanceChanged || temperatureChanged;
+  }
+
+  // ENHANCED TRANSITION HANDLING with processing state awareness
+  handleSmoothStyleTransition(interpretation) {
+    if (this.isTransitioning) return;
+
+    this.isTransitioning = true;
+    
+    // ADAPTIVE TRANSITION TIMING based on processing state
+    let transitionTime = this.transitionDuration;
+    
+    if (this.isProcessingChunk) {
+      transitionTime = this.transitionDuration * 1.5; // Slower during chunk processing
+    } else if (this.processingStateMonitor.isHeavyProcessing) {
+      transitionTime = this.transitionDuration * 1.2; // Slightly slower during heavy processing
+    }
+    
+    setTimeout(() => {
+      this.isTransitioning = false;
+    }, transitionTime);
+    
+    console.log(`🌊 Style transition started (${transitionTime}ms duration)`);
   }
 
   // Handle connection errors with smart reconnection
@@ -167,6 +521,18 @@ export class LyriaOrchestrator {
     // Attempt reconnection for recoverable errors
     if (this.shouldReconnect(error)) {
       this.attemptReconnection();
+    }
+  }
+
+  // Handle connection errors during initial connection
+  handleConnectionError(error) {
+    console.error('❌ Lyria connection error:', error);
+    this.isConnected = false;
+    this.emit('onError', error);
+    
+    // Attempt reconnection for recoverable errors
+    if (this.shouldReconnect(error)) {
+      setTimeout(() => this.attemptReconnection(), 2000);
     }
   }
 
@@ -191,7 +557,7 @@ export class LyriaOrchestrator {
     }
 
     try {
-      console.log('Starting Lyria music generation');
+      console.info('Starting Lyria RealTime stream');
       
       // Set initial weighted prompts
       await this.session.setWeightedPrompts({
@@ -206,11 +572,14 @@ export class LyriaOrchestrator {
       // Start music generation
       await this.session.play();
       
+      // Set streaming state immediately when play() succeeds
+      this.isStreaming = true;
+      this.emit('onStateChange', { connected: this.isConnected, streaming: true });
+      
       // Store last values for change detection
       this.lastStyle = interpretation.stylePrompt;
       this.lastConfig = { ...interpretation.lyriaConfig };
-      
-      console.log('Lyria music generation started successfully');
+      this.lastUpdateTime = Date.now();      
       return true;
 
     } catch (error) {
@@ -220,152 +589,25 @@ export class LyriaOrchestrator {
     }
   }
 
-  // Update Lyria with new interpretation (batched for performance)
+  // Update Lyria with INTELLIGENT batching that adapts to processing state
   async updateStream(interpretation) {
     if (!this.session || !this.isConnected) {
       return false;
     }
 
-    // Add update to queue for batched processing
+    // Add timestamp and processing state info to update
     this.updateQueue.push({
       interpretation,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      isProcessingChunk: this.isProcessingChunk
     });
 
+    // Limit queue size to prevent memory buildup
+    if (this.updateQueue.length > 10) {
+      this.updateQueue = this.updateQueue.slice(-5); // Keep only latest 5
+    }
+
     return true;
-  }
-
-  // Process updates in batches for ULTRA-LOW LATENCY
-  startBatchProcessing() {
-    this.batchInterval = setInterval(() => {
-      if (this.updateQueue.length === 0) return;
-
-      // Get the most recent update (discard stale ones)
-      const latestUpdate = this.updateQueue[this.updateQueue.length - 1];
-      this.updateQueue = [];
-
-      this.processUpdate(latestUpdate.interpretation);
-    }, 50); // FASTER processing - every 50ms for maximum rave responsiveness
-  }
-
-  // Process individual update with intelligent change detection
-  async processUpdate(interpretation) {
-    try {
-      let hasUpdates = false;
-
-      // Check for style/prompt changes
-      if (this.hasStyleChanged(interpretation)) {
-        await this.updatePrompts(interpretation);
-        hasUpdates = true;
-      }
-
-      // Check for configuration changes
-      if (this.hasConfigChanged(interpretation)) {
-        await this.updateConfiguration(interpretation);
-        hasUpdates = true;
-      }
-
-      if (hasUpdates) {
-        console.log('Lyria updated with new parameters');
-      }
-
-    } catch (error) {
-      console.error('Update processing error:', error);
-      this.emit('onError', error);
-    }
-  }
-
-  // Check if style has changed significantly
-  hasStyleChanged(interpretation) {
-    if (!this.lastStyle) return true;
-    
-    // For smooth transitions, check if we need weighted prompts
-    if (interpretation.hasTransition) {
-      return true;
-    }
-    
-    return interpretation.stylePrompt !== this.lastStyle;
-  }
-
-  // Check if configuration has changed significantly - ULTRA-SENSITIVE for rave
-  hasConfigChanged(interpretation) {
-    const config = interpretation.lyriaConfig;
-    const lastConfig = this.lastConfig;
-
-    // MUCH more sensitive change detection for instant rave response
-    const bpmChanged = Math.abs((lastConfig.bpm || 0) - config.bpm) > 1; // Was 3, now 1
-    const densityChanged = Math.abs((lastConfig.density || 0) - config.density) > 0.02; // Was 0.05, now 0.02
-    const brightnessChanged = Math.abs((lastConfig.brightness || 0) - config.brightness) > 0.02; // Was 0.05, now 0.02
-    const guidanceChanged = Math.abs((lastConfig.guidance || 0) - config.guidance) > 0.1; // Was 0.3, now 0.1
-
-    return bpmChanged || densityChanged || brightnessChanged || guidanceChanged;
-  }
-
-  // Update prompts with smooth transitions
-  async updatePrompts(interpretation) {
-    if (!this.session) return;
-
-    try {
-      // Use weighted prompts for smooth transitions
-      const result = this.session.setWeightedPrompts({
-        weightedPrompts: interpretation.weightedPrompts
-      });
-      
-      if (result && typeof result.catch === 'function') {
-        result.catch((error) => console.warn('Failed to update prompts:', error));
-      }
-
-      this.lastStyle = interpretation.stylePrompt;
-      
-      // Handle transitions
-      if (interpretation.hasTransition) {
-        this.handleStyleTransition(interpretation);
-      }
-
-    } catch (error) {
-      console.warn('Prompt update failed:', error);
-    }
-  }
-
-  // Update configuration parameters
-  async updateConfiguration(interpretation) {
-    if (!this.session) return;
-
-    try {
-      const config = interpretation.lyriaConfig;
-      
-      const result = this.session.setMusicGenerationConfig({
-        musicGenerationConfig: config
-      });
-      
-      if (result && typeof result.catch === 'function') {
-        result.catch((error) => console.warn('Failed to update config:', error));
-      }
-
-      this.lastConfig = { ...config };
-
-      console.log('Config updated:', {
-        bpm: config.bpm,
-        density: config.density.toFixed(2),
-        brightness: config.brightness.toFixed(2),
-        guidance: config.guidance.toFixed(2)
-      });
-
-    } catch (error) {
-      console.warn('Configuration update failed:', error);
-    }
-  }
-
-  // Handle style transitions with buffering
-  handleStyleTransition(interpretation) {
-    if (this.isTransitioning) return;
-
-    this.isTransitioning = true;
-    
-    // Implement cross-fading logic here if needed
-    setTimeout(() => {
-      this.isTransitioning = false;
-    }, this.transitionDuration);
   }
 
   // Determine if reconnection should be attempted
@@ -396,38 +638,6 @@ export class LyriaOrchestrator {
         console.log('Reconnected successfully, resuming stream');
       }
     }, delay);
-  }
-
-  // Pause music generation
-  async pause() {
-    if (!this.session || !this.isStreaming) return false;
-
-    try {
-      await this.session.pause();
-      this.isStreaming = false;
-      this.emit('onStateChange', { connected: this.isConnected, streaming: false });
-      console.log('Lyria stream paused');
-      return true;
-    } catch (error) {
-      console.error('Failed to pause stream:', error);
-      return false;
-    }
-  }
-
-  // Resume music generation
-  async resume() {
-    if (!this.session || this.isStreaming) return false;
-
-    try {
-      await this.session.play();
-      this.isStreaming = true;
-      this.emit('onStateChange', { connected: this.isConnected, streaming: true });
-      console.log('Lyria stream resumed');
-      return true;
-    } catch (error) {
-      console.error('Failed to resume stream:', error);
-      return false;
-    }
   }
 
   // Stop music generation
@@ -525,5 +735,5 @@ export class LyriaOrchestrator {
   }
 }
 
-// Export singleton instance
-export const lyriaOrchestrator = new LyriaOrchestrator(); 
+  // Export singleton instance
+  export const lyriaOrchestrator = new LyriaOrchestrator(); 

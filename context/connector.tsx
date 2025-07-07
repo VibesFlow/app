@@ -109,9 +109,15 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
   const initWalletSelector = async () => {
     try {
-      // Setup wallet selector following NEAR docs exactly
+      // Setup wallet selector with reliable RPC endpoint
       globalSelector = await setupWalletSelector({
-        network: "testnet",
+        network: {
+          networkId: "testnet",
+          nodeUrl: "https://test.rpc.fastnear.com",
+          helperUrl: "https://helper.testnet.near.org",
+          explorerUrl: "https://testnet.nearblocks.io",
+          indexerUrl: "https://testnet-api.kitwallet.app",
+        },
         modules: [
           setupHereWallet(),
           setupMeteorWallet(),

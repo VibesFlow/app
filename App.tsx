@@ -3,8 +3,11 @@ import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import SplashScreen from './components/SplashScreen';
 import VibePlayer from './components/VibePlayer';
 import UserProfile from './components/UserProfile';
+import VibeMarket from './components/VibeMarket';
 import { COLORS, FONT_SIZES, SPACING } from './theme';
 import { WalletProvider, HotWalletProvider, useWallet } from './context/connector';
+import { FilCDNProvider } from './context/filcdn';
+import { StatusBar } from 'expo-status-bar';
 
 // Add ethereum error handling for browser compatibility
 if (typeof window !== 'undefined') {
@@ -20,7 +23,7 @@ if (typeof window !== 'undefined') {
   };
 }
 
-type AppScreen = 'splash' | 'main' | 'vibe-player' | 'loading' | 'profile';
+type AppScreen = 'splash' | 'main' | 'vibe-player' | 'loading' | 'profile' | 'vibe-market';
 
 function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
@@ -60,8 +63,19 @@ function AppContent() {
     setCurrentScreen('profile');
   };
 
+  const handleOpenVibeMarket = () => {
+    setCurrentScreen('vibe-market');
+  };
+
   if (currentScreen === 'splash') {
-    return <SplashScreen onStart={handleStart} onLaunchVibePlayer={handleLaunchVibePlayer} onOpenProfile={handleOpenProfile} />;
+    return (
+      <SplashScreen 
+        onStart={handleStart} 
+        onLaunchVibePlayer={handleLaunchVibePlayer} 
+        onOpenProfile={handleOpenProfile}
+        onOpenVibeMarket={handleOpenVibeMarket}
+      />
+    );
   }
 
   if (currentScreen === 'loading') {
@@ -94,6 +108,14 @@ function AppContent() {
     );
   }
 
+  if (currentScreen === 'vibe-market') {
+    return (
+      <VibeMarket 
+        onBack={handleBackToMain}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.text}>VibesFlow.</Text>
@@ -106,7 +128,10 @@ export default function App() {
   return (
     <WalletProvider>
       <HotWalletProvider>
-        <AppContent />
+        <FilCDNProvider>
+          <AppContent />
+          <StatusBar style="light" />
+        </FilCDNProvider>
       </HotWalletProvider>
     </WalletProvider>
   );
