@@ -38,10 +38,11 @@ graph TB
     Chunks --> Synapse[🗄️ Synapse SDK]
     Synapse --> Filecoin[🌐 Filecoin PDP]
     
-    RTA (Custom Proof Set) --> FilCDN[⚡ FilCDN]
+    Filecoin --> RTA[🎨 RTA Custom Proof Set]
+    RTA --> FilCDN[⚡ FilCDN]
     FilCDN --> Market[🏪 Vibe Market]
     
-    NEAR[🔗 NEAR Protocol] --> RTA[🎨 Real-Time Asset]
+    NEAR[🔗 NEAR Protocol] --> RTA
     
     subgraph "Frontend (React Native)"
         Sensors
