@@ -28,21 +28,22 @@ VibesFlow is a real-time music generation platform that combines sensor input, A
 
 ```mermaid
 graph TB
-    User[👤 User Input] --> Sensors[📱 Sensor Data]
+    User[👤 User] --> Sensors[📱 Sensor Data]
+    User --> NEAR[🔗 NEAR RTAv2]
     Sensors --> Interpreter[🎵 Interpreter]
     Interpreter --> Orchestrator[🎛️ Orchestrator]
     Orchestrator --> Lyria[🤖 Lyria RealTime API]
-    Lyria --> Audio[🎶 Generated Audio]
-    
-    Audio --> Chunks[📦 Audio Chunks Service]
-    Chunks --> Synapse[🗄️ Synapse SDK]
+    Lyria --> User
+    Lyria --> Chunking
+    Chunking --> Compression
+    Compression --> Synapse[🗄️ Synapse SDK]
     Synapse --> Filecoin[🌐 Filecoin PDP]
-    
+    Synapse --> Metadata[✍️ RTA Metadata]
     Filecoin --> RTA[🎨 RTA Custom Proof Set]
     RTA --> FilCDN[⚡ FilCDN]
     FilCDN --> Market[🏪 Vibe Market]
     
-    NEAR[🔗 NEAR Protocol] --> RTA
+    Metadata --> NEAR
     
     subgraph "Frontend (React Native)"
         Sensors
