@@ -69,6 +69,4 @@ console.error = (...args) => {
   originalConsoleError.apply(console, args);
 };
 
-console.log('🔧 Polyfills loaded successfully for VibesFlow Web');
-
 export default true; 

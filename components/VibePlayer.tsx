@@ -175,7 +175,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         // Set up state change handling
         lyriaOrchestrator.onStateChange((state) => {
           setIsStreaming(state.streaming);
-          console.log('Lyria state:', state);
         });
 
         // Initialize web orchestrator
@@ -270,8 +269,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
       setIsStreaming(true);
       startTimeRef.current = Date.now();
       
-      console.log('🎵 Starting pure vibestream experience...');
-
       // Start audio chunk service for backend upload
       if (rtaID && config?.creator) {
         // Reload backend URL to ensure we're using latest environment variables

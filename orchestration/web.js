@@ -239,8 +239,6 @@ export class WebOrchestrator {
       });
     }, { passive: true });
 
-    console.log('🖱️ Ultra-high sensitivity mouse tracking initialized with adaptive boost');
-
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', this.handleMouseDown);
@@ -320,7 +318,6 @@ export class WebOrchestrator {
       // HIGHER FREQUENCY motion detection (increased from 33ms to 25ms)
       this.motionInterval = setInterval(detectMotion, 25); // 40 FPS
       
-      console.log('📹 Ultra-sensitive camera motion detection initialized with enhanced sampling');
       return () => this.cleanupCameraMotion();
       
     } catch (error) {
@@ -406,9 +403,7 @@ export class WebOrchestrator {
 
     window.addEventListener('keydown', (e) => handleKeyEvent(e, 'keydown'), { passive: true });
     window.addEventListener('keyup', (e) => handleKeyEvent(e, 'keyup'), { passive: true });
-    
-    console.log('⌨️ Ultra-sensitive keyboard tracking initialized with enhanced key mapping');
-    
+        
     return () => {
       window.removeEventListener('keydown', handleKeyEvent);
       window.removeEventListener('keyup', handleKeyEvent);
@@ -511,9 +506,7 @@ export class WebOrchestrator {
         console.warn('Empty audio buffer received');
         return;
       }
-      
-      console.log(`🎧 Processing audio chunk: ${arrayBuffer.byteLength} bytes`);
-      
+            
       // Lyria sends RAW 16-bit PCM audio data, NOT encoded audio
       // Format: 48kHz, 2 channels (stereo), 16-bit signed integers
       const audioBuffer = this.createAudioBufferFromPCM(arrayBuffer);
@@ -562,7 +555,6 @@ export class WebOrchestrator {
         }
       }
       
-      console.log(`✅ Created AudioBuffer from raw PCM: ${frameCount} frames, ${audioBuffer.duration.toFixed(2)}s`);
       return audioBuffer;
     } catch (error) {
       console.error('Failed to create AudioBuffer from raw PCM:', error);
@@ -614,9 +606,7 @@ export class WebOrchestrator {
     }
 
     this.sensorCallbacks = [];
-    this.isInitialized = false;
-    
-    console.log('Web orchestrator cleanup completed');
+    this.isInitialized = false;    
   }
 }
 

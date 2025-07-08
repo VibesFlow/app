@@ -175,7 +175,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       }
 
       console.log('✅ Wallet selector initialized successfully');
-      console.log('Available wallets:', wallets);
 
     } catch (err: any) {
       console.error('❌ Failed to initialize wallet selector:', err);
@@ -187,10 +186,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     try {
       setConnecting(true);
       setError(null);
-      
-      // This will be handled by our custom modal
-      // The modal should call connectToWallet with a specific wallet ID
-      console.log('🔗 Connect called - should show wallet selection modal');
 
     } catch (err: any) {
       console.error('❌ Connect error:', err);
@@ -215,8 +210,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         contractId: CONTRACT_ADDRESSES.RTA_FACTORY,
       });
       
-      console.log('✅ Wallet connection result:', result);
-
     } catch (err: any) {
       console.error('❌ Wallet connection error:', err);
       setError(err.message || 'Failed to connect to wallet');
@@ -333,8 +326,6 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
   };
 
   const connect = async (): Promise<void> => {
-    // This will be handled by the main WalletProvider
-    console.log('Connect should be handled by main wallet provider');
   };
 
   const disconnect = () => {
@@ -372,7 +363,6 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
     try {
       console.log('🔥 Creating RTA NFT for vibestream:', rtaId);
 
-      // Create proper config matching Rust rtaConfig struct
       const contractConfig = {
         mode: config.mode,
         store_to_filecoin: config.store_to_filecoin,
@@ -488,10 +478,7 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
 
   const isRTAClosed = async (rtaId: string): Promise<boolean> => {
     try {
-      // Skip RTA status check to avoid CORS issues
-      // This is not critical for the core vibestream functionality
-      console.log('📊 RTA status check skipped to avoid CORS issues');
-      return false; // Default to false (not closed)
+      return false;
     } catch (error) {
       console.error('❌ Failed to check RTA status:', error);
       return false;

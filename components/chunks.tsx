@@ -90,9 +90,7 @@ class AudioChunkService {
 
   constructor() {
     this.backendUrl = (process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai') + '/upload';
-    console.log(`🔧 Audio chunk service initialized with enhanced intelligent processing`);
     console.log(`🌐 Backend URL initialized: ${this.backendUrl}`);
-    console.log(`🔍 Environment EXPO_PUBLIC_RAWCHUNKS_URL: ${process.env.EXPO_PUBLIC_RAWCHUNKS_URL}`);
     
     // Initialize background compression worker if available
     this.initializeEnhancedCompressionWorker();
@@ -148,7 +146,6 @@ class AudioChunkService {
         const blob = new Blob([workerScript], { type: 'application/javascript' });
         this.compressionWorker = new Worker(URL.createObjectURL(blob));
         
-        console.log('🏭 Enhanced background compression worker initialized');
       } catch (error) {
         console.warn('Failed to initialize enhanced compression worker:', error);
       }
@@ -245,7 +242,7 @@ class AudioChunkService {
     }
   }
 
-  // ENHANCED processing performance metrics with load detection
+  // Processing performance metrics with load detection
   private updateEnhancedProcessingMetrics() {
     // Keep rolling window of last 15 processing times
     if (this.processingLoadMonitor.processingTimes.length > 15) {
@@ -295,7 +292,6 @@ class AudioChunkService {
                              !this.processingLoadMonitor.isHeavyProcessing;
     
     if (shouldAutoProcess) {
-      console.log('🔄 Auto-triggering background processing during optimal conditions');
       setTimeout(() => this.processBackgroundQueue(), 100);
     }
   }
@@ -306,8 +302,6 @@ class AudioChunkService {
       console.warn('🔄 Already collecting chunks, stopping previous session');
       this.stopCollecting();
     }
-
-    console.log(`🎵 Starting OPTIMIZED audio chunk collection for RTA: ${rtaId}`);
     
     this.isCollecting = true;
     this.currentRtaId = rtaId;
@@ -364,7 +358,6 @@ class AudioChunkService {
     // Process background queue with minimal interference
     setTimeout(() => this.processBackgroundQueue(), 1000);
     
-    console.log('🎵 UI closes immediately, background processing continues non-intrusively');
   }
 
   // Add audio data with ENHANCED activity tracking
@@ -531,7 +524,6 @@ class AudioChunkService {
       }
     }, this.chunkDuration);
 
-    console.log(`⏰ Chunk collection started: 60s intervals with background processing`);
   }
 
   // Combine audio buffers efficiently
@@ -609,7 +601,6 @@ class AudioChunkService {
     this.isBackgroundProcessing = false;
     const totalTime = Date.now() - startTime;
     
-    console.log(`✅ Completed: ${processedCount} chunks in ${(totalTime / 1000).toFixed(1)}s`);
     console.groupEnd();
   }
 
@@ -710,7 +701,6 @@ class AudioChunkService {
     const uploadStartTime = Date.now();
     
     try {
-      // CLEAN, ORGANIZED LOGGING using expandable groups
       console.groupCollapsed(`📡 VIBESFLOW UPLOAD: ${chunkId}`);
       console.log(`📊 Chunk Details`, {
         size: `${(audioBuffer.byteLength / 1024).toFixed(1)}KB`,
@@ -762,6 +752,37 @@ class AudioChunkService {
         if (result.synapseStatus.success) {
           console.log(`✅ STORAGE STATUS: Queued for Filecoin (${uploadDuration}ms)`);
           
+          if (result.synapseStatus.uploadId) {
+            console.groupCollapsed(`🚀 SYNAPSE OPERATION STARTED: ${chunkId}`);
+            console.log('📋 Upload Details:', {
+              uploadId: result.synapseStatus.uploadId,
+              queuePosition: result.synapseStatus.queuePosition || 'N/A',
+              estimatedProcessTime: result.synapseStatus.estimatedProcessTime || 'Unknown'
+            });
+            
+            // Log wallet and balance status
+            if (result.synapseStatus.walletStatus) {
+              console.log('💰 Wallet Status:', result.synapseStatus.walletStatus);
+            }
+            
+            // Log Pandora service status
+            if (result.synapseStatus.pandoraStatus) {
+              console.log('🏛️ Pandora Service:', result.synapseStatus.pandoraStatus);
+            }
+            
+            // Log proof set information
+            if (result.synapseStatus.proofSetId) {
+              console.log('📋 Proof Set:', {
+                proofSetId: result.synapseStatus.proofSetId,
+                status: result.synapseStatus.proofSetStatus || 'active',
+                provider: result.synapseStatus.storageProvider || 'selected'
+              });
+            }
+            
+            console.log('⏳ Starting Synapse upload to Filecoin...');
+            console.groupEnd();
+          }
+          
           // Start polling for actual upload completion
           this.pollSynapseUploadStatus(metadata.rtaId, chunkId, uploadStartTime);
           
@@ -801,8 +822,8 @@ class AudioChunkService {
 
   // NEW: Poll for actual Synapse upload completion status
   private async pollSynapseUploadStatus(rtaId: string, chunkId: string, uploadStartTime: number): Promise<void> {
-    const maxAttempts = 12; // Poll for up to 2 minutes (10s intervals)
     let attempts = 0;
+    let pollInterval = 10000;
     
     const poll = async () => {
       attempts++;
@@ -823,6 +844,7 @@ class AudioChunkService {
               console.log('Upload Success:', {
                 duration: `${(totalDuration / 1000).toFixed(1)}s`,
                 filecoinCid: chunkStatus.filecoinCid,
+                rootId: chunkStatus.rootId,
                 status: 'Permanently stored on Filecoin'
               });
               console.groupEnd();
@@ -840,18 +862,26 @@ class AudioChunkService {
           }
         }
         
-        // Continue polling if not completed and haven't exceeded max attempts
-        if (attempts < maxAttempts) {
-          setTimeout(poll, 10000); // Poll every 10 seconds
-        } else {
-          console.warn(`⏰ FILECOIN UPLOAD TIMEOUT: ${chunkId} (stopped polling after ${maxAttempts * 10}s)`);
+        // Adaptive polling interval - increase gradually for long operations
+        if (attempts > 20) {
+          pollInterval = 30000; // 30 seconds after 200s
+        } else if (attempts > 10) {
+          pollInterval = 20000; // 20 seconds after 100s
         }
         
-      } catch (error) {
-        // Silently fail status polling - don't spam errors
-        if (attempts < maxAttempts) {
-          setTimeout(poll, 10000);
+        if (attempts % 6 === 0) { // Every 60s (for 10s intervals) or longer for adaptive intervals
+          const elapsed = Math.round((Date.now() - uploadStartTime) / 1000);
         }
+        
+        // Continue polling indefinitely - Synapse operations can be very slow
+        setTimeout(poll, pollInterval);
+        
+      } catch (error) {
+        // Log intermittent errors but continue polling
+        if (attempts % 10 === 0) { // Log errors every 10 attempts
+          console.warn(`⚠️ Polling error for ${chunkId} (attempt ${attempts}):`, error);
+        }
+        setTimeout(poll, pollInterval);
       }
     };
     
@@ -904,7 +934,6 @@ class AudioChunkService {
    */
   setBackendUrl(url: string): void {
     this.backendUrl = url;
-    console.log(`🔧 Backend URL updated: ${url}`);
   }
 
   /**
@@ -914,7 +943,6 @@ class AudioChunkService {
     const newUrl = (process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai') + '/upload';
     if (newUrl !== this.backendUrl) {
       this.backendUrl = newUrl;
-      console.log(`🔄 Backend URL reloaded from environment: ${newUrl}`);
     }
   }
 

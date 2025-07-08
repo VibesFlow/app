@@ -204,9 +204,6 @@ export class MobileOrchestrator {
 
   // Mobile-specific haptic feedback (if needed in future)
   triggerHapticFeedback(intensity = 1.0) {
-    // Placeholder for future haptic feedback implementation
-    // Could use expo-haptics for tactile response to music
-    console.log('Haptic feedback triggered with intensity:', intensity);
   }
 
   // Enhanced sensor calibration for different device orientations
@@ -272,7 +269,6 @@ export class MobileOrchestrator {
     this.sensorCallbacks = [];
     this.isInitialized = false;
     
-    console.log('Mobile orchestrator cleanup completed');
   }
 }
 

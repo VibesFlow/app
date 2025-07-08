@@ -193,11 +193,8 @@ export class LyriaOrchestrator extends EventEmitter {
     }
   }
 
-  // ENHANCED message handling with processing state tracking
   handleMessage(message) {
-    try {
-      console.log('🔍 Received Lyria message:', message);
-      
+    try {      
       // Handle audio chunks with multiple possible formats
       let audioData = null;
       
@@ -272,14 +269,8 @@ export class LyriaOrchestrator extends EventEmitter {
       // Adjust batch interval for processing state
       this.currentBatchInterval = this.processingBatchInterval;
       
-      console.log('🎵 Chunk processing started');
-    } else {
-      this.isProcessingChunk = false;
-      
       // Adjust batch interval back to idle
-      this.currentBatchInterval = this.idleBatchInterval;
-      
-      console.log('🎵 Chunk processing ended');
+      this.currentBatchInterval = this.idleBatchInterval;      
     }
   }
 
@@ -680,9 +671,7 @@ export class LyriaOrchestrator extends EventEmitter {
   }
 
   // Disconnect and cleanup
-  async disconnect() {
-    console.log('Disconnecting from Lyria...');
-    
+  async disconnect() {    
     // Stop batch processing
     if (this.batchInterval) {
       clearInterval(this.batchInterval);
@@ -731,7 +720,6 @@ export class LyriaOrchestrator extends EventEmitter {
       onError: [],
       onStateChange: []
     };
-    console.log('Lyria orchestrator cleanup completed');
   }
 }
 

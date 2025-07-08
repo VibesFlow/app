@@ -47,7 +47,6 @@ export default function RTAIntegration({
       });
 
       const chunkerResult = await chunkerResponse.json();
-      console.log('🎵 Chunker response:', chunkerResult);
 
       if (!chunkerResult.success) {
         throw new Error(`Chunker failed to start: ${chunkerResult.message}`);
@@ -69,7 +68,6 @@ export default function RTAIntegration({
       onRTACreated(rtaId!);
       
       console.log('✅ RTA stream initialized successfully');
-      console.log(`⏰ Chunker will process 60-second chunks automatically`);
       
     } catch (error) {
       console.error('❌ Failed to initialize RTA stream:', error);
@@ -97,16 +95,6 @@ export default function RTAIntegration({
   const closeRTAStream = async () => {
     try {
       console.log(`🔚 Closing RTA stream: ${rtaId}`);
-
-      // Finalize chunking via chunker worker
-      await fetch(`${WORKERS.CHUNKER}/chunk/finalize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rtaId: rtaId,
-          forceFinalChunk: true
-        }),
-      });
 
       // Finalize stream via producer worker
       if (!rtaId) {
