@@ -40,4 +40,3 @@ yarn-error.*
 
 # extras
 /assets/partners
-components/ui/AuthenticatedImage.tsx

@@ -15,7 +15,7 @@ import { PINATA_URL } from '@env';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
 import GlitchContainer from './ui/GlitchContainer';
 import GlitchText from './ui/GlitchText';
-import AuthenticatedImage from './ui/AuthenticatedImage';
+import AuthenticatedImage from './ui/ProfilePic';
 import { useFilCDN } from '../context/filcdn';
 import RTAPlayer from './RTAPlayer';
 
