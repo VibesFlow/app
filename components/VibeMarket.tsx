@@ -125,7 +125,6 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
         {/* FilCDN Status */}
         <View style={styles.filcdnSection}>
           <FontAwesome5 name="globe" size={12} color={COLORS.textTertiary} />
-          <Text style={styles.filcdnText}>SYNAPSE SDK READY</Text>
           <View style={styles.filcdnIndicator} />
         </View>
       </TouchableOpacity>
@@ -206,7 +205,7 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Market Header */}
         <View style={styles.marketHeader}>
-          <GlitchText text="SYNAPSE SDK MARKETPLACE" style={styles.marketTitle} />
+          <GlitchText text="VIBE MARKET" style={styles.marketTitle} />
           <Text style={styles.marketSubtitle}>DECENTRALIZED • PROOF SETS • FILCDN</Text>
           <Text style={styles.networkInfo}>CALIBRATION NETWORK</Text>
         </View>
@@ -251,21 +250,11 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
           </View>
         )}
 
-        {/* Synapse SDK Info */}
-        <View style={styles.infoSection}>
-          <GlitchText text="SYNAPSE SDK INTEGRATION" style={styles.infoTitle} />
-          <Text style={styles.infoText}>• Proof sets from Pandora service</Text>
-          <Text style={styles.infoText}>• Organized by RTA_ID with chunk ordering</Text>
-          <Text style={styles.infoText}>• FilCDN verified downloads</Text>
-          <Text style={styles.infoText}>• Live Calibration network data</Text>
-          <Text style={styles.infoText}>• No mocks or fallbacks</Text>
-        </View>
-
         {/* Brand Footer */}
         <View style={styles.brandFooter}>
           <Text style={styles.brandText}>DECENTRALIZED FREQUENCIES</Text>
           <Text style={styles.brandText}>COLLECTIVE RESONANCE</Text>
-          <Text style={styles.brandText}>SYNAPSE SDK POWERED</Text>
+          <Text style={styles.brandText}>POWERED BY FILCDN</Text>
         </View>
       </ScrollView>
     </View>
