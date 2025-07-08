@@ -31,14 +31,6 @@
   "github": {
     "silent": true
   },
-  "functions": {
-    "app/index.js": {
-      "includeFiles": "dist/**"
-    }
-  },
-  "env": {
-    "NODE_OPTIONS": "--max-old-space-size=4096"
-  },
   "build": {
     "env": {
       "NODE_OPTIONS": "--max-old-space-size=4096",
