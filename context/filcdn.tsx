@@ -23,9 +23,13 @@ interface VibestreamData {
 interface ChunkDetail {
   chunk_id: string;
   cid: string;
-  rootId: number;
   size: number;
+  root_id?: number;
   url: string;
+  duration?: number;
+  participants?: number;
+  owner?: string;
+  sequence?: number;
 }
 
 interface FilCDNContextType {
@@ -76,8 +80,18 @@ export const FilCDNProvider: React.FC<FilCDNProviderProps> = ({ children }) => {
         throw new Error('Invalid response format: expected array of vibestreams');
       }
 
-      console.log(`✅ Loaded ${data.length} vibestreams from Synapse SDK`);
-      setVibestreams(data);
+      // Transform the data to ensure proper URL mapping
+      const transformedData = data.map((vibestream: any) => ({
+        ...vibestream,
+        chunks_detail: vibestream.chunks_detail?.map((chunk: any) => ({
+          ...chunk,
+          url: chunk.filcdn_url || chunk.url || `https://gateway.pinata.cloud/ipfs/${chunk.cid}`, // Fallback to IPFS gateway
+          fallback_url: `https://gateway.pinata.cloud/ipfs/${chunk.cid}` // Always provide IPFS fallback
+        })) || []
+      }));
+
+      console.log(`✅ Loaded ${transformedData.length} vibestreams from Synapse SDK`);
+      setVibestreams(transformedData);
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
