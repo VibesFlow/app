@@ -35,15 +35,10 @@ interface AudioPlayerState {
   audio: HTMLAudioElement | null;
   chunkUrls: string[];
   error: string | null;
-  isPreloaded: boolean;
-  preloadedChunks: Map<number, HTMLAudioElement>;
+  preloadedAudios: HTMLAudioElement[];
   waveformData: number[];
-  chunkTimeMap: Array<{startTime: number, endTime: number, duration: number, chunkIndex: number}>;
-  isFullyLoaded: boolean;
-  loadingProgress: number;
-  currentBuffer: HTMLAudioElement | null;
-  nextBuffer: HTMLAudioElement | null;
-  isTransitioning: boolean;
+  isPreloading: boolean;
+  chunkDurations: number[];
 }
 
 const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
@@ -67,37 +62,117 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
     refreshVibestreams();
   }, []);
 
-  // Initialize audio player with complete time mapping
+  // Initialize unified audio player for an entire vibestream
   const initializeAudioPlayer = useCallback((stream: any): AudioPlayerState => {
-    const chunkUrls = stream.chunks_detail?.map((chunk: any) => chunk.url) || [];
+    // Use CORS proxy URLs to avoid CORS issues
+    const chunkUrls = stream.chunks_detail?.map((chunk: any) => {
+      if (chunk.cid) {
+        // Use our backend CORS proxy instead of direct FilCDN URL
+        return `https://api.vibesflow.ai/api/proxy/${chunk.cid}`;
+      }
+      return chunk.url || '';
+    }) || [];
     
-    // Create precise time mapping for each chunk
-    const chunkTimeMap: Array<{startTime: number, endTime: number, duration: number, chunkIndex: number}> = [];
-    let cumulativeTime = 0;
+    // Calculate accurate chunk durations (final chunk may be shorter)
+    const chunkDurations = stream.chunks_detail?.map((chunk: any, index: number) => {
+      // Use chunk's actual duration if available and valid
+      if (chunk.duration && typeof chunk.duration === 'number' && chunk.duration > 0) {
+        return chunk.duration;
+      }
+      
+      // For final chunks, calculate based on RTA total duration
+      if (chunk.chunk_id?.includes('_final')) {
+        const totalRtaDuration = parseDuration(stream.rta_duration);
+        if (totalRtaDuration > 0) {
+          const numChunks = stream.chunks_detail.length;
+          const fullChunks = numChunks - 1;
+          const finalChunkDuration = totalRtaDuration - (fullChunks * 60);
+          return Math.max(1, Math.min(60, finalChunkDuration)); // Clamp between 1-60 seconds
+        }
+      }
+      
+      // Default to 60 seconds for regular chunks
+      return 60;
+    }) || [];
     
-    stream.chunks_detail?.forEach((chunk: any, index: number) => {
-      const chunkDuration = chunk.duration || 60; // Most chunks are 60s, final might be shorter
-      chunkTimeMap.push({
-        startTime: cumulativeTime,
-        endTime: cumulativeTime + chunkDuration,
-        duration: chunkDuration,
-        chunkIndex: index
-      });
-      cumulativeTime += chunkDuration;
+    // Validate that all durations are valid numbers
+    const validatedDurations = chunkDurations.map(duration => {
+      if (isNaN(duration) || duration <= 0) {
+        console.warn('Invalid chunk duration detected, using 60s default:', duration);
+        return 60;
+      }
+      return duration;
     });
-
-    // Total duration from precise mapping
-    const totalDuration = cumulativeTime;
-
-    // Generate high-resolution waveform for entire vibestream
-    const waveformData = generateVibestreamWaveform(stream);
+    
+    const totalDuration = validatedDurations.reduce((sum, duration) => sum + duration, 0);
+    
+    // Generate unified waveform data for the entire RTA
+    const waveformData = generateUnifiedWaveform(totalDuration, validatedDurations);
 
     const audio = Platform.OS === 'web' ? new Audio() : null;
     
     if (audio) {
       audio.crossOrigin = 'anonymous';
-      audio.preload = 'none';
+      audio.preload = 'auto';
       audio.volume = 0.8;
+
+      // Set up event listeners for seamless playback
+      audio.addEventListener('ended', () => {
+        const currentState = audioStates.get(stream.rta_id);
+        if (currentState) {
+          playNextChunkSeamlessly(stream.rta_id);
+        }
+      });
+
+      // Unified time tracking across all chunks
+      audio.addEventListener('timeupdate', () => {
+        const currentState = audioStates.get(stream.rta_id);
+        if (currentState && currentState.isPlaying) {
+          // Calculate total time elapsed across all chunks
+          let totalElapsed = 0;
+          for (let i = 0; i < currentState.currentChunkIndex; i++) {
+            totalElapsed += currentState.chunkDurations[i] || 60;
+          }
+          totalElapsed += audio.currentTime;
+          
+          setAudioStates(prev => {
+            const newMap = new Map(prev);
+            const state = newMap.get(stream.rta_id);
+            if (state) {
+              newMap.set(stream.rta_id, { ...state, currentTime: totalElapsed });
+            }
+            return newMap;
+          });
+        }
+      });
+
+      // Enhanced error handling with fallbacks
+      audio.addEventListener('error', (e) => {
+        console.error(`❌ Audio error for ${stream.rta_id}:`, e);
+        
+        const currentState = audioStates.get(stream.rta_id);
+        const currentChunk = stream.chunks_detail?.[currentState?.currentChunkIndex || 0];
+        
+        if (currentChunk?.fallback_url && !audio.src.includes('pinata')) {
+          console.log(`🔄 Trying fallback URL for ${stream.rta_id}`);
+          audio.src = currentChunk.fallback_url;
+          audio.load();
+          return;
+        }
+        
+        setAudioStates(prev => {
+          const newMap = new Map(prev);
+          const state = newMap.get(stream.rta_id);
+          if (state) {
+            newMap.set(stream.rta_id, { 
+              ...state, 
+              error: 'Failed to load audio - check CORS settings',
+              isLoading: false 
+            });
+          }
+          return newMap;
+        });
+      });
     }
 
     return {
@@ -109,240 +184,20 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
       audio,
       chunkUrls,
       error: null,
-      isPreloaded: false,
-      preloadedChunks: new Map(),
+      preloadedAudios: [],
       waveformData,
-      chunkTimeMap,
-      isFullyLoaded: false,
-      loadingProgress: 0,
-      currentBuffer: null,
-      nextBuffer: null,
-      isTransitioning: false
+      isPreloading: false,
+      chunkDurations: validatedDurations
     };
-  }, []);
+  }, [audioStates]);
 
-  // AGGRESSIVE: Pre-load ALL chunks instantly for complete access
-  const preloadEntireVibestream = useCallback(async (stream: any, audioState: AudioPlayerState) => {
-    if (audioState.isPreloaded || !audioState.chunkUrls.length) return audioState;
-
-    console.log(`🚀 AGGRESSIVE PRE-LOADING: Loading ALL ${audioState.chunkUrls.length} chunks for ${stream.rta_id}`);
-    console.time(`⏱️ Full preload time for ${stream.rta_id}`);
-    
-    try {
-      const preloadedChunks = new Map<number, HTMLAudioElement>();
-      const totalChunks = audioState.chunkUrls.length;
-      
-      // Create loading promises for ALL chunks simultaneously
-      const loadPromises = audioState.chunkUrls.map(async (url, index) => {
-        return new Promise<{index: number, audio: HTMLAudioElement}>((resolve, reject) => {
-          const audio = new Audio();
-          audio.crossOrigin = 'anonymous';
-          audio.preload = 'auto';
-          
-          let resolved = false;
-          
-          const onCanPlay = () => {
-            if (!resolved) {
-              resolved = true;
-              cleanup();
-              
-              // Update loading progress
-              const progress = ((index + 1) / totalChunks) * 100;
-              console.log(`✅ Chunk ${index + 1}/${totalChunks} loaded (${progress.toFixed(1)}%)`);
-              
-              resolve({ index, audio });
-            }
-          };
-          
-          const onError = (error: any) => {
-            if (!resolved) {
-              resolved = true;
-              cleanup();
-              console.error(`❌ Failed to load chunk ${index}:`, error);
-              reject(new Error(`Chunk ${index} failed to load`));
-            }
-          };
-          
-          const cleanup = () => {
-            audio.removeEventListener('canplaythrough', onCanPlay);
-            audio.removeEventListener('error', onError);
-          };
-          
-          audio.addEventListener('canplaythrough', onCanPlay, { once: true });
-          audio.addEventListener('error', onError, { once: true });
-          
-          // Start loading
-          audio.src = url;
-          audio.load();
-          
-          // Timeout fallback (30 seconds per chunk)
-          setTimeout(() => {
-            if (!resolved && audio.readyState >= 3) {
-              onCanPlay();
-            }
-          }, 30000);
-        });
-      });
-      
-      // Load all chunks with progress tracking
-      let loadedCount = 0;
-      const results = await Promise.allSettled(loadPromises);
-      
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-          preloadedChunks.set(result.value.index, result.value.audio);
-          loadedCount++;
-        } else {
-          console.error(`❌ Chunk ${index} failed:`, result.reason);
-        }
-        
-        // Update progress in real-time
-        const progress = ((index + 1) / totalChunks) * 100;
-        setAudioStates(prev => {
-          const newMap = new Map(prev);
-          const currentState = newMap.get(stream.rta_id);
-          if (currentState) {
-            newMap.set(stream.rta_id, { ...currentState, loadingProgress: progress });
-          }
-          return newMap;
-        });
-      });
-      
-      console.timeEnd(`⏱️ Full preload time for ${stream.rta_id}`);
-      console.log(`🎉 COMPLETE: ${loadedCount}/${totalChunks} chunks loaded for ${stream.rta_id}`);
-      
-      // Set up first buffer
-      const firstAudio = preloadedChunks.get(0);
-      const secondAudio = preloadedChunks.get(1);
-      
-      return {
-        ...audioState,
-        isPreloaded: true,
-        isFullyLoaded: loadedCount === totalChunks,
-        loadingProgress: 100,
-        preloadedChunks,
-        currentBuffer: firstAudio || null,
-        nextBuffer: secondAudio || null
-      };
-      
-    } catch (error) {
-      console.error(`❌ Aggressive pre-loading failed for ${stream.rta_id}:`, error);
-      return { ...audioState, isPreloaded: true, error: 'Pre-loading failed' };
-    }
-  }, []);
-
-  // Generate vibestream-specific waveform based on chunk characteristics
-  const generateVibestreamWaveform = useCallback((stream: any): number[] => {
-    const points: number[] = [];
-    const segments = 120; // More segments for longer tracks
-    const chunks = stream.chunks_detail || [];
-    
-    // Create waveform that represents the entire vibestream
-    for (let i = 0; i < segments; i++) {
-      // Map segment to chunk position
-      const chunkPosition = (i / segments) * chunks.length;
-      const chunkIndex = Math.floor(chunkPosition);
-      const chunk = chunks[chunkIndex];
-      
-      // Vary height based on chunk characteristics
-      let baseHeight = 15;
-      if (chunk) {
-        // Use file size and position to create realistic variations
-        const sizeVariation = (chunk.size || 500000) / 1000000 * 10; // Size influence
-        const positionVariation = Math.sin((chunkPosition * 0.3) + (chunk.sequence || 0)) * 8;
-        baseHeight += sizeVariation + positionVariation;
-      }
-      
-      // Add some randomness for musical feel
-      const musicVariation = Math.sin(i * 0.2) * 5 + Math.random() * 8;
-      const height = Math.max(5, Math.min(35, baseHeight + musicVariation));
-      
-      points.push(height);
-    }
-    
-    return points;
-  }, []);
-
-  // Smart time calculation: Convert global time to chunk and local time
-  const getChunkAndTimeFromGlobalTime = useCallback((globalTime: number, chunkTimeMap: any[]) => {
-    for (let i = 0; i < chunkTimeMap.length; i++) {
-      const chunk = chunkTimeMap[i];
-      if (globalTime >= chunk.startTime && globalTime < chunk.endTime) {
-        return {
-          chunkIndex: i,
-          localTime: globalTime - chunk.startTime,
-          chunkDuration: chunk.duration
-        };
-      }
-    }
-    
-    // If beyond the end, return last chunk
-    const lastChunk = chunkTimeMap[chunkTimeMap.length - 1];
-    return {
-      chunkIndex: chunkTimeMap.length - 1,
-      localTime: lastChunk.duration - 0.1, // Near the end
-      chunkDuration: lastChunk.duration
-    };
-  }, []);
-
-  // Instant seeking across entire vibestream
-  const seekToGlobalTime = useCallback(async (rtaId: string, globalTime: number) => {
+  // Seamless transition to next chunk with smart buffering
+  const playNextChunkSeamlessly = useCallback((rtaId: string) => {
     const state = audioStates.get(rtaId);
-    if (!state || !state.isFullyLoaded) {
-      console.warn('⚠️ Cannot seek: vibestream not fully loaded yet');
-      return;
-    }
-
-    const { chunkIndex, localTime } = getChunkAndTimeFromGlobalTime(globalTime, state.chunkTimeMap);
-    
-    console.log(`⚡ INSTANT SEEK: ${globalTime}s → Chunk ${chunkIndex} at ${localTime.toFixed(1)}s`);
-    
-    const targetAudio = state.preloadedChunks.get(chunkIndex);
-    if (!targetAudio) {
-      console.error(`❌ Chunk ${chunkIndex} not available`);
-      return;
-    }
-
-    // Pause current audio
-    if (state.currentBuffer) {
-      state.currentBuffer.pause();
-    }
-
-    // Switch to target chunk instantly
-    targetAudio.currentTime = localTime;
-    
-    // Prepare next buffer for smooth transitions
-    const nextChunkAudio = state.preloadedChunks.get(chunkIndex + 1);
-    
-    setAudioStates(prev => {
-      const newMap = new Map(prev);
-      newMap.set(rtaId, {
-        ...state,
-        currentChunkIndex: chunkIndex,
-        currentTime: globalTime,
-        currentBuffer: targetAudio,
-        nextBuffer: nextChunkAudio || null,
-        isTransitioning: false
-      });
-      return newMap;
-    });
-
-    // Resume playback if it was playing
-    if (state.isPlaying) {
-      try {
-        await targetAudio.play();
-      } catch (error) {
-        console.error('❌ Failed to resume after seek:', error);
-      }
-    }
-  }, [audioStates, getChunkAndTimeFromGlobalTime]);
-
-  // Smart transition with cross-fade buffering
-  const transitionToNextChunk = useCallback(async (rtaId: string) => {
-    const state = audioStates.get(rtaId);
-    if (!state || !state.currentBuffer) return;
+    if (!state || !state.audio) return;
 
     const nextIndex = state.currentChunkIndex + 1;
+    
     if (nextIndex >= state.chunkUrls.length) {
       // End of vibestream
       console.log('🏁 Vibestream completed:', rtaId);
@@ -358,131 +213,146 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
       return;
     }
 
-    const nextAudio = state.preloadedChunks.get(nextIndex);
+    // Use preloaded audio if available for instant transition
+    let nextAudio = state.preloadedAudios[nextIndex];
+    
     if (!nextAudio) {
-      console.error(`❌ Next chunk ${nextIndex} not available`);
-      return;
+      // Fallback: load next chunk if not preloaded
+      console.log(`🔄 Loading chunk ${nextIndex + 1}/${state.chunkUrls.length} for ${rtaId}`);
+      nextAudio = new Audio();
+      nextAudio.crossOrigin = 'anonymous';
+      nextAudio.preload = 'auto';
+      nextAudio.volume = 0.8;
+      nextAudio.src = state.chunkUrls[nextIndex];
     }
-
-    console.log(`🔄 SMART TRANSITION: Chunk ${state.currentChunkIndex} → ${nextIndex}`);
-
-    // Set up transition state
+    
+    // Apply crossfade for smooth transition
+    const currentAudio = state.audio;
+    const crossfadeDuration = 200; // 200ms crossfade
+    
+    // Fade out current audio
+    const fadeOut = setInterval(() => {
+      if (currentAudio.volume > 0.1) {
+        currentAudio.volume = Math.max(0, currentAudio.volume - 0.1);
+      } else {
+        clearInterval(fadeOut);
+        currentAudio.pause();
+      }
+    }, crossfadeDuration / 10);
+    
+    // Start next audio with fade in
+    nextAudio.volume = 0;
+    nextAudio.currentTime = 0;
+    
     setAudioStates(prev => {
       const newMap = new Map(prev);
-      newMap.set(rtaId, {
-        ...state,
-        isTransitioning: true
+      newMap.set(rtaId, { 
+        ...state, 
+        currentChunkIndex: nextIndex,
+        audio: nextAudio,
+        isLoading: false 
       });
       return newMap;
     });
 
+    // Play and fade in
+    nextAudio.play().then(() => {
+      const fadeIn = setInterval(() => {
+        if (nextAudio.volume < 0.7) {
+          nextAudio.volume = Math.min(0.8, nextAudio.volume + 0.1);
+        } else {
+          nextAudio.volume = 0.8;
+          clearInterval(fadeIn);
+        }
+      }, crossfadeDuration / 10);
+    }).catch(error => {
+      console.error('❌ Failed to play next chunk:', error);
+    });
+
+  }, [audioStates]);
+
+  // Preload all chunks for instant access and smooth transitions
+  const preloadAllChunks = useCallback(async (rtaId: string) => {
+    const state = audioStates.get(rtaId);
+    if (!state || state.isPreloading || state.preloadedAudios.length > 0) return;
+
+    console.log(`🔄 Preloading all ${state.chunkUrls.length} chunks for RTA: ${rtaId}`);
+    
+    setAudioStates(prev => {
+      const newMap = new Map(prev);
+      const currentState = newMap.get(rtaId);
+      if (currentState) {
+        newMap.set(rtaId, { ...currentState, isPreloading: true });
+      }
+      return newMap;
+    });
+
+    const preloadedAudios: HTMLAudioElement[] = [];
+    
+    // Preload all chunks in parallel for instant switching
+    const preloadPromises = state.chunkUrls.map(async (url, index) => {
+      return new Promise<HTMLAudioElement>((resolve, reject) => {
+        const audio = new Audio();
+        audio.crossOrigin = 'anonymous';
+        audio.preload = 'auto';
+        audio.volume = 0.8;
+        
+        audio.addEventListener('canplaythrough', () => {
+          console.log(`✅ Chunk ${index + 1}/${state.chunkUrls.length} preloaded for ${rtaId}`);
+          resolve(audio);
+        }, { once: true });
+        
+        audio.addEventListener('error', (e) => {
+          console.warn(`⚠️ Failed to preload chunk ${index + 1} for ${rtaId}:`, e);
+          // Return audio anyway - will try fallback URL when played
+          resolve(audio);
+        }, { once: true });
+        
+        audio.src = url;
+        audio.load();
+      });
+    });
+
     try {
-      // Cross-fade transition for smooth playback
-      const currentAudio = state.currentBuffer;
-      const fadeOutDuration = 100; // 100ms cross-fade
-      
-      // Start fading out current audio
-      const originalVolume = currentAudio.volume;
-      let fadeOutStep = 0;
-      const fadeOutInterval = setInterval(() => {
-        fadeOutStep += 10;
-        const newVolume = originalVolume * (1 - fadeOutStep / fadeOutDuration);
-        currentAudio.volume = Math.max(0, newVolume);
-        
-        if (fadeOutStep >= fadeOutDuration) {
-          clearInterval(fadeOutInterval);
-          currentAudio.pause();
-          currentAudio.volume = originalVolume; // Reset for future use
-        }
-      }, 10);
-
-      // Start next audio with fade-in
-      nextAudio.currentTime = 0;
-      nextAudio.volume = 0;
-      await nextAudio.play();
-      
-      let fadeInStep = 0;
-      const fadeInInterval = setInterval(() => {
-        fadeInStep += 10;
-        const newVolume = originalVolume * (fadeInStep / fadeOutDuration);
-        nextAudio.volume = Math.min(originalVolume, newVolume);
-        
-        if (fadeInStep >= fadeOutDuration) {
-          clearInterval(fadeInInterval);
-        }
-      }, 10);
-
-      // Update state to new chunk
-      const nextNextAudio = state.preloadedChunks.get(nextIndex + 1);
+      const loadedAudios = await Promise.all(preloadPromises);
       
       setAudioStates(prev => {
         const newMap = new Map(prev);
-        newMap.set(rtaId, {
-          ...state,
-          currentChunkIndex: nextIndex,
-          currentBuffer: nextAudio,
-          nextBuffer: nextNextAudio || null,
-          isTransitioning: false
-        });
+        const currentState = newMap.get(rtaId);
+        if (currentState) {
+          newMap.set(rtaId, { 
+            ...currentState, 
+            preloadedAudios: loadedAudios,
+            isPreloading: false 
+          });
+        }
         return newMap;
       });
 
-    } catch (error) {
-      console.error(`❌ Transition failed for chunk ${nextIndex}:`, error);
+      console.log(`🎉 All ${loadedAudios.length} chunks preloaded for ${rtaId}`);
       
+    } catch (error) {
+      console.error(`❌ Failed to preload chunks for ${rtaId}:`, error);
       setAudioStates(prev => {
         const newMap = new Map(prev);
-        newMap.set(rtaId, {
-          ...state,
-          isTransitioning: false
-        });
+        const currentState = newMap.get(rtaId);
+        if (currentState) {
+          newMap.set(rtaId, { ...currentState, isPreloading: false });
+        }
         return newMap;
       });
     }
   }, [audioStates]);
 
-  // Real-time time tracking across chunks
-  const startTimeTracking = useCallback((rtaId: string) => {
-    const interval = setInterval(() => {
-      const state = audioStates.get(rtaId);
-      if (!state || !state.isPlaying || !state.currentBuffer) {
-        clearInterval(interval);
-        return;
-      }
-
-      const chunkInfo = state.chunkTimeMap[state.currentChunkIndex];
-      if (!chunkInfo) return;
-
-      const globalTime = chunkInfo.startTime + state.currentBuffer.currentTime;
-      
-      // Check if we need to transition
-      if (state.currentBuffer.currentTime >= chunkInfo.duration - 0.1 && !state.isTransitioning) {
-        transitionToNextChunk(rtaId);
-      }
-
-      // Update global time
-      setAudioStates(prev => {
-        const newMap = new Map(prev);
-        const currentState = newMap.get(rtaId);
-        if (currentState) {
-          newMap.set(rtaId, { ...currentState, currentTime: globalTime });
-        }
-        return newMap;
-      });
-    }, 100); // 10fps for smooth updates
-
-    return interval;
-  }, [audioStates, transitionToNextChunk]);
-
-  // Enhanced toggle playback with aggressive pre-loading
+  // Unified playback with preloading and seamless experience
   const togglePlayback = useCallback(async (stream: any) => {
-    console.log('🎵 Toggle playback for:', stream.rta_id);
+    console.log('🎵 Toggle unified playback for:', stream.rta_id);
 
     // Stop any currently playing vibestream
     if (playingRTA && playingRTA !== stream.rta_id) {
       const currentState = audioStates.get(playingRTA);
-      if (currentState?.currentBuffer) {
-        currentState.currentBuffer.pause();
+      if (currentState?.audio) {
+        currentState.audio.pause();
         setAudioStates(prev => {
           const newMap = new Map(prev);
           const state = newMap.get(playingRTA);
@@ -497,16 +367,19 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
     let state = audioStates.get(stream.rta_id);
     
     if (!state) {
-      // Initialize audio player for this vibestream
+      // Initialize unified audio player for this vibestream
       state = initializeAudioPlayer(stream);
       setAudioStates(prev => new Map(prev.set(stream.rta_id, state!)));
     }
 
+    if (!state.audio) {
+      Alert.alert('Browser Error', 'Audio not supported on this platform');
+      return;
+    }
+
     if (state.isPlaying) {
       // Pause
-      if (state.currentBuffer) {
-        state.currentBuffer.pause();
-      }
+      state.audio.pause();
       setAudioStates(prev => {
         const newMap = new Map(prev);
         newMap.set(stream.rta_id, { ...state!, isPlaying: false });
@@ -514,7 +387,7 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
       });
       setPlayingRTA(null);
     } else {
-      // Play - Aggressively pre-load everything first
+      // Play - Start preloading ALL chunks immediately
       if (state.chunkUrls.length === 0) {
         Alert.alert('No Audio', 'No chunks available for this vibestream');
         return;
@@ -522,73 +395,239 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
 
       setPlayingRTA(stream.rta_id);
       
-      if (!state.isFullyLoaded) {
-        console.log(`🚀 LOADING ENTIRE VIBESTREAM: ${stream.rta_id} (${state.chunkUrls.length} chunks)`);
+      // Start preloading all chunks in parallel (non-blocking)
+      preloadAllChunks(stream.rta_id);
+      
+      if (!state.audio.src) {
+        // Load and play first chunk immediately
+        console.log(`🚀 Starting unified playback for ${stream.rta_id} (${state.chunkUrls.length} chunks, ${formatTime(state.totalDuration)} total)`);
+        
+        // Use preloaded audio if available, otherwise use main audio
+        const firstAudio = state.preloadedAudios[0] || state.audio;
+        if (firstAudio !== state.audio) {
+          state.audio = firstAudio;
+        } else {
+          state.audio.src = state.chunkUrls[0];
+        }
         
         setAudioStates(prev => {
           const newMap = new Map(prev);
-          newMap.set(stream.rta_id, { ...state!, isLoading: true });
+          newMap.set(stream.rta_id, { 
+            ...state!, 
+            isLoading: true, 
+            currentChunkIndex: 0,
+            audio: state!.audio 
+          });
           return newMap;
         });
 
-        // Aggressively pre-load ALL chunks
-        const fullyLoadedState = await preloadEntireVibestream(stream, state);
-        setAudioStates(prev => new Map(prev.set(stream.rta_id, fullyLoadedState)));
+        state.audio.addEventListener('canplay', async () => {
+          try {
+            await state!.audio!.play();
+            setAudioStates(prev => {
+              const newMap = new Map(prev);
+              const currentState = newMap.get(stream.rta_id);
+              if (currentState) {
+                newMap.set(stream.rta_id, { 
+                  ...currentState, 
+                  isPlaying: true, 
+                  isLoading: false 
+                });
+              }
+              return newMap;
+            });
+            console.log(`🎶 Unified playback started for ${stream.rta_id}`);
+          } catch (error) {
+            console.error('❌ Failed to play audio:', error);
+            Alert.alert('Playback Error', 'Failed to start audio playback');
+          }
+        }, { once: true });
+
+        if (firstAudio === state.audio) {
+          state.audio.load();
+        }
+      } else {
+        // Resume playback
+        try {
+          await state.audio.play();
+          setAudioStates(prev => {
+            const newMap = new Map(prev);
+            newMap.set(stream.rta_id, { ...state!, isPlaying: true });
+            return newMap;
+          });
+        } catch (error) {
+          console.error('❌ Failed to resume audio:', error);
+        }
+      }
+    }
+  }, [playingRTA, audioStates, initializeAudioPlayer, preloadAllChunks]);
+
+  // Unified seek across entire vibestream
+  const seekToTime = useCallback((rtaId: string, targetTime: number) => {
+    const state = audioStates.get(rtaId);
+    if (!state || !state.audio || !state.chunkDurations.length) {
+      console.warn('Cannot seek: invalid state', { rtaId, hasState: !!state, hasAudio: !!state?.audio, chunkCount: state?.chunkDurations.length || 0 });
+      return;
+    }
+
+    // Validate target time
+    if (isNaN(targetTime) || targetTime < 0 || targetTime > state.totalDuration) {
+      console.warn('Invalid seek time:', { targetTime, totalDuration: state.totalDuration });
+      return;
+    }
+
+    // Calculate which chunk and position within that chunk
+    let remainingTime = targetTime;
+    let targetChunkIndex = 0;
+    
+    for (let i = 0; i < state.chunkDurations.length; i++) {
+      if (remainingTime <= state.chunkDurations[i]) {
+        targetChunkIndex = i;
+        break;
+      }
+      remainingTime -= state.chunkDurations[i];
+    }
+    
+    const timeInChunk = Math.max(0, remainingTime);
+    
+    // Validate chunk time
+    if (isNaN(timeInChunk) || timeInChunk < 0) {
+      console.warn('Invalid chunk time calculated:', { timeInChunk, remainingTime, targetChunkIndex });
+      return;
+    }
+    
+    console.log(`⏭️ Seeking to ${formatTime(targetTime)} -> Chunk ${targetChunkIndex + 1} at ${formatTime(timeInChunk)}`);
+    
+    if (targetChunkIndex !== state.currentChunkIndex) {
+      // Switch to different chunk using preloaded audio if available
+      const targetAudio = state.preloadedAudios[targetChunkIndex];
+      
+      if (targetAudio) {
+        // Use preloaded audio for instant seeking
+        const currentAudio = state.audio;
+        currentAudio.pause();
         
-        if (fullyLoadedState.currentBuffer && fullyLoadedState.isFullyLoaded) {
-          console.log(`⚡ INSTANT PLAYBACK READY: ${stream.rta_id}`);
+        // Validate timeInChunk before setting
+        if (!isNaN(timeInChunk) && isFinite(timeInChunk)) {
+          targetAudio.currentTime = timeInChunk;
+          targetAudio.volume = 0.8;
           
           setAudioStates(prev => {
             const newMap = new Map(prev);
-            newMap.set(stream.rta_id, { 
-              ...fullyLoadedState, 
-              isPlaying: true, 
+            newMap.set(rtaId, { 
+              ...state, 
+              currentChunkIndex: targetChunkIndex,
+              audio: targetAudio,
               isLoading: false 
             });
             return newMap;
           });
-          
-          await fullyLoadedState.currentBuffer.play();
-          startTimeTracking(stream.rta_id);
-          
+
+          if (state.isPlaying) {
+            targetAudio.play().catch(error => {
+              console.error('❌ Failed to play after seek:', error);
+            });
+          }
         } else {
-          console.error('❌ Failed to fully load vibestream');
-          Alert.alert('Loading Error', 'Failed to load vibestream for instant access');
+          console.error('Cannot set invalid currentTime:', timeInChunk);
         }
       } else {
-        // Resume playback
-        if (state.currentBuffer) {
+        // Fallback: load chunk if not preloaded
+        console.log(`🔄 Loading chunk ${targetChunkIndex + 1} for seek operation`);
+        state.audio.pause();
+        state.audio.src = state.chunkUrls[targetChunkIndex];
+        
+        setAudioStates(prev => {
+          const newMap = new Map(prev);
+          newMap.set(rtaId, { 
+            ...state, 
+            currentChunkIndex: targetChunkIndex,
+            isLoading: true 
+          });
+          return newMap;
+        });
+
+        state.audio.addEventListener('canplay', () => {
+          if (!isNaN(timeInChunk) && isFinite(timeInChunk)) {
+            state.audio!.currentTime = timeInChunk;
+            if (state.isPlaying) {
+              state.audio!.play();
+            }
+          }
           setAudioStates(prev => {
             const newMap = new Map(prev);
-            newMap.set(stream.rta_id, { ...state, isPlaying: true });
+            const currentState = newMap.get(rtaId);
+            if (currentState) {
+              newMap.set(rtaId, { ...currentState, isLoading: false });
+            }
             return newMap;
           });
-          
-          await state.currentBuffer.play();
-          startTimeTracking(stream.rta_id);
-        }
+        }, { once: true });
+
+        state.audio.load();
+      }
+    } else {
+      // Same chunk, just seek within current audio
+      if (!isNaN(timeInChunk) && isFinite(timeInChunk)) {
+        state.audio.currentTime = timeInChunk;
+      } else {
+        console.error('Cannot set invalid currentTime:', timeInChunk);
       }
     }
-  }, [playingRTA, audioStates, initializeAudioPlayer, preloadEntireVibestream, startTimeTracking]);
-
-  // Enhanced seeking with instant access
-  const seekToTime = useCallback((rtaId: string, targetTime: number) => {
-    const state = audioStates.get(rtaId);
-    if (!state) return;
-
-    if (!state.isFullyLoaded) {
-      console.warn('⚠️ Seeking not available: vibestream still loading');
-      return;
-    }
-
-    seekToGlobalTime(rtaId, targetTime);
-  }, [audioStates, seekToGlobalTime]);
+  }, [audioStates]);
 
   // Format time helper
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Parse duration from "MM:SS" format to seconds
+  const parseDuration = (duration: string): number => {
+    if (!duration || typeof duration !== 'string') {
+      console.warn('Invalid duration format:', duration);
+      return 0;
+    }
+    
+    const parts = duration.split(':');
+    if (parts.length === 2) {
+      const minutes = parseInt(parts[0], 10);
+      const seconds = parseInt(parts[1], 10);
+      
+      if (isNaN(minutes) || isNaN(seconds)) {
+        console.warn('NaN detected in duration parsing:', { duration, minutes, seconds });
+        return 0;
+      }
+      
+      return minutes * 60 + seconds;
+    }
+    
+    console.warn('Invalid duration format:', duration);
+    return 0;
+  };
+
+  // Generate unified waveform for entire RTA
+  const generateUnifiedWaveform = (totalDuration: number, chunkDurations: number[]): number[] => {
+    const points: number[] = [];
+    const segmentsPerSecond = 2; // 2 waveform points per second for smooth visualization
+    const totalSegments = Math.max(200, totalDuration * segmentsPerSecond); // Minimum 200 points
+    
+    for (let i = 0; i < totalSegments; i++) {
+      // Create varied waveform that's denser in certain sections (simulate music dynamics)
+      const progress = i / totalSegments;
+      const baseHeight = 10;
+      
+      // Add some musical pattern simulation
+      const musicalPattern = Math.sin(progress * Math.PI * 8) * 8; // Creates waves
+      const randomVariation = (Math.random() - 0.5) * 6;
+      const dynamicRange = 5 + Math.sin(progress * Math.PI * 2) * 8; // Simulate volume changes
+      
+      const height = baseHeight + musicalPattern + randomVariation + dynamicRange;
+      points.push(Math.max(3, Math.min(35, height)));
+    }
+    
+    return points;
   };
 
   // Generate simple waveform for visualization
@@ -633,7 +672,7 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
   const renderVibestreamCard = (stream: any, index: number) => {
     const audioState = audioStates.get(stream.rta_id);
     const isCurrentlyPlaying = playingRTA === stream.rta_id && audioState?.isPlaying;
-    const waveformData = generateWaveform(stream.rta_id);
+    const waveformData = audioState?.waveformData || generateWaveform(stream.rta_id);
     
     return (
       <GlitchContainer key={stream.rta_id} intensity="low" style={styles.cardContainer}>
@@ -664,13 +703,13 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
               <Text style={styles.creatorLabel}>CREATOR</Text>
             </View>
 
-            {/* Play Button */}
+            {/* Play Button with Preloading Status */}
             <TouchableOpacity 
               style={[styles.playButton, isCurrentlyPlaying && styles.playButtonActive]}
               onPress={() => togglePlayback(stream)}
-              disabled={audioState?.isLoading}
+              disabled={audioState?.isLoading || audioState?.isPreloading}
             >
-              {audioState?.isLoading ? (
+              {audioState?.isLoading || audioState?.isPreloading ? (
                 <ActivityIndicator size={16} color={COLORS.background} />
               ) : (
                 <FontAwesome5 
@@ -681,6 +720,11 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
                 />
               )}
             </TouchableOpacity>
+            
+            {/* Preload Status Indicator */}
+            {audioState?.isPreloading && (
+              <Text style={styles.preloadingText}>Preloading...</Text>
+            )}
           </View>
 
           {/* Vibestream Info */}
@@ -714,40 +758,19 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
             </View>
           </View>
 
-          {/* Inline Waveform Progress Bar - INSTANT SEEK */}
+          {/* Inline Waveform Progress Bar - CLICKABLE */}
           <View style={styles.waveformSection}>
-            {/* Loading Progress Indicator */}
-            {audioState && !audioState.isFullyLoaded && (
-              <View style={styles.loadingIndicator}>
-                <Text style={styles.loadingText}>
-                  Loading for instant access... {audioState.loadingProgress.toFixed(0)}%
-                </Text>
-                <View style={styles.loadingBar}>
-                  <View 
-                    style={[
-                      styles.loadingBarFill, 
-                      { width: `${audioState.loadingProgress}%` }
-                    ]} 
-                  />
-                </View>
-              </View>
-            )}
-            
             <TouchableOpacity 
-              style={[
-                styles.progressContainer,
-                (!audioState?.isFullyLoaded) && styles.progressContainerDisabled
-              ]}
+              style={styles.progressContainer}
               onPress={(e) => {
-                if (audioState?.totalDuration && audioState.totalDuration > 0 && audioState.isFullyLoaded) {
+                if (audioState?.totalDuration && audioState.totalDuration > 0) {
                   const { locationX } = e.nativeEvent;
                   const progress = locationX / (width - SPACING.medium * 4);
                   const targetTime = progress * audioState.totalDuration;
                   seekToTime(stream.rta_id, targetTime);
                 }
               }}
-              activeOpacity={audioState?.isFullyLoaded ? 0.8 : 1}
-              disabled={!audioState?.isFullyLoaded}
+              activeOpacity={0.8}
             >
               {/* Progress Track */}
               <View style={styles.progressTrack} />
@@ -777,40 +800,32 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
               />
             </TouchableOpacity>
 
-            {/* High-Resolution Waveform for entire vibestream */}
+            {/* Animated Waveform Visualization */}
             <View style={styles.waveform}>
-              {(audioState?.waveformData || generateVibestreamWaveform(stream)).map((height, i) => {
-                const progressPercent = audioState?.totalDuration && audioState.totalDuration > 0
-                  ? (audioState.currentTime / audioState.totalDuration) * 100 
-                  : 0;
-                const segmentProgress = (i / (audioState?.waveformData?.length || 120)) * 100;
-                const isPlayed = segmentProgress <= progressPercent;
-                
-                return (
-                  <Animated.View
-                    key={i}
-                    style={[
-                      styles.waveformBar,
-                      {
-                        height,
-                        backgroundColor: isCurrentlyPlaying 
-                          ? (isPlayed ? COLORS.secondary : COLORS.primary + '60')
-                          : COLORS.primary + '60',
-                        opacity: isCurrentlyPlaying ? (isPlayed ? 1 : 0.6) : 0.6,
-                      },
-                    ]}
-                  />
-                );
-              })}
+              {waveformData.map((height, i) => (
+                <Animated.View
+                  key={i}
+                  style={[
+                    styles.waveformBar,
+                    {
+                      height,
+                      backgroundColor: isCurrentlyPlaying 
+                        ? COLORS.secondary 
+                        : COLORS.primary + '60',
+                      opacity: isCurrentlyPlaying ? 1 : 0.6,
+                    },
+                  ]}
+                />
+              ))}
             </View>
 
-            {/* Precise Time Display */}
+            {/* Time Display */}
             <View style={styles.timeDisplay}>
               <Text style={styles.timeText}>
                 {formatTime(audioState?.currentTime || 0)}
               </Text>
               <Text style={styles.timeText}>
-                {stream.rta_duration || formatTime(audioState?.totalDuration || 0)}
+                {formatTime(audioState?.totalDuration || 0)}
               </Text>
             </View>
           </View>
@@ -1144,6 +1159,13 @@ const styles = StyleSheet.create({
   playButtonActive: {
     backgroundColor: COLORS.primary,
   },
+  preloadingText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.secondary,
+    letterSpacing: 1,
+    marginLeft: SPACING.small,
+    textTransform: 'uppercase',
+  },
   waveformSection: {
     paddingVertical: SPACING.medium,
     paddingHorizontal: SPACING.small,
@@ -1284,29 +1306,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     lineHeight: 18,
-  },
-  loadingIndicator: {
-    alignItems: 'center',
-    marginBottom: SPACING.small,
-  },
-  loadingText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.xs,
-  },
-  loadingBar: {
-    width: '100%',
-    height: 6,
-    backgroundColor: COLORS.backgroundLight,
-    borderRadius: 3,
-  },
-  loadingBarFill: {
-    height: '100%',
-    backgroundColor: COLORS.secondary,
-    borderRadius: 3,
-  },
-  progressContainerDisabled: {
-    opacity: 0.5,
   },
 });
 

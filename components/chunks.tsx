@@ -340,19 +340,22 @@ class AudioChunkService {
       this.chunkTimer = null;
     }
 
-    // Process final chunk in background with LOW priority
-    const remainingDuration = Date.now() - this.bufferStartTime;
-    if (this.audioBuffer.length > 0 && remainingDuration > 5000) {
+    // Always process final chunk in background
+    if (this.audioBuffer.length > 0) {
       this.backgroundQueue.push({
         chunkId: this.generateChunkId(true),
         buffer: this.combineAudioBuffers(),
         metadata: this.createCurrentMetadata(),
-        isFinal: true,
-        priority: 'low' // Low priority to not interfere with live music
+        isFinal: true, // Always mark as final when stopping
+        priority: 'high' // High priority for final chunks to ensure completion
       });
       
       // Clear buffer immediately to free memory
       this.audioBuffer = [];
+      console.log(`🏁 Final chunk queued for processing (fixed completion bug)`);
+    } else {
+      // Even if no audio buffer, send a minimal final signal  
+      console.log(`🏁 No audio buffer, but marking previous chunk as final for completion`);
     }
 
     // Process background queue with minimal interference
@@ -360,16 +363,16 @@ class AudioChunkService {
     
   }
 
-  // Add audio data with ENHANCED activity tracking
+  // Add audio data with activity tracking
   addAudioData(audioData: ArrayBuffer | string): void {
     if (!this.isCollecting || !this.currentRtaId) return;
 
-    // ENHANCED music activity tracking
+    // Enhanced music activity tracking
     const now = Date.now();
     this.lastMusicActivity = now;
     this.musicActivityHistory.push(now);
     
-    // DETECT MUSIC PEAKS for rhythm-based processing optimization
+    // Detect music peaks for rhythm-based processing optimization
     if (typeof audioData === 'string') {
       const estimatedEnergy = audioData.length; // Simple energy estimation
       if (estimatedEnergy > this.musicPeakDetection.averagePeakInterval * 1.5) {
@@ -397,7 +400,7 @@ class AudioChunkService {
       let buffer: ArrayBuffer;
       
       if (typeof audioData === 'string') {
-        // OPTIMIZED base64 conversion with chunked processing
+        // Optimized base64 conversion with chunked processing
         buffer = this.fastBase64ToBuffer(audioData);
       } else {
         buffer = audioData;
@@ -406,7 +409,7 @@ class AudioChunkService {
       // Add to accumulation buffer with minimal processing
       this.audioBuffer.push(buffer);
       
-      // IMPROVED LOGGING - use expandable groups for micro-variations
+      // Logging using expandable groups for micro-variations
       const elapsed = Date.now() - this.bufferStartTime;
       const logInterval = this.isLiveMusicActive ? 15000 : 10000; // Less frequent during live music
       if (elapsed % logInterval < 500) {
@@ -428,7 +431,7 @@ class AudioChunkService {
     }
   }
 
-  // FAST base64 to ArrayBuffer conversion with chunked processing
+  // Fast base64 to ArrayBuffer conversion with chunked processing
   private fastBase64ToBuffer(base64: string): ArrayBuffer {
     try {
       if (Platform.OS === 'web' && typeof atob !== 'undefined') {

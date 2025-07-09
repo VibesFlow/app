@@ -62,13 +62,16 @@ export const FilCDNProvider: React.FC<FilCDNProviderProps> = ({ children }) => {
       
       // Call the backend endpoint that uses Synapse SDK
       const backendUrl = process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai';
-      console.log(`📡 Calling API: ${backendUrl}/api/vibestreams`);
       
-      const response = await fetch(`${backendUrl}/api/vibestreams`, {
+      // Add cache-busting parameter to force fresh data
+      const cacheBuster = Date.now();
+      const response = await fetch(`${backendUrl}/api/vibestreams?t=${cacheBuster}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         }
       });
 
@@ -78,41 +81,22 @@ export const FilCDNProvider: React.FC<FilCDNProviderProps> = ({ children }) => {
 
       const data = await response.json();
       
-      console.log(`📊 Raw API response:`, {
-        isArray: Array.isArray(data),
-        length: Array.isArray(data) ? data.length : 'N/A',
-        firstItem: Array.isArray(data) && data.length > 0 ? {
-          rta_id: data[0].rta_id,
-          creator: data[0].creator,
-          chunks: data[0].chunks,
-          duration: data[0].rta_duration,
-          is_complete: data[0].is_complete
-        } : null
-      });
-      
       if (!Array.isArray(data)) {
         throw new Error('Invalid response format: expected array of vibestreams');
       }
 
-      // Transform the data to ensure proper URL mapping
+      // Transform the data to ensure proper URL mapping with CORS proxy
       const transformedData = data.map((vibestream: any) => ({
         ...vibestream,
         chunks_detail: vibestream.chunks_detail?.map((chunk: any) => ({
           ...chunk,
-          url: chunk.url || chunk.filcdn_url || `https://gateway.pinata.cloud/ipfs/${chunk.cid}`, // Use existing URL or fallback
-          fallback_url: `https://gateway.pinata.cloud/ipfs/${chunk.cid}` // Always provide IPFS fallback
+          // Use CORS proxy for all chunks to avoid CORS issues
+          url: chunk.cid ? `${backendUrl}/api/proxy/${chunk.cid}` : (chunk.url || `https://gateway.pinata.cloud/ipfs/${chunk.cid}`),
+          filcdn_url: chunk.cid ? `https://${process.env.FILECOIN_ADDRESS || '0xedD801D6c993B3c8052e485825A725ee09F1ff4D'}.calibration.filcdn.io/${chunk.cid}` : undefined,
         })) || []
       }));
 
       console.log(`✅ Loaded ${transformedData.length} vibestreams from Synapse SDK`);
-      console.log(`📋 Sample vibestream:`, transformedData[0] ? {
-        rta_id: transformedData[0].rta_id,
-        creator: transformedData[0].creator,
-        total_chunks: transformedData[0].chunks_detail?.length || 0,
-        first_chunk_url: transformedData[0].chunks_detail?.[0]?.url,
-        rta_duration: transformedData[0].rta_duration
-      } : 'No vibestreams available');
-      
       setVibestreams(transformedData);
       
     } catch (err) {
