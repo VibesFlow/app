@@ -2,18 +2,13 @@
 
 **Version:** 0.1.0
 
-A React Native mobile application that transforms physical movement into personalized, unique rave-like music sets using AI and decentralized tech.
-
-
-# VibesFlow
-
 VibesFlow is a real-time music generation platform that combines sensor input, AI music generation, and decentralized storage. Users create "vibestreams" (a dynamic NFT with delegation) by moving their device or interacting with the interface, which generates live music through Lyria RealTime API. These sessions are automatically chunked, compressed, and stored on Filecoin via the Synapse SDK, then made available through FilCDN for fast retrieval and sharing.
 
 ## Key Features
 
 - **Motion-based Music Creation**: Transform your movement into unique rave-like music sets
 - **Blockchain Integration**: Enforce ownership on Near, and store set-chunks on Filecoin for provenance
-- **AI-Powered Analysis**: Advanced mood sensing and processing algorithms, interpreted by on-chain agents
+- **AI-Powered Analysis**: Advanced "vibe" sensing and processing algorithms, interpreted by on-chain agents
 - **Cross-Platform**: Built with React Native for iOS, Android, and Web
 
 ## Technologies
@@ -77,7 +72,7 @@ The application follows a real-time, close-to-zero latency pipeline where user s
 
 ### RTA v2 Contract (`near/contracts/rtav2/`)
 
-Our NEAR smart contract implements **NEP-171** (Non-Fungible Token) and **NEP-366** (Delegation) standards to create unique NFTs for each vibestream session.
+Our NEAR [RTA smart contract](https://github.com/VibesFlow/near/tree/master/contracts/rtav2) implements **NEP-171** (Non-Fungible Token) and **NEP-366** (Delegation) standards to create unique NFTs for each vibestream session.
 
 Enables:
 - Minting unique tokens for each vibestream
@@ -85,7 +80,7 @@ Enables:
 - Metadata association linking to Filecoin storage
 
 Next steps:
-- Restoring Shade Agents (Chunker, Dispatcher) for:
+- Restoring Shade Agents ([Chunker](https://github.com/VibesFlow/near/tree/master/workers/chunker), [Dispatcher](https://github.com/VibesFlow/near/tree/master/workers/dispatcher)) for:
     - improved backend performance and reducing overhead 
     - on-chain raffling (VRF) of chunk owners
     - using "swarms" (of workers) to replace EC2 to speed-up parallel uploading and more reliable metadata structuring and compilation
@@ -114,7 +109,7 @@ sequenceDiagram
 
 ### Backend Storage (`backend/rawchunks/synapseSDK.js`)
 
-We integrate the Synapse SDK to store vibestream data on Filecoin using Proof of Data Possession (PDP). Each Real-Time Audio session gets a unique RTA_ID and corresponding proof set.
+We integrate the [Synapse SDK](https://github.com/VibesFlow/backend/blob/main/rawchunks/synapseSDK.js) to store vibestream data on Filecoin using Proof of Data Possession (PDP). Each Real-Time Audio session gets a unique RTA_ID and corresponding proof set.
 
 **Our Implementation**:
 - Creates dedicated proof sets per RTA_ID for organized storage
@@ -147,11 +142,11 @@ graph LR
 
 ### Context Provider (`app/context/filcdn.tsx`)
 
-Our FilCDN integration bridges frontend and backend, using Proof Sets to retrieve Vibestreams' structure and chunk CIDs through the Synapse SDK integration. FilCDN powers the Vibe Market, VibesFlow's streaming platform where users can playback stored Vibestreams chunk-by-chunk, without interruption.
+Our [FilCDN](https://github.com/VibesFlow/app/blob/main/context/filcdn.tsx) integration bridges frontend and backend, using Proof Sets to retrieve Vibestreams' structure and chunk CIDs through the Synapse SDK integration. FilCDN powers the Vibe Market, VibesFlow's streaming platform where users can playback stored Vibestreams chunk-by-chunk, without interruption.
 
 ### Vibe Market (`app/components/VibeMarket.tsx`)
 
-A marketplace interface for discovering and playing stored vibestreams. Each entry displays:
+A [streaming marketplace](https://github.com/VibesFlow/app/blob/main/components/VibeMarket.tsx) for discovering and playing stored vibestreams. Each entry displays:
 - Creator information and participant count
 - RTA (total) duration and chunk count
 - Proof set status and storage provider details
