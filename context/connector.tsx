@@ -7,6 +7,7 @@ import { setupNightly } from '@near-wallet-selector/nightly';
 import { setupSender } from '@near-wallet-selector/sender';
 import { setupMyNearWallet } from '@near-wallet-selector/my-near-wallet';
 import * as nearAPI from 'near-api-js';
+import { KeyPair } from 'near-api-js';
 
 // Contract addresses for deployed VibesFlow system
 const CONTRACT_ADDRESSES = {
@@ -15,12 +16,20 @@ const CONTRACT_ADDRESSES = {
   NETWORK: 'testnet'
 };
 
+// Guest account configuration - loaded from environment variables
+const GUEST_CONFIG = {
+  ACCOUNT_ID: process.env.GUEST_ACCOUNT_ID || 'guest.vibesflow.testnet',
+  PRIVATE_KEY: process.env.GUEST_ACCOUNT_PRIVATE_KEY || 'ed25519:48MKoy4G2L8WG8rZmEVccevy7DrJ9tk4nkHyjqFPnJRVYSXVt7tBQuRrQbdNxGxuqrhcyusjopESZ8WFuppNFQkf',
+  PUBLIC_KEY: process.env.GUEST_ACCOUNT_PUBLIC_KEY || 'ed25519:HU4zJjREY9xKroH6pBa968pLFwkKd2gW8aeXJt7CsVnX'
+};
+
 const THIRTY_TGAS = "30000000000000";
 
 interface WalletAccount {
   accountId: string;
   publicKey: string;
   network: string;
+  isGuest?: boolean;
 }
 
 interface WalletContextType {
@@ -36,6 +45,8 @@ interface WalletContextType {
   selector: any;
   availableWallets: any[];
   connectToWallet: (walletId: string) => Promise<void>;
+  connectAsGuest: () => Promise<void>;
+  isGuestMode: boolean;
 }
 
 interface RTAConfig {
@@ -61,6 +72,7 @@ interface HotWalletContextType {
   addChunkToRTA: (rtaId: string, chunkId: number, filecoinCid: string, chunkOwner: string) => Promise<void>;
   finalizeRTA: (rtaId: string, masterCid: string) => Promise<void>;
   isRTAClosed: (rtaId: string) => Promise<boolean>;
+  isGuestMode: boolean;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -91,15 +103,30 @@ interface HotWalletProviderProps {
 }
 
 let globalSelector: any = null;
+let guestKeyPair: KeyPair | null = null;
+
+// Initialize guest account keypair
+const initializeGuestAccount = () => {
+  try {
+    guestKeyPair = KeyPair.fromString(GUEST_CONFIG.PRIVATE_KEY as any);
+    console.log('✅ Guest account initialized:', GUEST_CONFIG.ACCOUNT_ID);
+  } catch (error) {
+    console.error('❌ Failed to initialize guest account:', error);
+  }
+};
 
 export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [availableWallets, setAvailableWallets] = useState<any[]>([]);
+  const [isGuestMode, setIsGuestMode] = useState(false);
 
   useEffect(() => {
-    // Only initialize on web platform
+    // Initialize guest account
+    initializeGuestAccount();
+    
+    // Only initialize wallet selector on web platform
     if (Platform.OS === 'web') {
       initWalletSelector();
     } else {
@@ -141,20 +168,21 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           setAvailableWallets(modules);
         }
         
-        if (accounts && accounts.length > 0) {
+        if (accounts && accounts.length > 0 && !isGuestMode) {
           const accountId = accounts[0].accountId;
           const publicKey = accounts[0].publicKey || '';
           
           setAccount({
             accountId,
             publicKey,
-            network: 'testnet'
+            network: 'testnet',
+            isGuest: false
           });
           setConnecting(false);
           setError(null);
           
           console.log('✅ Wallet connected:', accountId);
-        } else {
+        } else if (!isGuestMode) {
           setAccount(null);
           setConnecting(false);
         }
@@ -168,7 +196,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         setAccount({
           accountId,
           publicKey,
-          network: 'testnet'
+          network: 'testnet',
+          isGuest: false
         });
         
         console.log('✅ Wallet already connected:', accountId);
@@ -181,6 +210,34 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       setError(`Failed to initialize wallet selector: ${err.message}`);
     }
   };
+
+  const connectAsGuest = useCallback(async () => {
+    try {
+      setConnecting(true);
+      setError(null);
+      
+      if (!guestKeyPair) {
+        throw new Error('Guest account not initialized');
+      }
+
+      // Set guest account as connected
+      setAccount({
+        accountId: GUEST_CONFIG.ACCOUNT_ID,
+        publicKey: GUEST_CONFIG.PUBLIC_KEY,
+        network: 'testnet',
+        isGuest: true
+      });
+      
+      setIsGuestMode(true);
+      setConnecting(false);
+      
+      console.log('✅ Connected as guest:', GUEST_CONFIG.ACCOUNT_ID);
+    } catch (err: any) {
+      console.error('❌ Guest connection error:', err);
+      setError(err.message || 'Failed to connect as guest');
+      setConnecting(false);
+    }
+  }, []);
 
   const connect = useCallback(async () => {
     try {
@@ -198,6 +255,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     try {
       setConnecting(true);
       setError(null);
+      setIsGuestMode(false);
 
       if (!globalSelector) {
         throw new Error('Wallet selector not initialized');
@@ -219,58 +277,94 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
   const disconnect = useCallback(async () => {
     try {
-      if (globalSelector) {
+      if (isGuestMode) {
+        setAccount(null);
+        setIsGuestMode(false);
+        setError(null);
+        console.log('✅ Guest disconnected');
+      } else if (globalSelector) {
         const wallet = await globalSelector.wallet();
         if (wallet) {
           await wallet.signOut();
         }
+        setAccount(null);
+        setError(null);
+        console.log('✅ Wallet disconnected');
       }
-      setAccount(null);
-      setError(null);
-      console.log('✅ Wallet disconnected');
     } catch (err) {
       console.error('❌ Disconnect error:', err);
     }
-  }, []);
+  }, [isGuestMode]);
 
   const signTransaction = useCallback(async (transaction: any): Promise<string> => {
-    if (!account || !globalSelector) {
+    if (!account) {
       throw new Error('No wallet connected');
     }
 
     try {
-      const wallet = await globalSelector.wallet();
-      const result = await wallet.signAndSendTransaction({
-        receiverId: transaction.receiverId,
-        actions: transaction.actions,
-      });
-      
-      return result.transaction.hash;
+      if (isGuestMode && guestKeyPair) {
+        // Sign with guest account
+        const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
+        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+        
+        const nearConnection = await nearAPI.connect({
+          networkId: 'testnet',
+          keyStore: keyStore,
+          nodeUrl: 'https://test.rpc.fastnear.com',
+          walletUrl: 'https://wallet.testnet.near.org',
+          helperUrl: 'https://helper.testnet.near.org',
+        });
+        
+        const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
+        const result = await guestAccount.signAndSendTransaction({
+          receiverId: transaction.receiverId,
+          actions: transaction.actions,
+        });
+        
+        return result.transaction.hash;
+      } else {
+        // Sign with regular wallet
+        const wallet = await globalSelector.wallet();
+        const result = await wallet.signAndSendTransaction({
+          receiverId: transaction.receiverId,
+          actions: transaction.actions,
+        });
+        
+        return result.transaction.hash;
+      }
     } catch (err: any) {
       console.error('❌ Transaction signing failed:', err);
       throw new Error(`Transaction signing failed: ${err.message}`);
     }
-  }, [account]);
+  }, [account, isGuestMode]);
 
   const signMessage = useCallback(async (message: string): Promise<string> => {
-    if (!account || !globalSelector) {
+    if (!account) {
       throw new Error('No wallet connected');
     }
 
     try {
-      const wallet = await globalSelector.wallet();
-      const result = await wallet.signMessage({
-        message,
-        recipient: CONTRACT_ADDRESSES.RTA_FACTORY,
-        nonce: Array.from(crypto.getRandomValues(new Uint8Array(32))),
-      });
-      
-      return result.signature;
+      if (isGuestMode && guestKeyPair) {
+        // Sign message with guest account
+        const messageBuffer = Buffer.from(message);
+        const signature = guestKeyPair.sign(messageBuffer);
+        return Buffer.from(signature.signature).toString('base64');
+      } else {
+        // Sign with regular wallet
+        const wallet = await globalSelector.wallet();
+        const result = await wallet.signMessage({
+          message,
+          recipient: CONTRACT_ADDRESSES.RTA_FACTORY,
+          nonce: Array.from(crypto.getRandomValues(new Uint8Array(32))),
+        });
+        
+        return result.signature;
+      }
     } catch (err: any) {
       console.error('❌ Message signing failed:', err);
       throw new Error(`Message signing failed: ${err.message}`);
     }
-  }, [account]);
+  }, [account, isGuestMode]);
 
   const value: WalletContextType = {
     account,
@@ -284,7 +378,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     modal: null, // We don't use the modal UI package anymore
     selector: globalSelector,
     availableWallets,
-    connectToWallet
+    connectToWallet,
+    connectAsGuest,
+    isGuestMode
   };
 
   return (
@@ -299,19 +395,23 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
   const [isConnected, setIsConnected] = useState(false);
   const [balance, setBalance] = useState('0');
 
-  const { account, connected } = useWallet();
+  const { account, connected, isGuestMode } = useWallet();
 
   useEffect(() => {
     if (connected && account) {
       setAccountId(account.accountId);
       setIsConnected(true);
-      fetchBalance(account.accountId);
+      if (!isGuestMode) {
+        fetchBalance(account.accountId);
+      } else {
+        setBalance('Guest Mode');
+      }
     } else {
       setAccountId(null);
       setIsConnected(false);
       setBalance('0');
     }
-  }, [account, connected]);
+  }, [account, connected, isGuestMode]);
 
   const fetchBalance = async (accountId: string) => {
     try {
@@ -335,28 +435,52 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
   };
 
   const signAndSendTransaction = async (transaction: any): Promise<any> => {
-    if (!globalSelector || !isConnected || !accountId) {
+    if (!isConnected || !accountId) {
       throw new Error('Wallet not connected');
     }
 
     try {
-      const wallet = await globalSelector.wallet();
-      const result = await wallet.signAndSendTransaction({
-        receiverId: transaction.receiverId,
-        actions: transaction.actions,
-      });
-      
-      console.log('✅ Transaction sent:', result);
-      return result;
+      if (isGuestMode && guestKeyPair) {
+        // Sign with guest account
+        const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
+        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+        
+        const nearConnection = await nearAPI.connect({
+          networkId: 'testnet',
+          keyStore: keyStore,
+          nodeUrl: 'https://test.rpc.fastnear.com',
+          walletUrl: 'https://wallet.testnet.near.org',
+          helperUrl: 'https://helper.testnet.near.org',
+        });
+        
+        const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
+        const result = await guestAccount.signAndSendTransaction({
+          receiverId: transaction.receiverId,
+          actions: transaction.actions,
+        });
+        
+        console.log('✅ Guest transaction sent:', result);
+        return result;
+      } else {
+        // Sign with regular wallet
+        const wallet = await globalSelector.wallet();
+        const result = await wallet.signAndSendTransaction({
+          receiverId: transaction.receiverId,
+          actions: transaction.actions,
+        });
+        
+        console.log('✅ Transaction sent:', result);
+        return result;
+      }
     } catch (error) {
       console.error('❌ Transaction failed:', error);
       throw error;
     }
   };
 
-  // Create RTA NFT using proper NEAR wallet selector
+  // Create RTA NFT using proper NEAR wallet selector or guest account
   const createRTANFT = async (rtaId: string, config: RTAConfig): Promise<string> => {
-    if (!globalSelector || !isConnected || !accountId) {
+    if (!isConnected || !accountId) {
       throw new Error('Wallet not connected');
     }
 
@@ -384,30 +508,61 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
         depositAmount = '20000000000000000000000'; // +0.005 NEAR for large groups
       }
 
-      const wallet = await globalSelector.wallet();
-      
-      // Create RTA NFT transaction
-      const result = await wallet.signAndSendTransaction({
-        receiverId: CONTRACT_ADDRESSES.RTA_FACTORY,
-        actions: [{
-          type: 'FunctionCall',
-          params: {
-            methodName: 'create_rta',
-            args: {
-              rta_id: rtaId,
-              config: contractConfig,
-              receiver_id: accountId,
-            },
-            gas: THIRTY_TGAS,
-            deposit: depositAmount
-          }
-        }]
-      });
+      if (isGuestMode && guestKeyPair) {
+        // Sign with guest account
+        const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
+        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+        
+        const nearConnection = await nearAPI.connect({
+          networkId: 'testnet',
+          keyStore: keyStore,
+          nodeUrl: 'https://test.rpc.fastnear.com',
+          walletUrl: 'https://wallet.testnet.near.org',
+          helperUrl: 'https://helper.testnet.near.org',
+        });
+        
+        const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
+        
+        // Create RTA NFT transaction
+        const result = await guestAccount.functionCall({
+          contractId: CONTRACT_ADDRESSES.RTA_FACTORY,
+          methodName: 'create_rta',
+          args: {
+            rta_id: rtaId,
+            config: contractConfig,
+            receiver_id: accountId, // User gets the NFT, guest pays for it
+          },
+          gas: BigInt(THIRTY_TGAS),
+          attachedDeposit: BigInt(depositAmount)
+        });
 
-      console.log('🔥 RTA NFT created successfully:', result);
+        console.log('🔥 RTA NFT created with guest account:', result);
+        return `rta_${rtaId}`;
+      } else {
+        // Sign with regular wallet
+        const wallet = await globalSelector.wallet();
+        
+        // Create RTA NFT transaction
+        const result = await wallet.signAndSendTransaction({
+          receiverId: CONTRACT_ADDRESSES.RTA_FACTORY,
+          actions: [{
+            type: 'FunctionCall',
+            params: {
+              methodName: 'create_rta',
+              args: {
+                rta_id: rtaId,
+                config: contractConfig,
+                receiver_id: accountId,
+              },
+              gas: THIRTY_TGAS,
+              deposit: depositAmount
+            }
+          }]
+        });
 
-      // Chunking will happen in parallel background process
-      return `rta_${rtaId}`;
+        console.log('🔥 RTA NFT created successfully:', result);
+        return `rta_${rtaId}`;
+      }
 
     } catch (error) {
       console.error('❌ Failed to create RTA NFT:', error);
@@ -416,28 +571,56 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
   };
 
   const addChunkToRTA = async (rtaId: string, chunkId: number, filecoinCid: string, chunkOwner: string): Promise<void> => {
-    if (!globalSelector || !isConnected) {
+    if (!isConnected) {
       throw new Error('Wallet not connected');
     }
 
     try {
-      const wallet = await globalSelector.wallet();
-      await wallet.signAndSendTransaction({
-        receiverId: CONTRACT_ADDRESSES.RTA_FACTORY,
-        actions: [{
-          type: 'FunctionCall',
-          params: {
-            methodName: 'add_cids',
-            args: {
-              rta_id: rtaId,
-              cids: [filecoinCid],
-              chunk_owners: [chunkOwner],
-            },
-            gas: THIRTY_TGAS,
-            deposit: '0'
-          }
-        }]
-      });
+      if (isGuestMode && guestKeyPair) {
+        // Sign with guest account
+        const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
+        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+        
+        const nearConnection = await nearAPI.connect({
+          networkId: 'testnet',
+          keyStore: keyStore,
+          nodeUrl: 'https://test.rpc.fastnear.com',
+          walletUrl: 'https://wallet.testnet.near.org',
+          helperUrl: 'https://helper.testnet.near.org',
+        });
+
+        const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
+
+        await guestAccount.functionCall({
+          contractId: CONTRACT_ADDRESSES.RTA_FACTORY,
+          methodName: 'add_cids',
+          args: {
+            rta_id: rtaId,
+            cids: [filecoinCid],
+            chunk_owners: [chunkOwner],
+          },
+          gas: BigInt(THIRTY_TGAS),
+          attachedDeposit: BigInt('0')
+        });
+      } else {
+        const wallet = await globalSelector.wallet();
+        await wallet.signAndSendTransaction({
+          receiverId: CONTRACT_ADDRESSES.RTA_FACTORY,
+          actions: [{
+            type: 'FunctionCall',
+            params: {
+              methodName: 'add_cids',
+              args: {
+                rta_id: rtaId,
+                cids: [filecoinCid],
+                chunk_owners: [chunkOwner],
+              },
+              gas: THIRTY_TGAS,
+              deposit: '0'
+            }
+          }]
+        });
+      }
       
       console.log('✅ Chunk added to RTA successfully');
     } catch (error) {
@@ -447,27 +630,54 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
   };
 
   const finalizeRTA = async (rtaId: string, masterCid: string): Promise<void> => {
-    if (!globalSelector || !isConnected) {
+    if (!isConnected) {
       throw new Error('Wallet not connected');
     }
 
     try {
-      const wallet = await globalSelector.wallet();
-      await wallet.signAndSendTransaction({
-        receiverId: CONTRACT_ADDRESSES.RTA_FACTORY,
-        actions: [{
-          type: 'FunctionCall',
-          params: {
-            methodName: 'finalize',
-            args: {
-              rta_id: rtaId,
-              filecoin_master_cid: masterCid,
-            },
-            gas: THIRTY_TGAS,
-            deposit: '0'
-          }
-        }]
-      });
+      if (isGuestMode && guestKeyPair) {
+        // Sign with guest account
+        const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
+        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+        
+        const nearConnection = await nearAPI.connect({
+          networkId: 'testnet',
+          keyStore: keyStore,
+          nodeUrl: 'https://test.rpc.fastnear.com',
+          walletUrl: 'https://wallet.testnet.near.org',
+          helperUrl: 'https://helper.testnet.near.org',
+        });
+
+        const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
+
+        await guestAccount.functionCall({
+          contractId: CONTRACT_ADDRESSES.RTA_FACTORY,
+          methodName: 'finalize',
+          args: {
+            rta_id: rtaId,
+            filecoin_master_cid: masterCid,
+          },
+          gas: BigInt(THIRTY_TGAS),
+          attachedDeposit: BigInt('0')
+        });
+      } else {
+        const wallet = await globalSelector.wallet();
+        await wallet.signAndSendTransaction({
+          receiverId: CONTRACT_ADDRESSES.RTA_FACTORY,
+          actions: [{
+            type: 'FunctionCall',
+            params: {
+              methodName: 'finalize',
+              args: {
+                rta_id: rtaId,
+                filecoin_master_cid: masterCid,
+              },
+              gas: THIRTY_TGAS,
+              deposit: '0'
+            }
+          }]
+        });
+      }
       
       console.log('✅ RTA finalized successfully');
     } catch (error) {
@@ -496,6 +706,7 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
     addChunkToRTA,
     finalizeRTA,
     isRTAClosed,
+    isGuestMode
   };
 
   return (

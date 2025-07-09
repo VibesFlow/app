@@ -377,6 +377,9 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
 
       return () => clearInterval(interval);
     }
+    
+    // Return undefined when playingRTA is falsy
+    return undefined;
   }, [playingRTA, audioStates]);
 
   const renderVibestreamCard = (stream: any, index: number) => {

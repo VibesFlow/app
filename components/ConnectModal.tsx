@@ -30,7 +30,9 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
     connecting, 
     error: walletError,
     availableWallets,
-    connectToWallet
+    connectToWallet,
+    connectAsGuest,
+    isGuestMode
   } = useWallet();
 
   // Start pulsing animation
@@ -73,6 +75,14 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
     }
   };
 
+  const handleGuestConnect = async () => {
+    try {
+      await connectAsGuest();
+    } catch (error) {
+      console.error('Failed to connect as guest:', error);
+    }
+  };
+
   const getWalletIcon = (walletId: string) => {
     switch (walletId) {
       case 'here-wallet':
@@ -97,10 +107,48 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
   const renderInitialScreen = () => (
     <View style={styles.modalContent}>
       <Text style={styles.modalDescription}>
-        SELECT YOUR NEAR WALLET
+        CHOOSE YOUR CONNECTION METHOD
       </Text>
 
       <ScrollView style={styles.walletList} showsVerticalScrollIndicator={false}>
+        {/* Guest Account Option */}
+        <TouchableOpacity 
+          style={[styles.walletButton, styles.guestButton]}
+          onPress={handleGuestConnect}
+          activeOpacity={0.7}
+          disabled={connecting}
+        >
+          <LinearGradient
+            colors={['rgba(255,0,170,0.25)', 'rgba(0,0,0,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.buttonGradient}
+          />
+          <View style={styles.buttonContent}>
+            <FontAwesome 
+              name="user-secret" 
+              size={18} 
+              color={COLORS.accent} 
+              style={styles.buttonIcon} 
+            />
+            <View style={styles.guestTextContainer}>
+              <Text style={styles.guestButtonText}>Quick Start (Guest)</Text>
+              <Text style={styles.guestSubText}>No wallet needed • We pay gas fees</Text>
+            </View>
+            <View style={styles.recommendedBadge}>
+              <Text style={styles.recommendedText}>ANONYMOUS</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* Separator */}
+        <View style={styles.separator}>
+          <View style={styles.separatorLine} />
+          <Text style={styles.separatorText}>OR CONNECT YOUR WALLET</Text>
+          <View style={styles.separatorLine} />
+        </View>
+
+        {/* Regular Wallet Options */}
         {availableWallets.length > 0 ? (
           availableWallets.map((wallet) => (
             <TouchableOpacity 
@@ -145,7 +193,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
       )}
 
       <Text style={styles.supportedWallets}>
-        Connect with your preferred NEAR wallet
+        {isGuestMode ? 'Connected via VibesFlow guest account' : 'Connect with your preferred NEAR wallet'}
       </Text>
     </View>
   );
@@ -155,7 +203,9 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
         <GlitchText text="CONNECTING..." style={styles.loadingText} intensity="medium" />
-        <Text style={styles.infoText}>Please confirm the connection in your wallet.</Text>
+        <Text style={styles.infoText}>
+          {isGuestMode ? 'Setting up guest account...' : 'Please confirm the connection in your wallet.'}
+        </Text>
       </View>
     </View>
   );
@@ -163,14 +213,23 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
   const renderSuccessScreen = () => (
     <View style={styles.modalContent}>
       <View style={styles.successContainer}>
-        <FontAwesome name="check-circle" size={60} color={COLORS.primary} />
+        <FontAwesome 
+          name={isGuestMode ? "user-secret" : "check-circle"} 
+          size={60} 
+          color={isGuestMode ? COLORS.accent : COLORS.primary} 
+        />
         <GlitchText text="CONNECTED!" style={styles.successText} intensity="high" />
         {account && (
           <Text style={styles.walletAddress}>
-            {account.accountId.length > 10 ? 
-              `${account.accountId.substring(0, 6)}...${account.accountId.substring(account.accountId.length - 4)}` :
-              account.accountId
-            }
+            {isGuestMode ? (
+              <Text style={styles.guestIndicator}>
+                GUEST MODE • Gas fees sponsored by VibesFlow
+              </Text>
+            ) : (
+              account.accountId.length > 10 ? 
+                `${account.accountId.substring(0, 6)}...${account.accountId.substring(account.accountId.length - 4)}` :
+                account.accountId
+            )}
           </Text>
         )}
       </View>
@@ -288,6 +347,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     position: 'relative',
   },
+  guestButton: {
+    borderColor: COLORS.accent,
+    marginBottom: 8,
+  },
   buttonGradient: {
     position: 'absolute',
     width: '100%',
@@ -309,6 +372,51 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     letterSpacing: 1,
     flex: 1,
+  },
+  guestTextContainer: {
+    flex: 1,
+    marginRight: 8,
+  },
+  guestButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.accent,
+    letterSpacing: 1,
+  },
+  guestSubText: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  recommendedBadge: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  recommendedText: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: COLORS.background,
+    letterSpacing: 0.5,
+  },
+  separator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+    marginHorizontal: 8,
+  },
+  separatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.textSecondary,
+    opacity: 0.3,
+  },
+  separatorText: {
+    fontSize: 10,
+    color: COLORS.textSecondary,
+    marginHorizontal: 12,
+    letterSpacing: 1,
   },
   availableIndicator: {
     width: 8,
@@ -356,6 +464,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
     color: COLORS.textSecondary,
     fontSize: 14,
+    textAlign: 'center',
+  },
+  guestIndicator: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1,
   },
   infoText: {
     fontSize: 12,
