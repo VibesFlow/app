@@ -149,36 +149,38 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         console.log('Initializing VibesFlow orchestration system...');
         
         // Initialize Lyria orchestrator
-        const lyriaSuccess = await lyriaOrchestrator.initialize(LYRIA_API_KEY);
-        if (!lyriaSuccess) {
-          console.warn('Lyria orchestrator initialization failed');
+        if (lyriaOrchestrator) {
+          const lyriaSuccess = await lyriaOrchestrator.initialize(LYRIA_API_KEY);
+          if (!lyriaSuccess) {
+            console.warn('Lyria orchestrator initialization failed');
+          }
+
+          // Set up audio chunk handling
+          lyriaOrchestrator.onAudioChunk(async (audioData) => {
+            if (Platform.OS === 'web' && webOrchestrator) {
+              await webOrchestrator.playAudioChunk(audioData);
+            }
+            // Mobile audio handling could be added here in the future
+          });
+
+          // Set up raw audio chunk handling for chunking service
+          lyriaOrchestrator.onAudioChunk((audioData) => {
+            audioChunkService.addAudioData(audioData);
+          });
+
+          // Set up error handling
+          lyriaOrchestrator.onError((error) => {
+            console.error('Lyria error:', error);
+          });
+
+          // Set up state change handling
+          lyriaOrchestrator.onStateChange((state) => {
+            setIsStreaming(state.streaming);
+          });
         }
 
-        // Set up audio chunk handling
-        lyriaOrchestrator.onAudioChunk(async (audioData) => {
-          if (Platform.OS === 'web') {
-            await webOrchestrator.playAudioChunk(audioData);
-          }
-          // Mobile audio handling could be added here in the future
-        });
-
-        // Set up raw audio chunk handling for chunking service
-        lyriaOrchestrator.onAudioChunk((audioData) => {
-          audioChunkService.addAudioData(audioData);
-        });
-
-        // Set up error handling
-        lyriaOrchestrator.onError((error) => {
-          console.error('Lyria error:', error);
-        });
-
-        // Set up state change handling
-        lyriaOrchestrator.onStateChange((state) => {
-          setIsStreaming(state.streaming);
-        });
-
         // Initialize web orchestrator
-        if (Platform.OS === 'web') {
+        if (Platform.OS === 'web' && webOrchestrator) {
           await webOrchestrator.initializeWebAudio();
           
           // Set up sensor data handling from web
@@ -199,7 +201,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
           });
           
           await webOrchestrator.initializeSensors();
-        } else {
+        } else if (mobileOrchestrator) {
           // Initialize mobile orchestrator
           mobileOrchestrator.onSensorData((data) => {
             setSensorData(data);
@@ -226,13 +228,26 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     initializeOrchestration();
 
     return () => {
-      // Cleanup all orchestrators
+      // Cleanup all orchestrators with null checks
       if (updateIntervalRef.current) {
         clearInterval(updateIntervalRef.current);
+        updateIntervalRef.current = null;
       }
-      webOrchestrator.cleanup();
-      mobileOrchestrator.cleanup();
-      lyriaOrchestrator.cleanup();
+      if (rtaProgressIntervalRef.current) {
+        clearInterval(rtaProgressIntervalRef.current);
+        rtaProgressIntervalRef.current = null;
+      }
+      
+      // Clean up with null safety
+      if (webOrchestrator && typeof webOrchestrator.cleanup === 'function') {
+        webOrchestrator.cleanup();
+      }
+      if (mobileOrchestrator && typeof mobileOrchestrator.cleanup === 'function') {
+        mobileOrchestrator.cleanup();
+      }
+      if (lyriaOrchestrator && typeof lyriaOrchestrator.cleanup === 'function') {
+        lyriaOrchestrator.cleanup();
+      }
     };
   }, []);
 
@@ -245,7 +260,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
       const interpretation = sensorInterpreter.interpretSensorData(sensorData);
       
       // Send interpretation to Lyria orchestrator
-      if (isStreaming) {
+      if (isStreaming && lyriaOrchestrator) {
         await lyriaOrchestrator.updateStream(interpretation);
       }
       
@@ -278,26 +293,28 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
       }
 
       // Start Lyria orchestration with proper configuration
-      await lyriaOrchestrator.connect();
-      
-      // Create proper interpretation for Lyria
-      const interpretation = {
-        weightedPrompts: [
-          { text: "Electronic dance music", weight: 0.4 },
-          { text: "Rave party atmosphere", weight: 0.3 },
-          { text: "High energy beats", weight: 0.3 }
-        ],
-        lyriaConfig: {
-          bpm: 128,
-          density: 0.7,
-          brightness: 0.8,
-          guidance: 0.5
-        },
-        stylePrompt: "Electronic dance music with rave party atmosphere and high energy beats",
-        hasTransition: true
-      };
-      
-      await lyriaOrchestrator.startStream(interpretation);
+      if (lyriaOrchestrator) {
+        await lyriaOrchestrator.connect();
+        
+        // Create proper interpretation for Lyria
+        const interpretation = {
+          weightedPrompts: [
+            { text: "Electronic dance music", weight: 0.4 },
+            { text: "Rave party atmosphere", weight: 0.3 },
+            { text: "High energy beats", weight: 0.3 }
+          ],
+          lyriaConfig: {
+            bpm: 128,
+            density: 0.7,
+            brightness: 0.8,
+            guidance: 0.5
+          },
+          stylePrompt: "Electronic dance music with rave party atmosphere and high energy beats",
+          hasTransition: true
+        };
+        
+        await lyriaOrchestrator.startStream(interpretation);
+      }
       
       console.log('✅ Vibestream started successfully');
 
@@ -320,8 +337,10 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     console.log('🛑 Audio chunk service stopped');
     
     // Stop Lyria session
-    await lyriaOrchestrator.stop();
-    await lyriaOrchestrator.disconnect();
+    if (lyriaOrchestrator) {
+      await lyriaOrchestrator.stop();
+      await lyriaOrchestrator.disconnect();
+    }
     
     // Pure music player cleanup - no blockchain notifications needed
     

@@ -43,20 +43,19 @@ const SplashScreen: React.FC<SplashScreenProps> = ({
   onOpenProfile, 
   onOpenVibeMarket 
 }) => {
-  const [connectModalVisible, setConnectModalVisible] = useState(false);
   const [vibestreamModalVisible, setVibestreamModalVisible] = useState(false);
   const [showDisconnectDropdown, setShowDisconnectDropdown] = useState(false);
-  const { account, connected, disconnect } = useWallet();
+  const { account, connected, disconnect, openModal } = useWallet();
   
   const handleConnect = () => {
-    setConnectModalVisible(true);
+    openModal();
   };
 
   const handleStartVibing = () => {
     if (connected && account) {
       setVibestreamModalVisible(true);
     } else {
-      setConnectModalVisible(true);
+      openModal();
     }
   };
 
@@ -195,11 +194,8 @@ const SplashScreen: React.FC<SplashScreenProps> = ({
         {BRANDING.manifesto}
       </Text>
       
-      {/* Connect Modal */}
-      <ConnectModal
-        visible={connectModalVisible}
-        onClose={() => setConnectModalVisible(false)}
-      />
+      {/* Connect Modal - handled by unified wallet context */}
+      <ConnectModal />
       
       {/* Vibestream Modal */}
       <VibestreamModal

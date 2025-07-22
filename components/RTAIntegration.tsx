@@ -2,21 +2,21 @@
  * RTA (Real-Time Asset) Integration for VibesFlow
  * MIT License
  * 
- * FIXED: rtaId is the ONLY identifier needed (contract shows token_id = "rta_{$ID}")
- * FIXED: Proper chunker worker integration for production deployment
- * FIXED: Correct worker call sequence: CHUNKER -> DISPATCHER -> PRODUCER
+ * UPDATED: Network-aware integration supporting both NEAR (rtav2) and Metis (RTAWrapper) contracts
+ * UPDATED: Proper rtaId handling for both networks with fallback support
+ * UPDATED: Correct worker call sequence: CHUNKER -> DISPATCHER -> PRODUCER
  */
 
 import React, { useRef, useEffect, useState, useCallback, useContext } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { WORKERS, CONTRACTS } from '../config';
-import { useHotWallet } from '../context/connector';
+import { useWallet } from '../context/connector';
 
 interface RTAIntegrationProps {
   isStreaming: boolean;
-  rtaId?: string; // This is the rtaId
+  rtaId?: string; // Network-aware rtaId (could be "rta_xxx", "vibe_xxx", etc.)
   participants: number;
-  onRTACreated: (rtaId: string) => void; // Just returns the rtaId (token_id = "rta_{$ID}")
+  onRTACreated: (rtaId: string) => void; // Returns the network-aware rtaId
   onChunkProcessed: (chunkId: number, cid: string, winner: string) => void;
 }
 
@@ -29,19 +29,64 @@ export default function RTAIntegration({
 }: RTAIntegrationProps) {
   const [workersConnected, setWorkersConnected] = useState(false);
   const [chunksProcessed, setChunksProcessed] = useState(0);
-  const { addChunkToRTA, finalizeRTA } = useHotWallet();
+  const { addChunkToRTA, finalizeRTA, account, getNetworkInfo } = useWallet();
   const [lastProcessedCID, setLastProcessedCID] = useState<string | null>(null);
+  const [networkType, setNetworkType] = useState<'near' | 'metis' | 'fallback'>('fallback');
+
+  // Detect network from rtaId and wallet connection
+  const detectNetwork = useCallback(() => {
+    if (!rtaId) return 'fallback';
+    
+    // Check rtaId prefix to determine network
+    if (rtaId.startsWith('metis_vibe_')) {
+      return 'metis';
+    } else if (rtaId.startsWith('rta_')) {
+      return 'near';
+    }
+    
+    // Fallback: check wallet connection
+    const networkInfo = getNetworkInfo();
+    if (networkInfo?.type === 'metis-hyperion') {
+      return 'metis';
+    } else if (networkInfo?.type === 'near-testnet') {
+      return 'near';
+    }
+    
+    return 'fallback';
+  }, [rtaId, getNetworkInfo]);
+
+  // Extract raw ID for worker systems (removes network prefixes)
+  const extractRawId = useCallback((fullRtaId: string) => {
+    if (fullRtaId.startsWith('metis_vibe_')) {
+      return fullRtaId.replace('metis_vibe_', '');
+    } else if (fullRtaId.startsWith('rta_')) {
+      return fullRtaId.replace('rta_', '');
+    }
+    return fullRtaId;
+  }, []);
 
   const initializeRTAStream = async () => {
     try {
-      console.log(`🎬 Initializing RTA stream: ${rtaId}`);
+      const detectedNetwork = detectNetwork();
+      setNetworkType(detectedNetwork);
+      
+      const rawId = extractRawId(rtaId!);
+      
+      console.log(`🎬 Initializing ${detectedNetwork} RTA stream:`, {
+        fullRtaId: rtaId,
+        rawId,
+        network: detectedNetwork,
+        account: account?.accountId
+      });
 
       // STEP 1: Start chunker worker (it will check store_to_filecoin flag)
       const chunkerResponse = await fetch(`${WORKERS.CHUNKER}/chunk/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          rtaId: rtaId,
+          rtaId: rawId, // Use raw ID for workers
+          fullRtaId: rtaId, // Include full ID for tracking
+          network: detectedNetwork,
           config: {}
         }),
       });
@@ -53,13 +98,14 @@ export default function RTAIntegration({
       }
 
       // STEP 2: Add initial participants to chunker raffle
-      if (participants > 0) {
+      if (participants > 0 && account?.accountId) {
         await fetch(`${WORKERS.CHUNKER}/chunk/participant`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            rtaId: rtaId,
-            accountId: process.env.EXPO_PUBLIC_NEAR_ACCOUNT_ID || 'vibesflow.testnet'
+            rtaId: rawId, // Use raw ID for workers
+            accountId: account.accountId,
+            network: detectedNetwork
           }),
         });
       }
@@ -67,26 +113,37 @@ export default function RTAIntegration({
       setWorkersConnected(true);
       onRTACreated(rtaId!);
       
-      console.log('✅ RTA stream initialized successfully');
+      console.log(`✅ ${detectedNetwork} RTA stream initialized successfully`);
       
     } catch (error) {
       console.error('❌ Failed to initialize RTA stream:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      Alert.alert('RTA Error', `Failed to initialize: ${errorMessage}`);
+      
+      // Don't show alert for fallback mode - just continue with chunking
+      if (networkType !== 'fallback') {
+        Alert.alert('RTA Error', `Failed to initialize: ${errorMessage}`);
+      } else {
+        console.log('🔄 Continuing in fallback mode with chunking system');
+        setWorkersConnected(true);
+        onRTACreated(rtaId!);
+      }
     }
   };
 
   const addParticipantToRaffle = async (accountId: string) => {
     try {
+      const rawId = extractRawId(rtaId!);
+      
       await fetch(`${WORKERS.CHUNKER}/chunk/participant`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          rtaId: rtaId,
-          accountId: accountId
+          rtaId: rawId, // Use raw ID for workers
+          accountId: accountId,
+          network: networkType
         }),
       });
-      console.log(`👤 Added participant ${accountId} to chunk raffle`);
+      console.log(`👤 Added participant ${accountId} to ${networkType} chunk raffle`);
     } catch (error) {
       console.error('❌ Failed to add participant:', error);
     }
@@ -94,22 +151,41 @@ export default function RTAIntegration({
 
   const closeRTAStream = async () => {
     try {
-      console.log(`🔚 Closing RTA stream: ${rtaId}`);
+      const rawId = extractRawId(rtaId!);
+      
+      console.log(`🔚 Closing ${networkType} RTA stream:`, {
+        fullRtaId: rtaId,
+        rawId,
+        network: networkType
+      });
 
-      // Finalize stream via producer worker
+      // Finalize stream via appropriate contract method
       if (!rtaId) {
         throw new Error('rtaId is not available for finalize');
       }
       if (!lastProcessedCID) {
-        throw new Error('finalMasterCID is not available for finalize');
+        console.warn('⚠️ No master CID available, skipping finalization');
+        setWorkersConnected(false);
+        return;
       }
-      await finalizeRTA(String(rtaId), String(lastProcessedCID));
+
+      // Network-aware finalization
+      if (networkType === 'near') {
+        await finalizeRTA(rawId, String(lastProcessedCID));
+        console.log('✅ NEAR RTA finalized');
+      } else if (networkType === 'metis') {
+        // TODO: Implement Metis finalization when contracts support it
+        console.log('✅ Metis vibestream closed (finalization not yet implemented)');
+      } else {
+        console.log('✅ Fallback stream closed');
+      }
 
       setWorkersConnected(false);
-      console.log('✅ RTA stream closed successfully');
+      console.log(`✅ ${networkType} RTA stream closed successfully`);
       
     } catch (error) {
-      console.error('❌ Failed to close RTA stream:', error);
+      console.error(`❌ Failed to close ${networkType} RTA stream:`, error);
+      setWorkersConnected(false);
     }
   };
 
@@ -121,6 +197,29 @@ export default function RTAIntegration({
     }
   }, [isStreaming, rtaId]);
 
+  // Network-aware status display
+  const getNetworkStatusIcon = () => {
+    switch (networkType) {
+      case 'near':
+        return '🌐'; // NEAR
+      case 'metis':
+        return '⚡'; // Metis
+      default:
+        return '🔄'; // Fallback
+    }
+  };
+
+  const getNetworkDisplayName = () => {
+    switch (networkType) {
+      case 'near':
+        return 'NEAR';
+      case 'metis':
+        return 'Metis';
+      default:
+        return 'Fallback';
+    }
+  };
+
   // Simple, minimal UI (no ugly tracker)
   if (!isStreaming || !rtaId) {
     return null;
@@ -130,8 +229,8 @@ export default function RTAIntegration({
     <View style={styles.container}>
       <View style={styles.statusRow}>
         <Text style={styles.statusText}>
-          RTA: {workersConnected ? '🟢' : '🔴'} | Participants: {participants} | Workers: {workersConnected ? 'Active' : 'Inactive'}
-      </Text>
+          {getNetworkStatusIcon()} {getNetworkDisplayName()} | RTA: {workersConnected ? '🟢' : '🔴'} | Participants: {participants} | Workers: {workersConnected ? 'Active' : 'Inactive'}
+        </Text>
       </View>
     </View>
   );

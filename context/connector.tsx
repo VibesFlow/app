@@ -1,52 +1,94 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { Platform } from 'react-native';
-import { setupWalletSelector } from '@near-wallet-selector/core';
-import { setupHereWallet } from '@near-wallet-selector/here-wallet';
-import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
-import { setupNightly } from '@near-wallet-selector/nightly';
-import { setupSender } from '@near-wallet-selector/sender';
-import { setupMyNearWallet } from '@near-wallet-selector/my-near-wallet';
-import * as nearAPI from 'near-api-js';
-import { KeyPair } from 'near-api-js';
 
-// Contract addresses for deployed VibesFlow system
+// Ensure polyfills are loaded first
+import '../configs/polyfills';
+
+// Metis wallet context - imported directly but used lazily
+import { MetisWalletProvider, useMetisWallet } from '../context/metis';
+
+// Viem for Metis contract interactions (better polyfill compatibility)
+import { createPublicClient, createWalletClient, custom, parseEther, encodeFunctionData, parseAbiItem, getEventSelector } from 'viem';
+import { metis } from 'viem/chains';
+
+// Near wallet imports (web and mobile)
+let setupWalletSelector: any = null;
+let setupHereWallet: any = null;
+let setupMyNearWallet: any = null;
+let nearAPI: any = null;
+let KeyPair: any = null;
+let HereWallet: any = null;
+
+// Conditional imports based on platform
+if (Platform.OS === 'web') {
+  try {
+    // Near wallet selector (web)
+    setupWalletSelector = require('@near-wallet-selector/core').setupWalletSelector;
+    setupHereWallet = require('@near-wallet-selector/here-wallet').setupHereWallet;
+    setupMyNearWallet = require('@near-wallet-selector/my-near-wallet').setupMyNearWallet;
+    nearAPI = require('near-api-js');
+    KeyPair = require('near-api-js').KeyPair;
+    
+    console.log('✅ Near wallet selector loaded for web');
+  } catch (error) {
+    console.warn('⚠️ Near wallet dependencies not available:', error);
+  }
+
+} else {
+  try {
+    // Mobile Near support
+    nearAPI = require('near-api-js');
+    KeyPair = require('near-api-js').KeyPair;
+    
+    // HERE Wallet mobile
+    try {
+      const hereWalletModule = require('@here-wallet/core');
+      HereWallet = hereWalletModule.HereWallet || hereWalletModule.default || hereWalletModule;
+      console.log('📱 HERE Wallet loaded for mobile');
+    } catch (hereWalletError: any) {
+      console.warn('⚠️ HERE Wallet not available for mobile:', hereWalletError?.message);
+      HereWallet = null;
+    }
+  } catch (error) {
+    console.warn('⚠️ Mobile Near dependencies not available:', error);
+  }
+}
+
+// Contract addresses and network configurations
 const CONTRACT_ADDRESSES = {
-  RTA_FACTORY: 'rtav2.vibesflow.testnet',
-  V1_CHUNKER: 'v1chunker.vibesflow.testnet',
-  NETWORK: 'testnet'
+  NEAR: {
+    RTA_FACTORY: process.env.RTA_FACTORY_CONTRACT || process.env.EXPO_PUBLIC_RTA_FACTORY_CONTRACT || 'rtav2.vibesflow.testnet',
+    V1_CHUNKER: process.env.V1_CHUNKER_CONTRACT || process.env.EXPO_PUBLIC_V1_CHUNKER_CONTRACT || 'v1chunker.vibesflow.testnet',
+    NETWORK: process.env.NEAR_NETWORK || process.env.EXPO_PUBLIC_NEAR_NETWORK || 'testnet'
+  },
+  METIS: {
+    VIBE_FACTORY: process.env.VIBE_FACTORY_ADDRESS || process.env.EXPO_PUBLIC_VIBE_FACTORY_ADDRESS || '0x6A73eA14a08d1b75bdF05401254747fefD9b3D4D',
+    VIBE_KIOSK: process.env.VIBE_KIOSK_ADDRESS || process.env.EXPO_PUBLIC_VIBE_KIOSK_ADDRESS || '0x5B68182608DD4396798491A59D71b7663b6Ec49d',
+    PROXY_ADMIN: process.env.PROXY_ADMIN_ADDRESS || process.env.EXPO_PUBLIC_PROXY_ADMIN_ADDRESS || '0xdA1a1722Acb6f3A9fb7DE7f2c5193b5ad541F8F9',
+    TREASURY_RECEIVER: process.env.TREASURY_RECEIVER || process.env.EXPO_PUBLIC_TREASURY_RECEIVER || '0x058271e764154c322F3D3dDC18aF44F7d91B1c80',
+    NETWORK: 'hyperion',
+    CHAIN_ID: parseInt(process.env.HYPERION_CHAIN_ID || process.env.EXPO_PUBLIC_HYPERION_CHAIN_ID || '133717'),
+    RPC_URL: process.env.HYPERION_RPC_URL || process.env.EXPO_PUBLIC_HYPERION_RPC_URL || 'https://hyperion-testnet.metisdevops.link'
+  }
 };
 
-// Guest account configuration - loaded from environment variables
+// Guest account configuration - from environment variables with fallbacks
 const GUEST_CONFIG = {
-  ACCOUNT_ID: process.env.GUEST_ACCOUNT_ID || 'guest.vibesflow.testnet',
-  PRIVATE_KEY: process.env.GUEST_ACCOUNT_PRIVATE_KEY || 'ed25519:48MKoy4G2L8WG8rZmEVccevy7DrJ9tk4nkHyjqFPnJRVYSXVt7tBQuRrQbdNxGxuqrhcyusjopESZ8WFuppNFQkf',
-  PUBLIC_KEY: process.env.GUEST_ACCOUNT_PUBLIC_KEY || 'ed25519:HU4zJjREY9xKroH6pBa968pLFwkKd2gW8aeXJt7CsVnX'
+  ACCOUNT_ID: process.env.GUEST_ACCOUNT_ID || process.env.EXPO_PUBLIC_GUEST_ACCOUNT_ID || 'guest.vibesflow.testnet',
+  PRIVATE_KEY: process.env.GUEST_ACCOUNT_PRIVATE_KEY || process.env.EXPO_PUBLIC_GUEST_ACCOUNT_PRIVATE_KEY || 'ed25519:48MKoy4G2L8WG8rZmEVccevy7DrJ9tk4nkHyjqFPnJRVYSXVt7tBQuRrQbdNxGxuqrhcyusjopESZ8WFuppNFQkf',
+  PUBLIC_KEY: process.env.GUEST_ACCOUNT_PUBLIC_KEY || process.env.EXPO_PUBLIC_GUEST_ACCOUNT_PUBLIC_KEY || 'ed25519:HU4zJjREY9xKroH6pBa968pLFwkKd2gW8aeXJt7CsVnX'
 };
 
-const THIRTY_TGAS = "30000000000000";
+// Supported wallet types
+type WalletType = 'guest' | 'near' | 'metis';
+type NetworkType = 'near-testnet' | 'metis-hyperion';
 
 interface WalletAccount {
   accountId: string;
   publicKey: string;
-  network: string;
+  network: NetworkType;
+  walletType: WalletType;
   isGuest?: boolean;
-}
-
-interface WalletContextType {
-  account: WalletAccount | null;
-  connecting: boolean;
-  connected: boolean;
-  error: string | null;
-  connect: () => Promise<void>;
-  disconnect: () => void;
-  signTransaction: (transaction: any) => Promise<string>;
-  signMessage: (message: string) => Promise<string>;
-  modal: any;
-  selector: any;
-  availableWallets: any[];
-  connectToWallet: (walletId: string) => Promise<void>;
-  connectAsGuest: () => Promise<void>;
-  isGuestMode: boolean;
 }
 
 interface RTAConfig {
@@ -61,22 +103,41 @@ interface RTAConfig {
   created_at: number;
 }
 
-interface HotWalletContextType {
-  accountId: string | null;
-  isConnected: boolean;
-  balance: string;
-  connect: () => Promise<void>;
+interface WalletContextType {
+  account: WalletAccount | null;
+  connecting: boolean;
+  connected: boolean;
+  error: string | null;
+  modal: {
+    isOpen: boolean;
+    step: 'selection' | 'near-options' | 'metis-options' | 'connecting';
+  };
+  
+  // Connection methods
+  openModal: () => void;
+  closeModal: () => void;
+  setModalStep: (step: 'selection' | 'near-options' | 'metis-options' | 'connecting') => void;
+  connectAsGuest: () => Promise<void>;
+  connectNear: (provider: 'here' | 'mynear') => Promise<void>;
+  connectMetis: () => Promise<void>;
   disconnect: () => void;
-  signAndSendTransaction: (transaction: any) => Promise<any>;
+  
+  // Transaction methods
+  signTransaction: (transaction: any) => Promise<string>;
+  signMessage: (message: string) => Promise<string>;
+  
+  // Smart contract methods (network-aware)
   createRTANFT: (rtaId: string, config: RTAConfig) => Promise<string>;
+  createVibestreamAndDelegate: (rtaId: string, config: RTAConfig, delegatee?: string) => Promise<string>;
   addChunkToRTA: (rtaId: string, chunkId: number, filecoinCid: string, chunkOwner: string) => Promise<void>;
   finalizeRTA: (rtaId: string, masterCid: string) => Promise<void>;
   isRTAClosed: (rtaId: string) => Promise<boolean>;
-  isGuestMode: boolean;
+  
+  // Network-aware session info
+  getNetworkInfo: () => { type: NetworkType; contracts: any } | null;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
-const HotWalletContext = createContext<HotWalletContextType | undefined>(undefined);
 
 export const useWallet = (): WalletContextType => {
   const context = useContext(WalletContext);
@@ -86,135 +147,73 @@ export const useWallet = (): WalletContextType => {
   return context;
 };
 
-export const useHotWallet = (): HotWalletContextType => {
-  const context = useContext(HotWalletContext);
-  if (context === undefined) {
-    throw new Error('useHotWallet must be used within a HotWalletProvider');
-  }
-  return context;
-};
-
 interface WalletProviderProps {
   children: React.ReactNode;
 }
 
-interface HotWalletProviderProps {
-  children: ReactNode;
-}
-
-let globalSelector: any = null;
-let guestKeyPair: KeyPair | null = null;
-
-// Initialize guest account keypair
-const initializeGuestAccount = () => {
-  try {
-    guestKeyPair = KeyPair.fromString(GUEST_CONFIG.PRIVATE_KEY as any);
-    console.log('✅ Guest account initialized:', GUEST_CONFIG.ACCOUNT_ID);
-  } catch (error) {
-    console.error('❌ Failed to initialize guest account:', error);
-  }
-};
+let globalNearSelector: any = null;
+let guestKeyPair: any = null;
 
 export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [availableWallets, setAvailableWallets] = useState<any[]>([]);
-  const [isGuestMode, setIsGuestMode] = useState(false);
+  const [modal, setModal] = useState({
+    isOpen: false,
+    step: 'selection' as 'selection' | 'near-options' | 'metis-options' | 'connecting'
+  });
+  
+  // Mobile HERE Wallet state
+  const [hereWallet, setHereWallet] = useState<any | null>(null);
+  
+  // Metis wallet state - will be initialized when user clicks "Metis Hyperion"
+  const [metisWalletReady, setMetisWalletReady] = useState(false);
+  
+  // Simplified Metis wallet state tracking - event handling moved to MetisWalletBridge
+  const useMetisWalletSync = () => {
+    // This is now handled by MetisWalletBridge component below
+    // No need for duplicate event listeners
+  };
 
-  useEffect(() => {
-    // Initialize guest account
-    initializeGuestAccount();
-    
-    // Only initialize wallet selector on web platform
-    if (Platform.OS === 'web') {
-      initWalletSelector();
-    } else {
-      setError('NEAR wallet selector is only supported on web platform');
-    }
-  }, []);
+  // Use the Metis wallet sync hook
+  useMetisWalletSync();
 
-  const initWalletSelector = async () => {
+  // Initialize guest account keypair when needed
+  const initializeGuestAccount = () => {
     try {
-      // Setup wallet selector with reliable RPC endpoint
-      globalSelector = await setupWalletSelector({
-        network: {
-          networkId: "testnet",
-          nodeUrl: "https://test.rpc.fastnear.com",
-          helperUrl: "https://helper.testnet.near.org",
-          explorerUrl: "https://testnet.nearblocks.io",
-          indexerUrl: "https://testnet-api.kitwallet.app",
-        },
-        modules: [
-          setupHereWallet(),
-          setupMeteorWallet(),
-          setupNightly(),
-          setupSender(),
-          setupMyNearWallet(),
-        ],
-      });
-
-      // Get available wallets from the selector's store
-      const state = globalSelector.store.getState();
-      const wallets = state.modules || [];
-      setAvailableWallets(wallets);
-
-      // Listen for wallet state changes
-      const subscription = globalSelector.store.observable.subscribe(async (state: any) => {
-        const { accounts, modules } = state;
-        
-        // Update available wallets when they change
-        if (modules) {
-          setAvailableWallets(modules);
-        }
-        
-        if (accounts && accounts.length > 0 && !isGuestMode) {
-          const accountId = accounts[0].accountId;
-          const publicKey = accounts[0].publicKey || '';
-          
-          setAccount({
-            accountId,
-            publicKey,
-            network: 'testnet',
-            isGuest: false
-          });
-          setConnecting(false);
-          setError(null);
-          
-          console.log('✅ Wallet connected:', accountId);
-        } else if (!isGuestMode) {
-          setAccount(null);
-          setConnecting(false);
-        }
-      });
-
-      // Check if already connected
-      if (state.accounts && state.accounts.length > 0) {
-        const accountId = state.accounts[0].accountId;
-        const publicKey = state.accounts[0].publicKey || '';
-        
-        setAccount({
-          accountId,
-          publicKey,
-          network: 'testnet',
-          isGuest: false
-        });
-        
-        console.log('✅ Wallet already connected:', accountId);
+      if (KeyPair && !guestKeyPair) {
+        guestKeyPair = KeyPair.fromString(GUEST_CONFIG.PRIVATE_KEY);
+        console.log('✅ Guest account initialized:', GUEST_CONFIG.ACCOUNT_ID);
       }
-
-      console.log('✅ Wallet selector initialized successfully');
-
-    } catch (err: any) {
-      console.error('❌ Failed to initialize wallet selector:', err);
-      setError(`Failed to initialize wallet selector: ${err.message}`);
+    } catch (error) {
+      console.error('❌ Failed to initialize guest account:', error);
     }
   };
+
+  const openModal = useCallback(() => {
+    setModal({ isOpen: true, step: 'selection' });
+    setError(null);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setModal({ isOpen: false, step: 'selection' });
+    setError(null);
+  }, []);
+
+
+
+  const setModalStep = useCallback((step: 'selection' | 'near-options' | 'metis-options' | 'connecting') => {
+    setModal(prev => ({ ...prev, step }));
+  }, []);
 
   const connectAsGuest = useCallback(async () => {
     try {
       setConnecting(true);
       setError(null);
+      setModalStep('connecting');
+      
+      // Initialize guest account on demand
+      initializeGuestAccount();
       
       if (!guestKeyPair) {
         throw new Error('Guest account not initialized');
@@ -224,12 +223,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       setAccount({
         accountId: GUEST_CONFIG.ACCOUNT_ID,
         publicKey: GUEST_CONFIG.PUBLIC_KEY,
-        network: 'testnet',
+        network: 'near-testnet',
+        walletType: 'guest',
         isGuest: true
       });
       
-      setIsGuestMode(true);
       setConnecting(false);
+      closeModal();
       
       console.log('✅ Connected as guest:', GUEST_CONFIG.ACCOUNT_ID);
     } catch (err: any) {
@@ -237,64 +237,203 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       setError(err.message || 'Failed to connect as guest');
       setConnecting(false);
     }
-  }, []);
+  }, [closeModal, setModalStep]);
 
-  const connect = useCallback(async () => {
+  const connectNear = useCallback(async (provider: 'here' | 'mynear') => {
     try {
       setConnecting(true);
       setError(null);
+      setModalStep('connecting');
 
-    } catch (err: any) {
-      console.error('❌ Connect error:', err);
-      setError(err.message || 'Failed to connect wallet');
-      setConnecting(false);
-    }
-  }, []);
-
-  const connectToWallet = useCallback(async (walletId: string) => {
-    try {
-      setConnecting(true);
-      setError(null);
-      setIsGuestMode(false);
-
-      if (!globalSelector) {
-        throw new Error('Wallet selector not initialized');
-      }
-
-      console.log('🔗 Connecting to wallet:', walletId);
-      
-      const wallet = await globalSelector.wallet(walletId);
-      const result = await wallet.signIn({
-        contractId: CONTRACT_ADDRESSES.RTA_FACTORY,
-      });
-      
-    } catch (err: any) {
-      console.error('❌ Wallet connection error:', err);
-      setError(err.message || 'Failed to connect to wallet');
-      setConnecting(false);
-    }
-  }, []);
-
-  const disconnect = useCallback(async () => {
-    try {
-      if (isGuestMode) {
-        setAccount(null);
-        setIsGuestMode(false);
-        setError(null);
-        console.log('✅ Guest disconnected');
-      } else if (globalSelector) {
-        const wallet = await globalSelector.wallet();
-        if (wallet) {
-          await wallet.signOut();
+      if (Platform.OS === 'web') {
+        // Web Near connection
+        if (!setupWalletSelector) {
+          throw new Error('Near wallet selector not available');
         }
-        setAccount(null);
-        setError(null);
-        console.log('✅ Wallet disconnected');
+
+        if (!globalNearSelector) {
+          const networkConfig = {
+            networkId: CONTRACT_ADDRESSES.NEAR.NETWORK,
+            nodeUrl: process.env.EXPO_PUBLIC_NEAR_NODE_URL || "https://test.rpc.fastnear.com",
+            helperUrl: process.env.EXPO_PUBLIC_NEAR_HELPER_URL || "https://helper.testnet.near.org",
+            explorerUrl: process.env.EXPO_PUBLIC_NEAR_EXPLORER_URL || "https://testnet.nearblocks.io",
+            indexerUrl: "https://testnet-api.kitwallet.app",
+          };
+
+          globalNearSelector = await setupWalletSelector({
+            network: networkConfig,
+            modules: [
+              setupHereWallet({ networkId: 'testnet' }),
+              setupMyNearWallet({ networkId: 'testnet' }),
+            ],
+          });
+        }
+
+        const walletId = provider === 'here' ? 'here-wallet' : 'my-near-wallet';
+        const wallet = await globalNearSelector.wallet(walletId);
+        const result = await wallet.signIn({
+          contractId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
+        });
+
+        // Get account info from result or selector state
+        const state = globalNearSelector.store.getState();
+        if (state.accounts && state.accounts.length > 0) {
+          const accountId = state.accounts[0].accountId;
+          const publicKey = state.accounts[0].publicKey || '';
+          
+          setAccount({
+            accountId,
+            publicKey,
+            network: 'near-testnet',
+            walletType: 'near',
+            isGuest: false
+          });
+        }
+
+        console.log('✅ Near web wallet connected:', provider);
+      } else {
+        // Mobile Near connection (HERE Wallet only)
+        if (provider !== 'here') {
+          throw new Error('Only HERE Wallet is supported on mobile');
+        }
+
+        // Initialize mobile HERE Wallet on demand
+        if (!hereWallet && HereWallet) {
+          try {
+            let hereWalletInstance;
+            
+            if (typeof HereWallet === 'function') {
+              try {
+                hereWalletInstance = new HereWallet({
+                  networkId: CONTRACT_ADDRESSES.NEAR.NETWORK,
+                  nodeUrl: process.env.EXPO_PUBLIC_NEAR_NODE_URL || 'https://test.rpc.fastnear.com'
+                });
+              } catch (constructorError: any) {
+                if (typeof HereWallet.connect === 'function') {
+                  hereWalletInstance = await HereWallet.connect({
+                    networkId: CONTRACT_ADDRESSES.NEAR.NETWORK
+                  });
+                } else {
+                  hereWalletInstance = HereWallet();
+                }
+              }
+            } else if (HereWallet.instance) {
+              hereWalletInstance = HereWallet.instance;
+            }
+            
+            if (hereWalletInstance) {
+              setHereWallet(hereWalletInstance);
+            }
+          } catch (error: any) {
+            console.warn('⚠️ HERE Wallet initialization failed:', error?.message);
+          }
+        }
+
+        if (!hereWallet) {
+          throw new Error('HERE Wallet not available on this device');
+        }
+
+        const result = await hereWallet.signIn({ 
+          contractId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
+          successUrl: 'vibesflow://wallet-success',
+          failureUrl: 'vibesflow://wallet-failure'
+        });
+        
+        let accountId;
+        if (typeof result === 'string') {
+          accountId = result;
+        } else if (result && (result.accountId || result.account_id)) {
+          accountId = result.accountId || result.account_id;
+        } else if (typeof hereWallet.getAccountId === 'function') {
+          accountId = await hereWallet.getAccountId();
+        }
+        
+        if (!accountId) {
+          throw new Error('Failed to get account ID from HERE Wallet');
+        }
+
+        setAccount({
+          accountId,
+          publicKey: '',
+          network: 'near-testnet',
+          walletType: 'near',
+          isGuest: false
+        });
+
+        console.log('✅ Near mobile wallet connected:', accountId);
       }
-    } catch (err) {
-      console.error('❌ Disconnect error:', err);
+      
+      setConnecting(false);
+      closeModal();
+    } catch (err: any) {
+      console.error('❌ Near connection error:', err);
+      setError(err.message || 'Failed to connect Near wallet');
+      setConnecting(false);
     }
-  }, [isGuestMode]);
+  }, [hereWallet, closeModal]);
+
+  const connectMetis = useCallback(async () => {
+    setConnecting(true);
+    setError(null);
+    setModalStep('connecting');
+    
+    try {
+      console.log('🔗 Connecting to Metis Hyperion...');
+      
+      // Simple browser wallet connection
+      if (typeof window !== 'undefined' && (window as any).ethereum) {
+        const accounts: string[] = await (window as any).ethereum.request({ 
+          method: 'eth_requestAccounts' 
+        });
+        
+        if (accounts && accounts.length > 0) {
+          setAccount({
+            accountId: accounts[0],
+            walletType: 'metis',
+            publicKey: accounts[0],
+            network: 'metis-hyperion' as NetworkType,
+          });
+          
+          console.log('✅ Connected to Metis:', accounts[0]);
+          setError(null);
+          setConnecting(false);
+          closeModal();
+        } else {
+          throw new Error('No accounts found');
+        }
+      } else {
+        throw new Error('No browser wallet found. Please install MetaMask.');
+      }
+      
+    } catch (err: any) {
+      console.error('❌ Metis connection failed:', err);
+      setError(err.message || 'Failed to connect to Metis wallet');
+      setConnecting(false);
+      setModalStep('selection');
+    }
+  }, [closeModal, setModalStep]);
+
+  const disconnect = useCallback(() => {
+    try {
+      setAccount(null);
+      setConnecting(false);
+      setError(null);
+      closeModal();
+      
+      // Reset Metis wallet state
+      setMetisWalletReady(false);
+      
+      // Clear HERE wallet if connected
+      if (hereWallet) {
+        setHereWallet(null);
+      }
+      
+      console.log('✅ Disconnected from all wallets');
+    } catch (err: any) {
+      console.error('❌ Disconnect failed:', err);
+      setError(err.message || 'Failed to disconnect');
+    }
+  }, [hereWallet, closeModal]);
 
   const signTransaction = useCallback(async (transaction: any): Promise<string> => {
     if (!account) {
@@ -302,17 +441,17 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
 
     try {
-      if (isGuestMode && guestKeyPair) {
+      if (account.walletType === 'guest' && guestKeyPair) {
         // Sign with guest account
         const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
-        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+        await keyStore.setKey(CONTRACT_ADDRESSES.NEAR.NETWORK, GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
         
         const nearConnection = await nearAPI.connect({
-          networkId: 'testnet',
+          networkId: CONTRACT_ADDRESSES.NEAR.NETWORK,
           keyStore: keyStore,
-          nodeUrl: 'https://test.rpc.fastnear.com',
-          walletUrl: 'https://wallet.testnet.near.org',
-          helperUrl: 'https://helper.testnet.near.org',
+          nodeUrl: process.env.EXPO_PUBLIC_NEAR_NODE_URL || 'https://test.rpc.fastnear.com',
+          walletUrl: process.env.EXPO_PUBLIC_NEAR_WALLET_URL || 'https://wallet.testnet.near.org',
+          helperUrl: process.env.EXPO_PUBLIC_NEAR_HELPER_URL || 'https://helper.testnet.near.org',
         });
         
         const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
@@ -322,21 +461,52 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         });
         
         return result.transaction.hash;
-      } else {
-        // Sign with regular wallet
-        const wallet = await globalSelector.wallet();
-        const result = await wallet.signAndSendTransaction({
-          receiverId: transaction.receiverId,
-          actions: transaction.actions,
-        });
-        
-        return result.transaction.hash;
-      }
+      } else if (account.walletType === 'near') {
+        // Sign with Near wallet
+        if (Platform.OS === 'web' && globalNearSelector) {
+          const wallet = await globalNearSelector.wallet();
+          const result = await wallet.signAndSendTransaction({
+            receiverId: transaction.receiverId,
+            actions: transaction.actions,
+          });
+          return result.transaction.hash;
+        } else if (hereWallet) {
+          const result = await hereWallet.signAndSendTransaction({
+            receiverId: transaction.receiverId,
+            actions: transaction.actions,
+          });
+          return result.transaction.hash;
+        }
+        throw new Error('Near wallet not available');
+              } else if (account.walletType === 'metis') {
+                // Sign with Metis wallet using browser wallet
+                if (
+                  Platform.OS === 'web' &&
+                  typeof window !== 'undefined' &&
+                  (window as any).ethereum
+                ) {
+                  const result = await (window as any).ethereum.request({
+                    method: 'eth_sendTransaction',
+                    params: [{
+                      from: account.accountId,
+                to: transaction.receiverId,
+                value: '0x0', // Convert properly if needed
+                data: '0x', // Convert transaction data
+                gas: '0x5208', // Default gas limit
+                gasPrice: '0x09184e72a000', // Default gas price
+              }],
+            });
+            return result;
+          }
+          throw new Error('Metis wallet not available');
+        }
+      
+      throw new Error('No suitable wallet method available');
     } catch (err: any) {
       console.error('❌ Transaction signing failed:', err);
       throw new Error(`Transaction signing failed: ${err.message}`);
     }
-  }, [account, isGuestMode]);
+  }, [account, hereWallet]);
 
   const signMessage = useCallback(async (message: string): Promise<string> => {
     if (!account) {
@@ -344,146 +514,368 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
 
     try {
-      if (isGuestMode && guestKeyPair) {
+      if (account.walletType === 'guest' && guestKeyPair) {
         // Sign message with guest account
         const messageBuffer = Buffer.from(message);
         const signature = guestKeyPair.sign(messageBuffer);
         return Buffer.from(signature.signature).toString('base64');
-      } else {
-        // Sign with regular wallet
-        const wallet = await globalSelector.wallet();
-        const result = await wallet.signMessage({
-          message,
-          recipient: CONTRACT_ADDRESSES.RTA_FACTORY,
-          nonce: Array.from(crypto.getRandomValues(new Uint8Array(32))),
-        });
-        
-        return result.signature;
+      } else if (account.walletType === 'near') {
+        // Sign with Near wallet
+        if (Platform.OS === 'web' && globalNearSelector) {
+          const wallet = await globalNearSelector.wallet();
+          const result = await wallet.signMessage({
+            message,
+            recipient: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
+            nonce: Array.from(crypto.getRandomValues(new Uint8Array(32))),
+          });
+          return result.signature;
+        } else if (hereWallet) {
+          const result = await hereWallet.signMessage({
+            message,
+            recipient: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
+            nonce: Array.from(crypto.getRandomValues(new Uint8Array(32))),
+          });
+          return result.signature;
+        }
+        throw new Error('Near wallet not available');
+      } else if (account.walletType === 'metis') {
+        // TODO: Implement Metis message signing
+        throw new Error('Message signing not yet implemented for Metis');
       }
+      
+      throw new Error('No suitable wallet method available');
     } catch (err: any) {
       console.error('❌ Message signing failed:', err);
       throw new Error(`Message signing failed: ${err.message}`);
     }
-  }, [account, isGuestMode]);
+  }, [account, hereWallet]);
 
-  const value: WalletContextType = {
-    account,
-    connecting,
-    connected: !!account,
-    error,
-    connect,
-    disconnect,
-    signTransaction,
-    signMessage,
-    modal: null, // We don't use the modal UI package anymore
-    selector: globalSelector,
-    availableWallets,
-    connectToWallet,
-    connectAsGuest,
-    isGuestMode
-  };
-
-  return (
-    <WalletContext.Provider value={value}>
-      {children}
-    </WalletContext.Provider>
-  );
-};
-
-export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }) => {
-  const [accountId, setAccountId] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [balance, setBalance] = useState('0');
-
-  const { account, connected, isGuestMode } = useWallet();
-
-  useEffect(() => {
-    if (connected && account) {
-      setAccountId(account.accountId);
-      setIsConnected(true);
-      if (!isGuestMode) {
-        fetchBalance(account.accountId);
-      } else {
-        setBalance('Guest Mode');
-      }
-    } else {
-      setAccountId(null);
-      setIsConnected(false);
-      setBalance('0');
-    }
-  }, [account, connected, isGuestMode]);
-
-  const fetchBalance = async (accountId: string) => {
+  // Helper function to upload metadata to Pinata
+  const uploadMetadataToPinata = async (rtaId: string, config: RTAConfig): Promise<string> => {
     try {
-      // Skip balance fetching to avoid CORS issues
-      // Balance display is not critical for core functionality
-      setBalance('Connected');
-      console.log('📊 Balance fetching skipped to avoid CORS issues');
+      const metadata = {
+        name: `VibesFlow Vibestream ${rtaId}`,
+        description: `A ${config.mode} vibestream created on VibesFlow`,
+        attributes: [
+          { trait_type: "Mode", value: config.mode },
+          { trait_type: "Store to Filecoin", value: config.store_to_filecoin },
+          { trait_type: "Creator", value: config.creator },
+          { trait_type: "Created At", value: new Date(config.created_at).toISOString() },
+          ...(config.distance ? [{ trait_type: "Distance (meters)", value: config.distance }] : []),
+          ...(config.ticket_amount ? [{ trait_type: "Tickets Available", value: config.ticket_amount }] : []),
+          ...(config.ticket_price ? [{ trait_type: "Ticket Price", value: config.ticket_price }] : []),
+        ],
+        external_url: "https://vibesflow.ai",
+      };
+
+      // Get Pinata credentials from environment
+      const pinataApiKey = process.env.PINATA_API_KEY || process.env.EXPO_PUBLIC_PINATA_API_KEY;
+      const pinataSecret = process.env.PINATA_API_SECRET || process.env.EXPO_PUBLIC_PINATA_SECRET;
+
+      if (!pinataApiKey || !pinataSecret) {
+        console.warn('⚠️ Pinata credentials not found, using fallback IPFS URL');
+        return `ipfs://QmVibesFlow${rtaId}`;
+      }
+
+      const response = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'pinata_api_key': pinataApiKey,
+          'pinata_secret_api_key': pinataSecret,
+        },
+        body: JSON.stringify({
+          pinataContent: metadata,
+          pinataMetadata: {
+            name: `vibestream-${rtaId}-metadata.json`,
+            keyvalues: {
+              vibestream_id: rtaId,
+              mode: config.mode,
+              creator: config.creator
+            }
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Pinata upload failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      const ipfsHash = result.IpfsHash;
+      
+      console.log('✅ Metadata uploaded to Pinata:', ipfsHash);
+      return `ipfs://${ipfsHash}`;
+      
     } catch (error) {
-      console.warn('Failed to fetch balance:', error);
-      setBalance('0');
+      console.warn('⚠️ Failed to upload to Pinata, using fallback:', error);
+      return `ipfs://QmVibesFlow${rtaId}`;
     }
   };
 
-  const connect = async (): Promise<void> => {
-  };
-
-  const disconnect = () => {
-    setAccountId(null);
-    setIsConnected(false);
-    setBalance('0');
-  };
-
-  const signAndSendTransaction = async (transaction: any): Promise<any> => {
-    if (!isConnected || !accountId) {
+  // Create Vibestream with integrated delegation on Metis (single transaction)
+  const createVibestreamAndDelegate = useCallback(async (rtaId: string, config: RTAConfig, delegatee?: string): Promise<string> => {
+    if (!account) {
       throw new Error('Wallet not connected');
     }
 
-    try {
-      if (isGuestMode && guestKeyPair) {
-        // Sign with guest account
-        const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
-        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
-        
-        const nearConnection = await nearAPI.connect({
-          networkId: 'testnet',
-          keyStore: keyStore,
-          nodeUrl: 'https://test.rpc.fastnear.com',
-          walletUrl: 'https://wallet.testnet.near.org',
-          helperUrl: 'https://helper.testnet.near.org',
-        });
-        
-        const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
-        const result = await guestAccount.signAndSendTransaction({
-          receiverId: transaction.receiverId,
-          actions: transaction.actions,
-        });
-        
-        console.log('✅ Guest transaction sent:', result);
-        return result;
-      } else {
-        // Sign with regular wallet
-        const wallet = await globalSelector.wallet();
-        const result = await wallet.signAndSendTransaction({
-          receiverId: transaction.receiverId,
-          actions: transaction.actions,
-        });
-        
-        console.log('✅ Transaction sent:', result);
-        return result;
-      }
-    } catch (error) {
-      console.error('❌ Transaction failed:', error);
-      throw error;
+    if (account.network !== 'metis-hyperion') {
+      throw new Error('This function is only for Metis network');
     }
-  };
 
-  // Create RTA NFT using proper NEAR wallet selector or guest account
-  const createRTANFT = async (rtaId: string, config: RTAConfig): Promise<string> => {
-    if (!isConnected || !accountId) {
+    try {
+      console.log('🔥 Creating Vibestream with integrated delegation on Metis:', rtaId);
+
+      // Check if we have a Metis account connected
+      if (account?.walletType !== 'metis') {
+        throw new Error('Metis wallet not properly connected');
+      }
+
+      // Check ethereum provider and network
+      if (typeof window === 'undefined' || !(window as any).ethereum) {
+        throw new Error('Ethereum provider not available');
+      }
+
+      // Verify we're on the correct network using window.ethereum (with type safety)
+      const ethProvider = (window as any).ethereum;
+      if (!ethProvider || typeof ethProvider.request !== 'function') {
+        throw new Error('Ethereum provider not available');
+      }
+      
+      const chainId = await ethProvider.request({ method: 'eth_chainId' });
+      const expectedChainId = '0x20a55'; // 133717 in hex
+      if (chainId !== expectedChainId) {
+        throw new Error(`Wrong network: expected Metis Hyperion (${expectedChainId}), got ${chainId}`);
+      }
+
+      // Get current account (reuse existing ethProvider)
+      const accounts: string[] = await ethProvider.request({ method: 'eth_accounts' });
+      if (!accounts || accounts.length === 0) {
+        throw new Error('No accounts available');
+      }
+
+      // Define Metis Hyperion chain config using our environment variables
+      const metisHyperion = {
+        id: CONTRACT_ADDRESSES.METIS.CHAIN_ID,
+        name: 'Metis Hyperion Testnet',
+        network: 'metis-hyperion',
+        nativeCurrency: {
+          decimals: 18,
+          name: 'tMETIS',
+          symbol: 'tMETIS',
+        },
+        rpcUrls: {
+          default: {
+            http: [CONTRACT_ADDRESSES.METIS.RPC_URL],
+          },
+          public: {
+            http: [CONTRACT_ADDRESSES.METIS.RPC_URL],
+          },
+        },
+        blockExplorers: {
+          default: {
+            name: 'Metis Hyperion Explorer',
+            url: 'https://hyperion-testnet-explorer.metisdevops.link',
+          },
+        },
+      };
+
+      // VibeFactory ABI for createVibestreamWithDelegate function - matches simplified VibeFactory.sol
+      const createVibestreamWithDelegateAbi = parseAbiItem(
+        'function createVibestreamWithDelegate(string calldata mode, bool storeToFilecoin, uint256 distance, string calldata metadataURI, uint256 ticketsAmount, uint256 ticketPrice, address delegatee) external returns (uint256 vibeId)'
+      );
+
+      // Prepare contract parameters to match the struct in contracts
+      const mode = config.mode; // 'solo' or 'group'
+      const storeToFilecoin = config.store_to_filecoin;
+      const distance = BigInt(config.distance || 0);
+      // Upload metadata to Pinata and get real IPFS URI
+      const metadataURI = await uploadMetadataToPinata(rtaId, config);
+      const ticketsAmount = BigInt(config.ticket_amount || 0);
+      
+      // Convert ticket price from NEAR to wei (1 NEAR ≈ 1 tMETIS for testing)
+      let ticketPriceWei = BigInt(0);
+      if (config.ticket_price && parseFloat(config.ticket_price) > 0) {
+        ticketPriceWei = parseEther(config.ticket_price);
+      }
+      
+      // Set delegatee address - default to zero address if not provided
+      const delegateeAddress = delegatee || '0x0000000000000000000000000000000000000000';
+
+      console.log('📋 Contract parameters:', {
+        mode,
+        storeToFilecoin,
+        distance: distance.toString(),
+        metadataURI,
+        ticketsAmount: ticketsAmount.toString(),
+        ticketPrice: ticketPriceWei.toString(),
+        delegatee: delegateeAddress,
+        vibeFactory: CONTRACT_ADDRESSES.METIS.VIBE_FACTORY
+      });
+
+      // Create wallet client for contract interaction
+      const walletClient = createWalletClient({
+        chain: metisHyperion,
+        transport: custom(ethProvider)
+      });
+
+      // Create public client for gas estimation
+      const publicClient = createPublicClient({
+        chain: metisHyperion,
+        transport: custom(ethProvider)
+      });
+
+      // Use viem for gas estimation and transaction
+      try {
+        console.log('📤 Sending createVibestreamWithDelegate transaction to:', CONTRACT_ADDRESSES.METIS.VIBE_FACTORY);
+        
+        // Send transaction using viem wallet client with explicit gas settings
+        const txHash = await walletClient.writeContract({
+          address: CONTRACT_ADDRESSES.METIS.VIBE_FACTORY as `0x${string}`,
+          abi: [createVibestreamWithDelegateAbi],
+          functionName: 'createVibestreamWithDelegate',
+          args: [
+            mode,
+            storeToFilecoin,
+            distance,
+            metadataURI,
+            ticketsAmount,
+            ticketPriceWei,
+            delegateeAddress as `0x${string}`
+          ],
+          account: accounts[0] as `0x${string}`,
+          gas: BigInt(8000000), // 8M gas limit for safe execution
+        });
+
+        console.log('✅ Transaction sent:', txHash);
+        console.log('🔍 Check transaction on explorer:', `https://hyperion-testnet-explorer.metisdevops.link/tx/${txHash}`);
+        
+        // Wait for transaction confirmation using viem with extended timeout for Metis
+        let receipt;
+        try {
+          receipt = await publicClient.waitForTransactionReceipt({ 
+            hash: txHash,
+            timeout: 120000 // 2 minute timeout for Metis testnet
+          });
+        } catch (timeoutError) {
+          console.warn('⏰ Transaction receipt timeout, checking manually...');
+          
+          // Manual fallback: check transaction status multiple times
+          let attempts = 0;
+          const maxAttempts = 20;
+          
+          while (attempts < maxAttempts) {
+            try {
+              receipt = await publicClient.getTransactionReceipt({ hash: txHash });
+              if (receipt) {
+                console.log('✅ Got receipt via manual check');
+                break;
+              }
+            } catch (error) {
+              // Transaction might still be pending
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+            attempts++;
+            console.log(`🔄 Manual check attempt ${attempts}/${maxAttempts}`);
+          }
+          
+          if (!receipt) {
+            throw new Error(`Transaction submitted but receipt not available after ${maxAttempts * 3} seconds. Check explorer: https://hyperion-testnet-explorer.metisdevops.link/tx/${txHash}`);
+          }
+        }
+
+        if (receipt && receipt.status === 'success') {
+          console.log('✅ Vibestream created successfully on Metis:', receipt);
+          
+          // Parse receipt logs to get the actual vibeId created by the contract
+          try {
+            const vibestreamCreatedEvent = parseAbiItem(
+              'event VibestreamCreated(uint256 indexed vibeId, address indexed creator, uint256 startDate, string mode, string metadataURI, address vibeKioskAddress)'
+            );
+            
+            const eventSelector = getEventSelector(vibestreamCreatedEvent);
+            
+            for (const log of receipt.logs) {
+              try {
+                // Check if this log matches the VibestreamCreated event
+                if (log.topics[0] === eventSelector && log.topics[1]) {
+                  // Parse the vibeId from the first indexed topic
+                  const vibeId = BigInt(log.topics[1]).toString();
+                  console.log('🎯 Extracted vibeId from receipt:', vibeId);
+                  return `metis_vibe_${vibeId}`;
+                }
+              } catch (logError) {
+                // Skip logs that don't match our interface
+                continue;
+              }
+            }
+          } catch (parseError) {
+            console.warn('⚠️ Could not parse vibeId from receipt, using fallback');
+          }
+          
+          // Fallback: return the original rtaId with prefix
+          return `metis_vibe_${rtaId}`;
+        } else if (receipt && receipt.status === 'reverted') {
+          console.error('💥 Transaction reverted on-chain:', receipt);
+          throw new Error(`Transaction reverted on Metis blockchain. Check explorer: https://hyperion-testnet-explorer.metisdevops.link/tx/${txHash}`);
+        } else {
+          console.error('❓ Unexpected transaction status:', receipt?.status);
+          throw new Error(`Transaction has unexpected status: ${receipt?.status}. Check explorer: https://hyperion-testnet-explorer.metisdevops.link/tx/${txHash}`);
+        }
+      } catch (contractError: any) {
+        console.error('❌ Contract call failed:', contractError);
+        
+        // Check if we have a transaction hash in the error (transaction was sent but failed later)
+        let errorMessage = '';
+        
+        // Provide more specific error messages based on viem error types
+        if (contractError.message?.includes('User rejected')) {
+          errorMessage = 'Transaction was rejected by user';
+        } else if (contractError.message?.includes('insufficient funds')) {
+          errorMessage = 'Insufficient tMETIS balance for transaction';
+        } else if (contractError.message?.includes('Check explorer:')) {
+          // This error already contains explorer link, pass it through
+          errorMessage = contractError.message;
+        } else if (contractError.shortMessage) {
+          errorMessage = `Contract call failed: ${contractError.shortMessage}`;
+        } else {
+          errorMessage = `Contract call failed: ${contractError.message || contractError}`;
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+    } catch (error: any) {
+      console.error('❌ Failed to create vibestream on Metis:', error);
+      
+      // Provide detailed error messages
+      if (error.message?.includes('user rejected')) {
+        throw new Error('Transaction was rejected by user');
+      } else if (error.message?.includes('insufficient funds')) {
+        throw new Error('Insufficient tMETIS balance for transaction');
+      } else if (error.message?.includes('wrong network')) {
+        throw new Error('Please switch to Metis Hyperion network');
+      } else {
+        throw error;
+      }
+    }
+  }, [account]);
+
+  // Create RTA NFT - Network-aware creation (NEAR contracts or Metis contracts)
+  const createRTANFT = useCallback(async (rtaId: string, config: RTAConfig): Promise<string> => {
+    if (!account) {
       throw new Error('Wallet not connected');
     }
 
+    // Network-aware creation: NEAR contracts vs Metis contracts
+    if (account.network === 'metis-hyperion') {
+      // For Metis network, use the integrated createVibestreamWithDelegate function
+      console.log('🔗 Creating vibestream on Metis network via VibeFactory');
+      return await createVibestreamAndDelegate(rtaId, config);
+    }
+
+    // Near implementation (existing logic)
     try {
       console.log('🔥 Creating RTA NFT for vibestream:', rtaId);
 
@@ -499,7 +891,6 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
         created_at: config.created_at,
       };
 
-      // Calculate proper deposit
       let depositAmount = '10000000000000000000000'; // 0.01 NEAR base
       if (config.store_to_filecoin) {
         depositAmount = '15000000000000000000000'; // +0.005 NEAR for Filecoin
@@ -508,43 +899,39 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
         depositAmount = '20000000000000000000000'; // +0.005 NEAR for large groups
       }
 
-      if (isGuestMode && guestKeyPair) {
-        // Sign with guest account
+      if (account.walletType === 'guest' && guestKeyPair) {
+        // Guest account implementation
         const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
-        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+        await keyStore.setKey(CONTRACT_ADDRESSES.NEAR.NETWORK, GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
         
         const nearConnection = await nearAPI.connect({
-          networkId: 'testnet',
+          networkId: CONTRACT_ADDRESSES.NEAR.NETWORK,
           keyStore: keyStore,
-          nodeUrl: 'https://test.rpc.fastnear.com',
-          walletUrl: 'https://wallet.testnet.near.org',
-          helperUrl: 'https://helper.testnet.near.org',
+          nodeUrl: process.env.EXPO_PUBLIC_NEAR_NODE_URL || 'https://test.rpc.fastnear.com',
+          walletUrl: process.env.EXPO_PUBLIC_NEAR_WALLET_URL || 'https://wallet.testnet.near.org',
+          helperUrl: process.env.EXPO_PUBLIC_NEAR_HELPER_URL || 'https://helper.testnet.near.org',
         });
         
         const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
         
-        // Create RTA NFT transaction
         const result = await guestAccount.functionCall({
-          contractId: CONTRACT_ADDRESSES.RTA_FACTORY,
+          contractId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
           methodName: 'create_rta',
           args: {
             rta_id: rtaId,
             config: contractConfig,
-            receiver_id: accountId, // User gets the NFT, guest pays for it
+            receiver_id: account.accountId,
           },
-          gas: BigInt(THIRTY_TGAS),
+          gas: BigInt('30000000000000'),
           attachedDeposit: BigInt(depositAmount)
         });
 
         console.log('🔥 RTA NFT created with guest account:', result);
         return `rta_${rtaId}`;
       } else {
-        // Sign with regular wallet
-        const wallet = await globalSelector.wallet();
-        
-        // Create RTA NFT transaction
-        const result = await wallet.signAndSendTransaction({
-          receiverId: CONTRACT_ADDRESSES.RTA_FACTORY,
+        // Regular wallet implementation
+        const transaction = {
+          receiverId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
           actions: [{
             type: 'FunctionCall',
             params: {
@@ -552,14 +939,15 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
               args: {
                 rta_id: rtaId,
                 config: contractConfig,
-                receiver_id: accountId,
+                receiver_id: account.accountId,
               },
-              gas: THIRTY_TGAS,
+              gas: '30000000000000',
               deposit: depositAmount
             }
           }]
-        });
+        };
 
+        const result = await signTransaction(transaction);
         console.log('🔥 RTA NFT created successfully:', result);
         return `rta_${rtaId}`;
       }
@@ -568,44 +956,48 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
       console.error('❌ Failed to create RTA NFT:', error);
       throw error;
     }
-  };
+  }, [account, signTransaction, createVibestreamAndDelegate]);
 
-  const addChunkToRTA = async (rtaId: string, chunkId: number, filecoinCid: string, chunkOwner: string): Promise<void> => {
-    if (!isConnected) {
+  const addChunkToRTA = useCallback(async (rtaId: string, chunkId: number, filecoinCid: string, chunkOwner: string): Promise<void> => {
+    if (!account) {
       throw new Error('Wallet not connected');
     }
 
+    if (account.network === 'metis-hyperion') {
+      // TODO: Implement Metis contract interaction when contracts are deployed
+      throw new Error('Metis contracts not yet deployed');
+    }
+
+    // Near implementation
     try {
-      if (isGuestMode && guestKeyPair) {
-        // Sign with guest account
+      if (account.walletType === 'guest' && guestKeyPair) {
         const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
-        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+        await keyStore.setKey(CONTRACT_ADDRESSES.NEAR.NETWORK, GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
         
         const nearConnection = await nearAPI.connect({
-          networkId: 'testnet',
+          networkId: CONTRACT_ADDRESSES.NEAR.NETWORK,
           keyStore: keyStore,
-          nodeUrl: 'https://test.rpc.fastnear.com',
-          walletUrl: 'https://wallet.testnet.near.org',
-          helperUrl: 'https://helper.testnet.near.org',
+          nodeUrl: process.env.EXPO_PUBLIC_NEAR_NODE_URL || 'https://test.rpc.fastnear.com',
+          walletUrl: process.env.EXPO_PUBLIC_NEAR_WALLET_URL || 'https://wallet.testnet.near.org',
+          helperUrl: process.env.EXPO_PUBLIC_NEAR_HELPER_URL || 'https://helper.testnet.near.org',
         });
 
         const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
 
         await guestAccount.functionCall({
-          contractId: CONTRACT_ADDRESSES.RTA_FACTORY,
+          contractId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
           methodName: 'add_cids',
           args: {
             rta_id: rtaId,
             cids: [filecoinCid],
             chunk_owners: [chunkOwner],
           },
-          gas: BigInt(THIRTY_TGAS),
+          gas: BigInt('30000000000000'),
           attachedDeposit: BigInt('0')
         });
       } else {
-        const wallet = await globalSelector.wallet();
-        await wallet.signAndSendTransaction({
-          receiverId: CONTRACT_ADDRESSES.RTA_FACTORY,
+        const transaction = {
+          receiverId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
           actions: [{
             type: 'FunctionCall',
             params: {
@@ -615,11 +1007,13 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
                 cids: [filecoinCid],
                 chunk_owners: [chunkOwner],
               },
-              gas: THIRTY_TGAS,
+              gas: '30000000000000',
               deposit: '0'
             }
           }]
-        });
+        };
+
+        await signTransaction(transaction);
       }
       
       console.log('✅ Chunk added to RTA successfully');
@@ -627,43 +1021,47 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
       console.error('❌ Failed to add chunk to RTA:', error);
       throw error;
     }
-  };
+  }, [account, signTransaction]);
 
-  const finalizeRTA = async (rtaId: string, masterCid: string): Promise<void> => {
-    if (!isConnected) {
+  const finalizeRTA = useCallback(async (rtaId: string, masterCid: string): Promise<void> => {
+    if (!account) {
       throw new Error('Wallet not connected');
     }
 
+    if (account.network === 'metis-hyperion') {
+      // TODO: Implement Metis contract interaction when contracts are deployed
+      throw new Error('Metis contracts not yet deployed');
+    }
+
+    // Near implementation
     try {
-      if (isGuestMode && guestKeyPair) {
-        // Sign with guest account
+      if (account.walletType === 'guest' && guestKeyPair) {
         const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
-        await keyStore.setKey('testnet', GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+        await keyStore.setKey(CONTRACT_ADDRESSES.NEAR.NETWORK, GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
         
         const nearConnection = await nearAPI.connect({
-          networkId: 'testnet',
+          networkId: CONTRACT_ADDRESSES.NEAR.NETWORK,
           keyStore: keyStore,
-          nodeUrl: 'https://test.rpc.fastnear.com',
-          walletUrl: 'https://wallet.testnet.near.org',
-          helperUrl: 'https://helper.testnet.near.org',
+          nodeUrl: process.env.EXPO_PUBLIC_NEAR_NODE_URL || 'https://test.rpc.fastnear.com',
+          walletUrl: process.env.EXPO_PUBLIC_NEAR_WALLET_URL || 'https://wallet.testnet.near.org',
+          helperUrl: process.env.EXPO_PUBLIC_NEAR_HELPER_URL || 'https://helper.testnet.near.org',
         });
 
         const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
 
         await guestAccount.functionCall({
-          contractId: CONTRACT_ADDRESSES.RTA_FACTORY,
+          contractId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
           methodName: 'finalize',
           args: {
             rta_id: rtaId,
             filecoin_master_cid: masterCid,
           },
-          gas: BigInt(THIRTY_TGAS),
+          gas: BigInt('30000000000000'),
           attachedDeposit: BigInt('0')
         });
       } else {
-        const wallet = await globalSelector.wallet();
-        await wallet.signAndSendTransaction({
-          receiverId: CONTRACT_ADDRESSES.RTA_FACTORY,
+        const transaction = {
+          receiverId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
           actions: [{
             type: 'FunctionCall',
             params: {
@@ -672,11 +1070,13 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
                 rta_id: rtaId,
                 filecoin_master_cid: masterCid,
               },
-              gas: THIRTY_TGAS,
+              gas: '30000000000000',
               deposit: '0'
             }
           }]
-        });
+        };
+
+        await signTransaction(transaction);
       }
       
       console.log('✅ RTA finalized successfully');
@@ -684,34 +1084,75 @@ export const HotWalletProvider: React.FC<HotWalletProviderProps> = ({ children }
       console.error('❌ Failed to finalize RTA:', error);
       throw error;
     }
-  };
+  }, [account, signTransaction]);
 
-  const isRTAClosed = async (rtaId: string): Promise<boolean> => {
+  const isRTAClosed = useCallback(async (rtaId: string): Promise<boolean> => {
     try {
+      // TODO: Implement for both networks when contracts are deployed
       return false;
     } catch (error) {
       console.error('❌ Failed to check RTA status:', error);
       return false;
     }
-  };
+  }, []);
 
-  const contextValue: HotWalletContextType = {
-    accountId,
-    isConnected,
-    balance,
-    connect,
+  const getNetworkInfo = useCallback(() => {
+    if (!account) return null;
+    
+    if (account.network === 'near-testnet') {
+      return {
+        type: 'near-testnet' as NetworkType,
+        contracts: CONTRACT_ADDRESSES.NEAR
+      };
+    } else if (account.network === 'metis-hyperion') {
+      return {
+        type: 'metis-hyperion' as NetworkType,
+        contracts: CONTRACT_ADDRESSES.METIS
+      };
+    }
+    
+    return null;
+  }, [account]);
+
+  const value: WalletContextType = {
+    account,
+    connecting,
+    connected: !!account,
+    error,
+    modal,
+    openModal,
+    closeModal,
+    setModalStep,
+    connectAsGuest,
+    connectNear,
+    connectMetis,
     disconnect,
-    signAndSendTransaction,
+    signTransaction,
+    signMessage,
     createRTANFT,
+    createVibestreamAndDelegate,
     addChunkToRTA,
     finalizeRTA,
     isRTAClosed,
-    isGuestMode
+    getNetworkInfo,
   };
 
+
+
+  // Always wrap with MetisWalletProvider for web (it includes QueryClientProvider)
+  if (Platform.OS === 'web') {
+    return (
+      <MetisWalletProvider>
+        <WalletContext.Provider value={value}>
+          {children}
+        </WalletContext.Provider>
+      </MetisWalletProvider>
+    );
+  }
+
   return (
-    <HotWalletContext.Provider value={contextValue}>
+    <WalletContext.Provider value={value}>
       {children}
-    </HotWalletContext.Provider>
+    </WalletContext.Provider>
   );
 };

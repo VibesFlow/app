@@ -9,10 +9,11 @@ import {
   Dimensions,
   Platform,
   Alert,
+  TextInput,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { PINATA_API_KEY, PINATA_API_SECRET, PINATA_URL } from '@env';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
+import { useWallet } from '../context/connector';
 import GlitchContainer from './ui/GlitchContainer';
 import GlitchText from './ui/GlitchText';
 import VibestreamModal from './VibestreamModal';
@@ -20,9 +21,14 @@ import * as ImagePicker from 'expo-image-picker';
 
 const { width, height } = Dimensions.get('window');
 
+// Pinata configuration
+const PINATA_API_KEY = process.env.PINATA_API_KEY || process.env.EXPO_PUBLIC_PINATA_API_KEY;
+const PINATA_API_SECRET = process.env.PINATA_API_SECRET || process.env.EXPO_PUBLIC_PINATA_SECRET;
+const PINATA_URL = process.env.PINATA_URL || process.env.EXPO_PUBLIC_PINATA_URL || 'vibesflow.mypinata.cloud';
+
 interface UserProfileProps {
   accountId: string;
-  onCreateVibestream: () => void;
+  onCreateVibestream: (rtaId?: string, config?: any) => void;
   onBack: () => void;
 }
 
@@ -31,27 +37,68 @@ const UserProfile: React.FC<UserProfileProps> = ({
   onCreateVibestream,
   onBack 
 }) => {
-  const [vibestreams] = useState<any[]>([]); // Initially empty as requested
+  const { account, getNetworkInfo } = useWallet();
+  const [vibestreams, setVibestreams] = useState<any[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [displayName, setDisplayName] = useState<string>('');
+  const [bio, setBio] = useState<string>('');
+  const [editingName, setEditingName] = useState(false);
+  const [editingBio, setEditingBio] = useState(false);
 
-  // Load saved profile image on component mount
+  // Format wallet address for display
+  const formatWalletAddress = (address: string) => {
+    const networkInfo = getNetworkInfo();
+    if (networkInfo?.type === 'metis-hyperion' && address.startsWith('0x')) {
+      // Metis format: [first-5]...[last-6]
+      return `${address.slice(0, 5)}...${address.slice(-6)}`;
+    }
+    // NEAR format: keep as is
+    return address;
+  };
+
+  // Load saved profile data on component mount
   useEffect(() => {
-    const loadProfileImage = async () => {
+    const loadProfileData = async () => {
       try {
         if (Platform.OS === 'web') {
           const savedImageHash = localStorage.getItem(`vibesflow_profile_${accountId}`);
           if (savedImageHash) {
             setProfileImageUri(`https://${PINATA_URL}/ipfs/${savedImageHash}`);
           }
+          
+          const savedName = localStorage.getItem(`vibesflow_name_${accountId}`);
+          if (savedName) {
+            setDisplayName(savedName);
+          } else {
+            setDisplayName(formatWalletAddress(accountId));
+          }
+
+          const savedBio = localStorage.getItem(`vibesflow_bio_${accountId}`);
+          if (savedBio) {
+            setBio(savedBio);
+          }
         }
       } catch (error) {
-        console.warn('Failed to load profile image:', error);
+        console.warn('Failed to load profile data:', error);
       }
     };
-    loadProfileImage();
+    loadProfileData();
+    fetchVibestreams();
   }, [accountId]);
+
+  // Fetch vibestreams from contracts
+  const fetchVibestreams = async () => {
+    try {
+      const networkInfo = getNetworkInfo();
+      // TODO: Implement actual contract calls when contracts support querying user vibestreams
+      // For now, keeping empty array as per user's original request
+      setVibestreams([]);
+    } catch (error) {
+      console.warn('Failed to fetch vibestreams:', error);
+    }
+  };
 
   const uploadToPinata = async (imageUri: string) => {
     try {
@@ -83,6 +130,10 @@ const UserProfile: React.FC<UserProfileProps> = ({
       });
       formData.append('pinataMetadata', metadata);
 
+      if (!PINATA_API_KEY || !PINATA_API_SECRET) {
+        throw new Error('Pinata credentials not configured');
+      }
+
       const pinataResponse = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
         method: 'POST',
         headers: {
@@ -111,6 +162,66 @@ const UserProfile: React.FC<UserProfileProps> = ({
       Alert.alert('Upload Failed', 'Could not upload profile image');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Save profile data to Pinata
+  const saveProfileDataToPinata = async (name: string, bioText: string) => {
+    try {
+      if (!PINATA_API_KEY || !PINATA_API_SECRET) {
+        console.warn('⚠️ Pinata credentials not found, saving locally only');
+        if (Platform.OS === 'web') {
+          localStorage.setItem(`vibesflow_name_${accountId}`, name);
+          localStorage.setItem(`vibesflow_bio_${accountId}`, bioText);
+        }
+        return;
+      }
+
+      const profileData = {
+        userId: accountId,
+        displayName: name,
+        bio: bioText,
+        updatedAt: new Date().toISOString()
+      };
+
+      const response = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'pinata_api_key': PINATA_API_KEY,
+          'pinata_secret_api_key': PINATA_API_SECRET,
+        },
+        body: JSON.stringify({
+          pinataContent: profileData,
+          pinataMetadata: {
+            name: `vibesflow-profile-${accountId}.json`,
+            keyvalues: {
+              userId: accountId,
+              type: 'profile_data'
+            }
+          }
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Profile data uploaded to Pinata:', result.IpfsHash);
+        
+        // Also save locally for faster access
+        if (Platform.OS === 'web') {
+          localStorage.setItem(`vibesflow_name_${accountId}`, name);
+          localStorage.setItem(`vibesflow_bio_${accountId}`, bioText);
+          localStorage.setItem(`vibesflow_profile_data_${accountId}`, result.IpfsHash);
+        }
+      } else {
+        throw new Error('Failed to upload to Pinata');
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to upload to Pinata, saving locally:', error);
+      if (Platform.OS === 'web') {
+        localStorage.setItem(`vibesflow_name_${accountId}`, name);
+        localStorage.setItem(`vibesflow_bio_${accountId}`, bioText);
+      }
     }
   };
 
@@ -194,8 +305,59 @@ const UserProfile: React.FC<UserProfileProps> = ({
             <View style={styles.profileImageBorder} />
           </TouchableOpacity>
           
-          <GlitchText text={accountId} style={styles.username} />
-          <Text style={styles.userType}>NEAR PROTOCOL</Text>
+          {editingName ? (
+            <TextInput
+              style={styles.usernameInput}
+              value={displayName}
+              onChangeText={setDisplayName}
+              onBlur={() => {
+                setEditingName(false);
+                saveProfileDataToPinata(displayName, bio);
+              }}
+              onSubmitEditing={() => {
+                setEditingName(false);
+                saveProfileDataToPinata(displayName, bio);
+              }}
+              autoFocus
+              maxLength={30}
+              placeholder="Enter display name"
+              placeholderTextColor={COLORS.textSecondary}
+            />
+          ) : (
+            <TouchableOpacity onPress={() => setEditingName(true)}>
+              <GlitchText 
+                text={displayName || formatWalletAddress(accountId)} 
+                style={styles.username} 
+              />
+            </TouchableOpacity>
+          )}
+          
+          {editingBio ? (
+            <TextInput
+              style={styles.bioInput}
+              value={bio}
+              onChangeText={setBio}
+              onBlur={() => {
+                setEditingBio(false);
+                saveProfileDataToPinata(displayName, bio);
+              }}
+              onSubmitEditing={() => {
+                setEditingBio(false);
+                saveProfileDataToPinata(displayName, bio);
+              }}
+              autoFocus
+              maxLength={100}
+              placeholder="Add a bio..."
+              placeholderTextColor={COLORS.textSecondary}
+              multiline
+            />
+          ) : (
+            <TouchableOpacity onPress={() => setEditingBio(true)}>
+              <Text style={styles.userBio}>
+                {bio || 'Add a bio...'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </GlitchContainer>
         
         {/* Stats Container */}
@@ -229,9 +391,9 @@ const UserProfile: React.FC<UserProfileProps> = ({
       <VibestreamModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
-        onLaunchVibePlayer={() => {
+        onLaunchVibePlayer={(rtaId: string, config: any) => {
           setModalVisible(false);
-          onCreateVibestream();
+          onCreateVibestream(rtaId, config);
         }}
       />
     </View>
@@ -285,8 +447,9 @@ const styles = StyleSheet.create({
   },
   profileContainer: {
     alignItems: 'center',
-    marginVertical: SPACING.xl,
-    paddingVertical: SPACING.xl,
+    marginVertical: SPACING.large,
+    paddingVertical: SPACING.large,
+    paddingHorizontal: SPACING.medium,
   },
   profileImageContainer: {
     position: 'relative',
@@ -318,18 +481,47 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   username: {
-    fontSize: Platform.OS === 'web' ? FONT_SIZES.xxl : FONT_SIZES.xl,
+    fontSize: Platform.OS === 'web' ? FONT_SIZES.large : FONT_SIZES.medium,
     color: COLORS.textPrimary,
     fontWeight: 'bold',
-    letterSpacing: 3,
-    textTransform: 'uppercase',
-    marginBottom: SPACING.small,
-  },
-  userType: {
-    fontSize: FONT_SIZES.small,
-    color: COLORS.accent,
     letterSpacing: 2,
     textTransform: 'uppercase',
+    marginBottom: SPACING.small,
+    textAlign: 'center',
+  },
+  usernameInput: {
+    fontSize: Platform.OS === 'web' ? FONT_SIZES.large : FONT_SIZES.medium,
+    color: COLORS.textPrimary,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginBottom: SPACING.small,
+    textAlign: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    padding: SPACING.small,
+    backgroundColor: COLORS.backgroundLight + '80',
+    minWidth: 200,
+  },
+  userBio: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.textSecondary,
+    letterSpacing: 1,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    opacity: 0.8,
+  },
+  bioInput: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.textSecondary,
+    letterSpacing: 1,
+    textAlign: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    padding: SPACING.small,
+    backgroundColor: COLORS.backgroundLight + '80',
+    minWidth: 200,
+    maxHeight: 60,
   },
   statsContainer: {
     flexDirection: 'row',

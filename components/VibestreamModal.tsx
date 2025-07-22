@@ -15,7 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome } from '@expo/vector-icons';
 import { COLORS } from '../theme';
 import GlitchText from './ui/GlitchText';
-import { useWallet, useHotWallet } from '../context/connector';
+import { useWallet } from '../context/connector';
 
 const { width } = Dimensions.get('window');
 
@@ -40,9 +40,8 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [isCreatingRTA, setIsCreatingRTA] = useState(false);
 
-  // NEAR wallet integration - Use both contexts for different functionality  
-  const { account, connected, connect } = useWallet();
-  const { createRTANFT, isConnected: hotWalletConnected, accountId: hotWalletAccountId } = useHotWallet();
+  // Network-aware wallet integration
+  const { account, connected, openModal, createRTANFT, getNetworkInfo } = useWallet();
 
   const resetModal = () => {
     setStep(1);
@@ -108,22 +107,17 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
 
   const handleLaunchVibestream = async () => {
     // Check wallet connection first
-    if (!connected && !hotWalletConnected) {
+    if (!connected) {
       if (Platform.OS === 'web') {
         Alert.alert(
           'Wallet Required',
-          'Please connect your NEAR wallet to create a vibestream.',
+          'Please connect your wallet to create a vibestream.',
           [
             { text: 'Cancel', style: 'cancel' },
             { 
               text: 'Connect Wallet', 
-              onPress: async () => {
-                try {
-                  await connect();
-                } catch (error) {
-                  console.error('Failed to connect wallet:', error);
-                  Alert.alert('Connection Failed', 'Failed to connect to NEAR wallet.');
-                }
+              onPress: () => {
+                openModal();
               }
             }
           ]
@@ -132,9 +126,16 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
       return;
     }
 
-    const accountIdToUse = hotWalletAccountId || account?.accountId;
+    const accountIdToUse = account?.accountId;
     if (!accountIdToUse) {
       Alert.alert('Error', 'No account ID available. Please reconnect your wallet.');
+      return;
+    }
+
+    // Get network information
+    const networkInfo = getNetworkInfo();
+    if (!networkInfo) {
+      Alert.alert('Error', 'Network information not available. Please reconnect your wallet.');
       return;
     }
 
@@ -144,10 +145,10 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
       // Enable audio first
       await enableAudio();
       
-      // Generate unique RTA ID for the Vibestream (raw ID without "rta_" prefix)
+      // Generate unique RTA ID for the Vibestream (raw ID without network prefix)
       const rawRtaId = generateRtaID();
       
-      // Prepare RTA configuration matching EXACTLY the rtav2 contract RTAConfig struct
+      // Prepare RTA configuration matching contract requirements for both networks
       const rtaConfig = {
         mode,
         store_to_filecoin: storeToFilecoin,
@@ -160,93 +161,125 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
         created_at: Date.now(),
       };
 
-      console.log('🔥 Creating RTA NFT with config:', rtaConfig);
+      console.log(`🔥 Creating ${networkInfo.type} vibestream with config:`, rtaConfig);
 
       // =====================================================================================
-      // FALLBACK MECHANISM: Try RTA creation with 20-second timeout
-      // If NEAR testnet is slow, generate fallback data and continue vibestream anyway
+      // NETWORK-AWARE VIBESTREAM CREATION
+      // NEAR: Uses rtav2 contract -> createRTANFT
+      // Metis: Uses VibeFactory contract -> createVibestreamWithDelegate (single transaction!)
       // =====================================================================================
       
       let fullTokenId: string;
-      let rtaCreationSucceeded = false;
+      let creationSucceeded = false;
       
       try {
-        // Create RTA NFT with 30-second timeout
-        const rtaCreationPromise = createRTANFT(rawRtaId, rtaConfig);
+        // Create vibestream with 30-second timeout (network-aware)
+        const creationPromise = createRTANFT(rawRtaId, rtaConfig);
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('RTA creation timeout')), 30000);
+          setTimeout(() => reject(new Error(`${networkInfo.type} creation timeout`)), 30000);
         });
 
-        fullTokenId = await Promise.race([rtaCreationPromise, timeoutPromise]);
-        rtaCreationSucceeded = true;
+        fullTokenId = await Promise.race([creationPromise, timeoutPromise]);
+        creationSucceeded = true;
         
-        console.log('✅ RTA NFT created successfully:', fullTokenId);
+        console.log(`✅ ${networkInfo.type} vibestream created successfully:`, fullTokenId);
         console.log('📊 Raw RTA ID (for workers):', rawRtaId);
 
-          } catch (error) {
-        console.warn('⚠️ RTA creation failed or timed out:', error);
-        console.log('🔄 Using fallback mode - vibestream will continue with mock RTA data');
+      } catch (error) {
+        console.warn(`⚠️ ${networkInfo.type} vibestream creation failed or timed out:`, error);
+        console.log('🔄 Using fallback mode - vibestream will continue with mock data');
         
-        // Generate fallback RTA data for testing
-        fullTokenId = `rta_${rawRtaId}`;
-        rtaCreationSucceeded = false;
+        // Generate fallback data for testing
+        const networkPrefix = networkInfo.type === 'metis-hyperion' ? 'metis_vibe' : 'rta';
+        fullTokenId = `${networkPrefix}_${rawRtaId}`;
+        creationSucceeded = false;
 
-        // Add fallback indicator to config (extend config with fallback properties)
+        // Add fallback indicator to config
         (rtaConfig as any).fallback_mode = true;
-        (rtaConfig as any).fallback_reason = (error as Error).message.includes('timeout') ? 'near_timeout' : 'near_error';
+        (rtaConfig as any).fallback_reason = (error as Error).message.includes('timeout') ? `${networkInfo.type}_timeout` : `${networkInfo.type}_error`;
         (rtaConfig as any).original_error = (error as Error).message;
+        (rtaConfig as any).network = networkInfo.type;
 
-        console.log('🎭 Fallback RTA data generated:', {
+        console.log('🎭 Fallback data generated:', {
           tokenId: fullTokenId,
           rawRtaId,
           creator: rtaConfig.creator,
           timestamp: rtaConfig.created_at,
+          network: networkInfo.type,
           fallback: true
         });
       }
 
       // Show appropriate success message
-      if (rtaCreationSucceeded) {
-        console.log('🎉 RTA NFT created on NEAR testnet - full functionality enabled');
+      if (creationSucceeded) {
+        console.log(`🎉 ${networkInfo.type} vibestream created - full functionality enabled`);
       } else {
-        console.log('🎯 Vibestream starting in fallback mode - testing backend chunking system');
-        console.log('📊 Fallback RTA will still enable: 60-sec chunking → Pinata → backend processing');
+        console.log(`🎯 Vibestream starting in fallback mode for ${networkInfo.type}`);
+        console.log('📊 Fallback vibestream will still enable: chunking → backend processing');
         
         // Show user notification about fallback mode
         if (Platform.OS === 'web') {
+          const networkName = networkInfo.type === 'metis-hyperion' ? 'Metis Hyperion' : 'NEAR';
           Alert.alert(
             'Vibestream Starting (Fallback Mode)',
-            'NEAR testnet is slow, but your vibestream will start anyway!\n\n✅ Audio chunking: Working\n✅ Backend processing: Working\n✅ Pinata storage: Working\n\nYour music will still be processed and stored!',
+            `${networkName} is slow, but your vibestream will start anyway!\n\n✅ Audio chunking: Working\n✅ Backend processing: Working\n✅ Storage: Working\n\nYour music will still be processed and stored!`,
             [{ text: 'Start Vibing!', style: 'default' }]
           );
         } else {
-          // For mobile, use console log with detailed info
-          console.log('📱 Mobile fallback mode activated - all backend systems operational');
+          console.log(`📱 Mobile fallback mode activated for ${networkInfo.type} - all backend systems operational`);
         }
       }
 
-      // Launch vibestream with either real or fallback RTA data
-      // The chunking service will start immediately regardless of RTA creation success
+      // Launch vibestream with either real or fallback data
       onClose();
-        onLaunchVibePlayer(fullTokenId, rtaConfig);
+      onLaunchVibePlayer(fullTokenId, rtaConfig);
 
     } catch (error) {
       console.error('Failed to create vibestream:', error);
       
       let errorMessage = 'Failed to create vibestream. Please try again.';
+      let showExplorerOption = false;
+      let explorerUrl: string | null = null;
+      
       if (error instanceof Error) {
-        if (error.message.includes('Insufficient deposit')) {
-          errorMessage = 'Insufficient NEAR balance. Please add funds to your wallet.';
-        } else if (error.message.includes('User rejected')) {
+        if (error.message.includes('Insufficient')) {
+          const networkName = getNetworkInfo()?.type === 'metis-hyperion' ? 'tMETIS' : 'NEAR';
+          errorMessage = `Insufficient ${networkName} balance. Please add funds to your wallet.`;
+        } else if (error.message.includes('User rejected') || error.message.includes('rejected')) {
           errorMessage = 'Transaction was cancelled.';
         } else if (error.message.includes('Wallet not connected')) {
-          errorMessage = 'Please connect your NEAR wallet first.';
+          errorMessage = 'Please connect your wallet first.';
+        } else if (error.message.includes('wrong network')) {
+          errorMessage = 'Please switch to the correct network in your wallet.';
+        } else if (error.message.includes('Check explorer:')) {
+          // Transaction was submitted but timed out
+          errorMessage = error.message;
+          showExplorerOption = true;
+          
+          // Extract explorer URL from error message
+          const explorerMatch = error.message.match(/(https:\/\/[^\s]+)/);
+          explorerUrl = explorerMatch ? explorerMatch[1] : null;
         } else {
           errorMessage = error.message;
         }
       }
       
-      Alert.alert('Creation Failed', errorMessage);
+      if (showExplorerOption && Platform.OS === 'web') {
+        
+        Alert.alert(
+          'Transaction Submitted', 
+          errorMessage,
+          [
+            { text: 'OK', style: 'default' },
+            ...(explorerUrl ? [{ 
+              text: 'View on Explorer', 
+              onPress: () => window.open(explorerUrl, '_blank')
+            }] : [])
+          ]
+        );
+      } else {
+        Alert.alert('Creation Failed', errorMessage);
+      }
     } finally {
       setIsCreatingRTA(false);
     }

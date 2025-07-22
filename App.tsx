@@ -5,7 +5,7 @@ import VibePlayer from './components/VibePlayer';
 import UserProfile from './components/UserProfile';
 import VibeMarket from './components/VibeMarket';
 import { COLORS, FONT_SIZES, SPACING } from './theme';
-import { WalletProvider, HotWalletProvider, useWallet } from './context/connector';
+import { WalletProvider, useWallet } from './context/connector';
 import { FilCDNProvider } from './context/filcdn';
 import { StatusBar } from 'expo-status-bar';
 
@@ -127,12 +127,10 @@ function AppContent() {
 export default function App() {
   return (
     <WalletProvider>
-      <HotWalletProvider>
-        <FilCDNProvider>
-          <AppContent />
-          <StatusBar style="light" />
-        </FilCDNProvider>
-      </HotWalletProvider>
+      <FilCDNProvider>
+        <AppContent />
+        <StatusBar style="light" />
+      </FilCDNProvider>
     </WalletProvider>
   );
 }

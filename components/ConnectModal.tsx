@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -8,8 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Animated,
-  Linking,
-  TextInput
+  Platform
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
@@ -17,27 +16,25 @@ import { COLORS } from '../theme';
 import { useWallet } from '../context/connector';
 import { GlitchText } from './ui';
 
-interface ConnectModalProps {
-  visible: boolean;
-  onClose: () => void;
-}
-
-const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
-  const [pulse] = useState(new Animated.Value(1));
+const ConnectModal: React.FC = () => {
+  const [pulse] = React.useState(new Animated.Value(1));
 
   const { 
+    modal,
     account, 
     connecting, 
     error: walletError,
-    availableWallets,
-    connectToWallet,
+    connected,
+    closeModal,
+    setModalStep,
     connectAsGuest,
-    isGuestMode
+    connectNear,
+    connectMetis
   } = useWallet();
 
   // Start pulsing animation
   useEffect(() => {
-    if (visible) {
+    if (modal.isOpen) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulse, {
@@ -55,25 +52,17 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
     } else {
       pulse.setValue(1);
     }
-  }, [visible, pulse]);
+  }, [modal.isOpen]);
 
   // Close modal when connected
   useEffect(() => {
-    if (account && !connecting) {
+    if (connected && account && !connecting) {
       // Delay closing to show success screen
       setTimeout(() => {
-        onClose();
+        closeModal();
       }, 1500);
     }
-  }, [account, connecting, onClose]);
-
-  const handleWalletConnect = async (walletId: string) => {
-    try {
-      await connectToWallet(walletId);
-    } catch (error) {
-      console.error('Failed to connect to wallet:', error);
-    }
-  };
+  }, [account, connecting, connected, closeModal]);
 
   const handleGuestConnect = async () => {
     try {
@@ -83,28 +72,34 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
     }
   };
 
-  const getWalletIcon = (walletId: string) => {
-    switch (walletId) {
-      case 'here-wallet':
-        return 'mobile';
-      case 'meteor-wallet':
-        return 'globe';
-      case 'nightly':
-        return 'moon-o';
-      case 'sender':
-        return 'send';
-      case 'my-near-wallet':
-        return 'user-o';
-      default:
-        return 'credit-card';
+  const handleNearConnect = async (provider: 'here' | 'mynear') => {
+    try {
+      console.log(`Connecting to NEAR with ${provider}...`);
+      await connectNear(provider);
+    } catch (error) {
+      console.error(`Failed to connect to NEAR with ${provider}:`, error);
     }
   };
 
-  const getWalletName = (wallet: any) => {
-    return wallet.metadata?.name || wallet.id || 'Unknown Wallet';
+  // Connect to Metis Hyperion with browser wallet
+  const handleMetisConnect = async () => {
+    try {
+      console.log('🔄 Connecting to Metis Hyperion with browser wallet...');
+      
+      // connectMetis already handles the modal steps
+      await connectMetis();
+      
+    } catch (error) {
+      console.error('❌ Failed to connect Metis wallet:', error);
+      // connectMetis handles error state and modal steps
+    }
   };
 
-  const renderInitialScreen = () => (
+  const handleBackToSelection = () => {
+    setModalStep('selection');
+  };
+
+  const renderSelectionScreen = () => (
     <View style={styles.modalContent}>
       <Text style={styles.modalDescription}>
         CHOOSE YOUR CONNECTION METHOD
@@ -147,43 +142,63 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
           <Text style={styles.separatorText}>OR CONNECT YOUR WALLET</Text>
           <View style={styles.separatorLine} />
         </View>
-
-        {/* Regular Wallet Options */}
-        {availableWallets.length > 0 ? (
-          availableWallets.map((wallet) => (
-            <TouchableOpacity 
-              key={wallet.id}
-              style={styles.walletButton}
-              onPress={() => handleWalletConnect(wallet.id)}
-              activeOpacity={0.7}
-              disabled={connecting}
-            >
-              <LinearGradient
-                colors={['rgba(0,255,170,0.15)', 'rgba(0,0,0,0)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.buttonGradient}
-              />
-              <View style={styles.buttonContent}>
-                <FontAwesome 
-                  name={getWalletIcon(wallet.id)} 
-                  size={18} 
-                  color={COLORS.primary} 
-                  style={styles.buttonIcon} 
-                />
-                <Text style={styles.buttonText}>{getWalletName(wallet)}</Text>
-                {wallet.metadata?.available && (
-                  <View style={styles.availableIndicator} />
-                )}
-              </View>
-            </TouchableOpacity>
-          ))
-        ) : (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Loading wallets...</Text>
+        {/* Metis Wallet - Direct Connection */}
+        <TouchableOpacity 
+          style={styles.walletButton}
+          onPress={handleMetisConnect}
+          activeOpacity={0.7}
+          disabled={connecting || Platform.OS !== 'web'}
+        >
+          <LinearGradient
+            colors={['rgba(0,255,170,0.15)', 'rgba(0,0,0,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.buttonGradient}
+          />
+          <View style={styles.buttonContent}>
+            <FontAwesome 
+              name="link" 
+              size={18} 
+              color={COLORS.primary} 
+              style={styles.buttonIcon} 
+            />
+            <View style={styles.guestTextContainer}>
+              <Text style={styles.buttonText}>Metis Hyperion</Text>
+              <Text style={styles.guestSubText}>
+                {Platform.OS === 'web' 
+                  ? 'Connect with your browser wallet' 
+                  : 'Web only'
+                }
+              </Text>
+            </View>
+            <View style={styles.availableIndicator} />
           </View>
-        )}
+        </TouchableOpacity>
+        
+        {/* NEAR Wallet */}
+        <TouchableOpacity 
+          style={styles.walletButton}
+          onPress={() => setModalStep('near-options')}
+          activeOpacity={0.7}
+          disabled={connecting}
+        >
+          <LinearGradient
+            colors={['rgba(0,255,170,0.15)', 'rgba(0,0,0,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.buttonGradient}
+          />
+          <View style={styles.buttonContent}>
+            <FontAwesome 
+              name="circle" 
+              size={18} 
+              color={COLORS.primary} 
+              style={styles.buttonIcon} 
+            />
+            <Text style={styles.buttonText}>NEAR Testnet</Text>
+            <View style={styles.availableIndicator} />
+          </View>
+        </TouchableOpacity>
       </ScrollView>
 
       {walletError && (
@@ -193,8 +208,89 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
       )}
 
       <Text style={styles.supportedWallets}>
-        {isGuestMode ? 'Connected via VibesFlow guest account' : 'Connect with your preferred NEAR wallet'}
+        Connect with your preferred wallet to start vibing
       </Text>
+    </View>
+  );
+
+  const renderNearOptionsScreen = () => (
+    <View style={styles.modalContent}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={handleBackToSelection}
+        disabled={connecting}
+      >
+        <FontAwesome name="chevron-left" size={12} color={COLORS.primary} />
+        <Text style={styles.backText}>BACK</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.modalDescription}>
+        CONNECT YOUR NEAR WALLET
+      </Text>
+
+      <ScrollView style={styles.walletList} showsVerticalScrollIndicator={false}>
+        {/* HERE Wallet */}
+        <TouchableOpacity 
+          style={styles.walletButton}
+          onPress={() => handleNearConnect('here')}
+          activeOpacity={0.7}
+          disabled={connecting}
+        >
+          <LinearGradient
+            colors={['rgba(0,255,170,0.15)', 'rgba(0,0,0,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.buttonGradient}
+          />
+          <View style={styles.buttonContent}>
+            <FontAwesome 
+              name="mobile" 
+              size={18} 
+              color={COLORS.primary} 
+              style={styles.buttonIcon} 
+            />
+            <View style={styles.guestTextContainer}>
+              <Text style={styles.buttonText}>HERE Wallet</Text>
+              <Text style={styles.guestSubText}>Mobile & Web wallet for NEAR</Text>
+            </View>
+            <View style={styles.availableIndicator} />
+          </View>
+        </TouchableOpacity>
+
+        {/* MyNearWallet */}
+        <TouchableOpacity 
+          style={styles.walletButton}
+          onPress={() => handleNearConnect('mynear')}
+          activeOpacity={0.7}
+          disabled={connecting}
+        >
+          <LinearGradient
+            colors={['rgba(0,255,170,0.15)', 'rgba(0,0,0,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.buttonGradient}
+          />
+          <View style={styles.buttonContent}>
+            <FontAwesome 
+              name="globe" 
+              size={18} 
+              color={COLORS.primary} 
+              style={styles.buttonIcon} 
+            />
+            <View style={styles.guestTextContainer}>
+              <Text style={styles.buttonText}>MyNearWallet</Text>
+              <Text style={styles.guestSubText}>Web wallet for NEAR Protocol</Text>
+            </View>
+            <View style={styles.availableIndicator} />
+          </View>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {walletError && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{walletError}</Text>
+        </View>
+      )}
     </View>
   );
 
@@ -204,8 +300,17 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
         <ActivityIndicator size="large" color={COLORS.primary} />
         <GlitchText text="CONNECTING..." style={styles.loadingText} intensity="medium" />
         <Text style={styles.infoText}>
-          {isGuestMode ? 'Setting up guest account...' : 'Please confirm the connection in your wallet.'}
+          {modal.step === 'connecting' 
+            ? 'Please confirm the connection in your wallet.'
+            : 'Setting up your connection...'
+          }
         </Text>
+        
+        {Platform.OS === 'web' && (
+          <Text style={styles.helperText}>
+            If your wallet doesn't open automatically, please check for a browser extension popup.
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -214,44 +319,75 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
     <View style={styles.modalContent}>
       <View style={styles.successContainer}>
         <FontAwesome 
-          name={isGuestMode ? "user-secret" : "check-circle"} 
+          name="check-circle" 
           size={60} 
-          color={isGuestMode ? COLORS.accent : COLORS.primary} 
+          color={COLORS.primary} 
         />
         <GlitchText text="CONNECTED!" style={styles.successText} intensity="high" />
         {account && (
-          <Text style={styles.walletAddress}>
-            {isGuestMode ? (
-              <Text style={styles.guestIndicator}>
-                GUEST MODE • Gas fees sponsored by VibesFlow
-              </Text>
-            ) : (
-              account.accountId.length > 10 ? 
+          <>
+            <Text style={styles.walletAddress}>
+              {account.accountId?.length > 10 ? 
                 `${account.accountId.substring(0, 6)}...${account.accountId.substring(account.accountId.length - 4)}` :
-                account.accountId
+                account.accountId}
+            </Text>
+            <Text style={styles.networkText}>
+              {account.network === 'metis-hyperion' ? 'Metis Hyperion' : 
+               account.network === 'near-testnet' ? 'NEAR Testnet' : 
+               'Connected'}
+            </Text>
+            
+            {/* Show network switch button if there's a network error */}
+            {walletError && walletError.includes('wrong network') && account.walletType === 'metis' && (
+              <TouchableOpacity 
+                style={styles.switchNetworkButton}
+                onPress={async () => {
+                  try {
+                    const ethereum = (window as any).ethereum;
+                    await ethereum.request({
+                      method: 'wallet_switchEthereumChain',
+                      params: [{ chainId: '0x20a55' }],
+                    });
+                  } catch (error) {
+                    console.error('Manual network switch failed:', error);
+                  }
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.switchNetworkText}>SWITCH TO METIS HYPERION</Text>
+              </TouchableOpacity>
             )}
-          </Text>
+          </>
         )}
       </View>
     </View>
   );
 
   const renderContent = () => {
-    if (account) {
+    if (connected && account) {
       return renderSuccessScreen();
     }
-    if (connecting) {
+    if (connecting || modal.step === 'connecting') {
       return renderConnectingScreen();
     }
-    return renderInitialScreen();
+
+    // Default VibesFlow connection selection
+    switch (modal.step) {
+      case 'selection':
+        return renderSelectionScreen();
+      case 'near-options':
+        return renderNearOptionsScreen();
+      default:
+        return renderSelectionScreen();
+    }
   };
 
   return (
     <Modal
       animationType="fade"
       transparent={true}
-      visible={visible}
-      onRequestClose={onClose}
+      visible={modal.isOpen}
+      onRequestClose={closeModal}
     >
       <View style={styles.modalOverlay}>
         <Animated.View style={[styles.modalContainer, { transform: [{ scale: pulse }] }]}>
@@ -264,7 +400,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
             <GlitchText text="VIBESFLOW" style={styles.modalTitle} intensity="low" />
             <TouchableOpacity 
               style={styles.closeButton}
-              onPress={onClose}
+              onPress={closeModal}
             >
               <FontAwesome name="close" size={24} color={COLORS.textSecondary} />
             </TouchableOpacity>
@@ -273,7 +409,7 @@ const ConnectModal: React.FC<ConnectModalProps> = ({ visible, onClose }) => {
           {renderContent()}
 
           <View style={styles.modalFooter}>
-            <Text style={styles.footerText}>POWERED BY NEAR</Text>
+            <Text style={styles.footerText}>POWERED BY NEAR & METIS</Text>
           </View>
 
         </Animated.View>
@@ -290,9 +426,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContainer: {
-    width: '85%',
-    maxWidth: 320,
-    maxHeight: '80%',
+    width: '90%',
+    maxWidth: 360,
+    maxHeight: '85%',
     borderRadius: 0,
     overflow: 'hidden',
     borderWidth: 1,
@@ -337,7 +473,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   walletList: {
-    maxHeight: 200,
+    maxHeight: 280,
   },
   walletButton: {
     marginVertical: 4,
@@ -466,9 +602,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
-  guestIndicator: {
-    color: COLORS.accent,
+  networkText: {
+    marginTop: 4,
+    color: COLORS.primary,
     fontSize: 12,
+    textAlign: 'center',
     fontWeight: '600',
     letterSpacing: 1,
   },
@@ -477,6 +615,13 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 16,
     textAlign: 'center',
+  },
+  helperText: {
+    fontSize: 10,
+    color: COLORS.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+    opacity: 0.7,
   },
   supportedWallets: {
     fontSize: 10,
@@ -496,6 +641,35 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: COLORS.accent,
     opacity: 0.8,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    alignSelf: 'flex-start',
+  },
+  backText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 8,
+    letterSpacing: 1,
+  },
+  switchNetworkButton: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 0, 170, 0.1)',
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    borderRadius: 4,
+  },
+  switchNetworkText: {
+    color: COLORS.accent,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 1,
   },
 });
 

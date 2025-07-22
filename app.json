@@ -5,28 +5,82 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "platforms": ["ios", "android", "web"],
     "splash": {
-      "backgroundColor": "#000000"
+      "backgroundColor": "#000000",
+      "resizeMode": "contain"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
+    "nodeModulesPath": "./node_modules",
+    "jsEngine": "hermes",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vibesflow.ai",
+      "infoPlist": {
+        "NSMotionUsageDescription": "VibesFlow uses device motion sensors to create real-time music that responds to your movements.",
+        "NSMicrophoneUsageDescription": "VibesFlow needs microphone access for audio processing features.",
+        "NSLocationWhenInUseUsageDescription": "VibesFlow may use location for enhanced user experience."
+      }
     },
     "android": {
+      "package": "com.vibesflow.ai",
       "adaptiveIcon": {
         "backgroundColor": "#000000"
       },
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.INTERNET"
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.VIBRATE"
       ]
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
     },
-    "scheme": "vibesflow"
+    "scheme": "vibesflow",
+    "extra": {
+      "eas": {
+        "projectId": "vibesflow-production"
+      }
+    },
+    "experiments": {
+      "typedRoutes": false
+    },
+    "plugins": [
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow VibesFlow to access motion sensors to create reactive music based on your movements."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "VibesFlow uses microphone for audio processing and real-time music generation."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": false,
+            "enableShrinkResourcesInReleaseBuilds": false,
+            "minSdkVersion": 21,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "34.0.0"
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ]
+    ]
   }
 }

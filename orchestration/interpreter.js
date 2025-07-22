@@ -4,6 +4,9 @@
  * OPTIMIZED FOR MAXIMUM VARIETY with psychedelic elements and ultra-sensitive response
  */
 
+// Ensure polyfills are loaded for platform compatibility (includes crypto wrapper)
+import '../configs/polyfills';
+
 export class SensorInterpreter {
   constructor() {
     this.lastInterpretation = null;

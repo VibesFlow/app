@@ -109,9 +109,12 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
     // Generate unified waveform data for the entire RTA
     const waveformData = generateUnifiedWaveform(totalDuration, validatedDurations);
 
-    const audio = Platform.OS === 'web' ? new Audio() : null;
+    // Initialize audio based on platform
+    let audio: any = null;
     
-    if (audio) {
+    if (Platform.OS === 'web') {
+      // Web Audio API
+      audio = new Audio();
       audio.crossOrigin = 'anonymous';
       audio.preload = 'auto';
       audio.volume = 0.8;
@@ -173,6 +176,104 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
           return newMap;
         });
       });
+    } else {
+      // Mobile: Use Expo AV Sound API
+      console.log('🎧 Initializing mobile audio for:', stream.rta_id);
+      audio = {
+        // Mobile audio wrapper object
+        isMobile: true,
+        currentTime: 0,
+        duration: 0,
+        volume: 0.8,
+        src: '',
+        paused: true,
+        ended: false,
+        sound: null, // Will store Expo AV Sound instance
+        
+        // Mobile-compatible methods
+        play: async function() {
+          if (!this.sound && this.src) {
+            try {
+              const { Audio } = require('expo-av');
+              const { sound } = await Audio.Sound.createAsync(
+                { uri: this.src },
+                { 
+                  shouldPlay: true,
+                  isLooping: false,
+                  volume: this.volume,
+                  rate: 1.0
+                }
+              );
+              this.sound = sound;
+              this.paused = false;
+              
+              // Set up playback status listener for mobile
+              sound.setOnPlaybackStatusUpdate((status: any) => {
+                if (status.isLoaded) {
+                  this.currentTime = (status.positionMillis || 0) / 1000;
+                  this.duration = (status.durationMillis || 0) / 1000;
+                  
+                  if (status.didJustFinish) {
+                    this.ended = true;
+                    this.paused = true;
+                    // Trigger next chunk
+                    const currentState = audioStates.get(stream.rta_id);
+                    if (currentState) {
+                      playNextChunkSeamlessly(stream.rta_id);
+                    }
+                  }
+                }
+              });
+              
+              console.log('🎵 Mobile audio playing:', this.src);
+            } catch (error) {
+              console.error('❌ Mobile audio play error:', error);
+              throw error;
+            }
+          } else if (this.sound) {
+            await this.sound.playAsync();
+            this.paused = false;
+          }
+        },
+        
+        pause: async function() {
+          if (this.sound) {
+            await this.sound.pauseAsync();
+            this.paused = true;
+          }
+        },
+        
+        load: function() {
+          // Mobile load is handled in play()
+          console.log('📱 Mobile audio load triggered for:', this.src);
+        },
+        
+        addEventListener: function(event: string, handler: any) {
+          // Store event handlers for mobile
+          if (!this.eventHandlers) {
+            this.eventHandlers = {};
+          }
+          if (!this.eventHandlers[event]) {
+            this.eventHandlers[event] = [];
+          }
+          this.eventHandlers[event].push(handler);
+        },
+        
+        removeEventListener: function(event: string, handler: any) {
+          // Remove event handlers
+          if (this.eventHandlers && this.eventHandlers[event]) {
+            this.eventHandlers[event] = this.eventHandlers[event].filter((h: any) => h !== handler);
+          }
+        },
+        
+        // Cleanup
+        unload: async function() {
+          if (this.sound) {
+            await this.sound.unloadAsync();
+            this.sound = null;
+          }
+        }
+      };
     }
 
     return {
@@ -352,7 +453,12 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
     if (playingRTA && playingRTA !== stream.rta_id) {
       const currentState = audioStates.get(playingRTA);
       if (currentState?.audio) {
-        currentState.audio.pause();
+        if (Platform.OS === 'web') {
+          currentState.audio.pause();
+        } else {
+          // Mobile pause
+          await currentState.audio.pause();
+        }
         setAudioStates(prev => {
           const newMap = new Map(prev);
           const state = newMap.get(playingRTA);
@@ -373,13 +479,17 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
     }
 
     if (!state.audio) {
-      Alert.alert('Browser Error', 'Audio not supported on this platform');
+      Alert.alert('Audio Error', 'Audio system not available');
       return;
     }
 
     if (state.isPlaying) {
       // Pause
-      state.audio.pause();
+      if (Platform.OS === 'web') {
+        state.audio.pause();
+      } else {
+        await state.audio.pause();
+      }
       setAudioStates(prev => {
         const newMap = new Map(prev);
         newMap.set(stream.rta_id, { ...state!, isPlaying: false });
@@ -395,16 +505,18 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
 
       setPlayingRTA(stream.rta_id);
       
-      // Start preloading all chunks in parallel (non-blocking)
-      preloadAllChunks(stream.rta_id);
+      // Start preloading all chunks in parallel (non-blocking) - only for web
+      if (Platform.OS === 'web') {
+        preloadAllChunks(stream.rta_id);
+      }
       
       if (!state.audio.src) {
         // Load and play first chunk immediately
         console.log(`🚀 Starting unified playback for ${stream.rta_id} (${state.chunkUrls.length} chunks, ${formatTime(state.totalDuration)} total)`);
         
-        // Use preloaded audio if available, otherwise use main audio
-        const firstAudio = state.preloadedAudios[0] || state.audio;
-        if (firstAudio !== state.audio) {
+        // Use preloaded audio if available (web only), otherwise use main audio
+        const firstAudio = (Platform.OS === 'web' && state.preloadedAudios[0]) ? state.preloadedAudios[0] : state.audio;
+        if (firstAudio !== state.audio && Platform.OS === 'web') {
           state.audio = firstAudio;
         } else {
           state.audio.src = state.chunkUrls[0];
@@ -421,9 +533,37 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
           return newMap;
         });
 
-        state.audio.addEventListener('canplay', async () => {
+        if (Platform.OS === 'web') {
+          // Web audio handling
+          state.audio.addEventListener('canplay', async () => {
+            try {
+              await state!.audio!.play();
+              setAudioStates(prev => {
+                const newMap = new Map(prev);
+                const currentState = newMap.get(stream.rta_id);
+                if (currentState) {
+                  newMap.set(stream.rta_id, { 
+                    ...currentState, 
+                    isPlaying: true, 
+                    isLoading: false 
+                  });
+                }
+                return newMap;
+              });
+              console.log(`🎶 Unified playback started for ${stream.rta_id}`);
+            } catch (error) {
+              console.error('❌ Failed to play audio:', error);
+              Alert.alert('Playback Error', 'Failed to start audio playback');
+            }
+          }, { once: true });
+
+          if (firstAudio === state.audio) {
+            state.audio.load();
+          }
+        } else {
+          // Mobile audio handling
           try {
-            await state!.audio!.play();
+            await state.audio.play();
             setAudioStates(prev => {
               const newMap = new Map(prev);
               const currentState = newMap.get(stream.rta_id);
@@ -436,20 +576,20 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
               }
               return newMap;
             });
-            console.log(`🎶 Unified playback started for ${stream.rta_id}`);
+            console.log(`🎶 Mobile unified playback started for ${stream.rta_id}`);
           } catch (error) {
-            console.error('❌ Failed to play audio:', error);
-            Alert.alert('Playback Error', 'Failed to start audio playback');
+            console.error('❌ Failed to play mobile audio:', error);
+            Alert.alert('Playback Error', 'Failed to start mobile audio playback');
           }
-        }, { once: true });
-
-        if (firstAudio === state.audio) {
-          state.audio.load();
         }
       } else {
         // Resume playback
         try {
-          await state.audio.play();
+          if (Platform.OS === 'web') {
+            await state.audio.play();
+          } else {
+            await state.audio.play();
+          }
           setAudioStates(prev => {
             const newMap = new Map(prev);
             newMap.set(stream.rta_id, { ...state!, isPlaying: true });
