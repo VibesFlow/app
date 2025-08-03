@@ -105,7 +105,7 @@ config.transformer = {
   },
 };
 
-// CRITICAL: Add resolver to handle specific cases like cipher-base
+// Add resolver to handle specific cases like cipher-base
 config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];
 config.resolver.hasteImplModulePath = undefined;
 
@@ -176,18 +176,13 @@ if (process.env.EXPO_PLATFORM === 'web') {
   config.resolver.alias['_stream_duplex'] = 'readable-stream/duplex';
   config.resolver.alias['_stream_transform'] = 'readable-stream/transform';
   config.resolver.alias['_stream_passthrough'] = 'readable-stream/passthrough';
-  
-  // Mobile fallbacks for Dynamic Labs (though not supported)
-  config.resolver.alias['@dynamic-labs/sdk-react-core'] = false;
-  config.resolver.alias['@dynamic-labs/ethereum'] = false;
-  config.resolver.alias['@dynamic-labs/wagmi-connector'] = false;
 }
 
 // Enhanced Metro configuration for better performance and React Native compatibility
 config.maxWorkers = 2; // Limit workers for stability
 config.resetCache = false; // Keep cache for faster builds
 
-// CRITICAL: Ensure node_modules resolution works properly for React Native polyfills
+// Ensure node_modules resolution works properly for React Native polyfills
 config.resolver.nodeModulesPaths = [
   path.resolve(__dirname, 'node_modules'),
   path.resolve(__dirname, '../node_modules')

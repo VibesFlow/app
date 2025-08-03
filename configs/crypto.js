@@ -1,13 +1,12 @@
 /**
  * crypto.js - Universal Crypto wrapper
  * Provides seamless crypto functionality across Web, iOS, and Android
- * Production-ready solution for VibesFlow cross-platform deployment
  */
 
 import { Platform } from 'react-native';
 
 // Import base requirements
-import 'react-native-get-random-values'; // Modern random values for mobile
+import 'react-native-get-random-values'; // for mobile
 
 let crypto;
 let Buffer;
@@ -24,7 +23,6 @@ try {
 
 // Platform-specific crypto initialization
 if (Platform.OS === 'web') {
-  // WEB PLATFORM: Use crypto-browserify (already working in production)
   try {
     crypto = require('crypto-browserify');
     console.log('✅ Crypto-browserify loaded for web platform');

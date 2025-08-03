@@ -10,7 +10,7 @@ export const CONTRACTS = {
   NETWORK: process.env.EXPO_PUBLIC_NEAR_NETWORK || 'testnet'
 };
 
-// ✅ PRODUCTION: Using correct Phala Cloud URLs (Fixed Node.js 20)
+// Using correct Phala Cloud URLs (Fixed Node.js 20)
 export const WORKERS = {
   CHUNKER: process.env.EXPO_PUBLIC_CHUNKER_URL || 'https://8ec0fb580f553033b2a2a6102f562fe7cdbb9409-3000.dstack-prod5.phala.network',
   SWAPPER: process.env.EXPO_PUBLIC_SWAPPER_URL || 'https://swapper.placeholder.network',
@@ -58,7 +58,7 @@ export const MPC_CONFIG = {
 export const FILECOIN_CONFIG = {
   NETWORK: process.env.EXPO_PUBLIC_FILECOIN_NETWORK || 'calibration',
   RPC_URL: process.env.EXPO_PUBLIC_FILECOIN_RPC_URL || 'https://api.calibration.node.glif.io/rpc/v1',
-  PRIVATE_KEY: process.env.EXPO_PUBLIC_FILECOIN_PRIVATE_KEY, // Set in .env for production
+  PRIVATE_KEY: process.env.EXPO_PUBLIC_FILECOIN_PRIVATE_KEY,
 };
 
 // Worker Code Hashes for verification

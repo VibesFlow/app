@@ -230,7 +230,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
         }
       }
 
-      // Launch vibestream with either real or fallback data
+      // Launch vibestream
       onClose();
       onLaunchVibePlayer(fullTokenId, rtaConfig);
 

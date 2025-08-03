@@ -18,13 +18,8 @@ import GlitchContainer from './ui/GlitchContainer';
 import GlitchText from './ui/GlitchText';
 import { useFilCDN } from '../context/filcdn';
 
-// Import orchestration modules
-import { 
-  webOrchestrator, 
-  mobileOrchestrator, 
-  sensorInterpreter, 
-  lyriaOrchestrator 
-} from '../orchestration';
+// Import new orchestration integration
+import { orchestrationIntegration } from '../orchestration/coordinator';
 
 // Import audio chunking service
 import { audioChunkService } from './chunks';
@@ -83,7 +78,7 @@ const LYRIA_API_KEY = process.env.EXPO_PUBLIC_LYRIA_API_KEY || '';
 
 const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = 'live' }) => {
   // =============================================================================
-  // SECTION: STATE MANAGEMENT (ENHANCED WITH RTA PLAYBACK)
+  // STATE MANAGEMENT (WITH RTA PLAYBACK)
   // =============================================================================
   const [isInitialized, setIsInitialized] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -127,7 +122,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   const rtaProgressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // =============================================================================
-  // SECTION: UI ANIMATIONS
+  // UI ANIMATIONS
   // =============================================================================
   const waveformAnimation = useRef(new Animated.Value(0)).current;
   const streamAnimation = useRef(new Animated.Value(0)).current;
@@ -141,86 +136,28 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   // Pure music player state - no blockchain tracking
   
   // =============================================================================
-  // SECTION: ORCHESTRATION INITIALIZATION
+  // STREAMLINED ORCHESTRATION INITIALIZATION
   // =============================================================================
   useEffect(() => {
     const initializeOrchestration = async () => {
       try {
-        console.log('Initializing VibesFlow orchestration system...');
+        console.log('🚀 Initializing orchestration...');
         
-        // Initialize Lyria orchestrator
-        if (lyriaOrchestrator) {
-          const lyriaSuccess = await lyriaOrchestrator.initialize(LYRIA_API_KEY);
-          if (!lyriaSuccess) {
-            console.warn('Lyria orchestrator initialization failed');
-          }
-
-          // Set up audio chunk handling
-          lyriaOrchestrator.onAudioChunk(async (audioData) => {
-            if (Platform.OS === 'web' && webOrchestrator) {
-              await webOrchestrator.playAudioChunk(audioData);
-            }
-            // Mobile audio handling could be added here in the future
-          });
-
-          // Set up raw audio chunk handling for chunking service
-          lyriaOrchestrator.onAudioChunk((audioData) => {
-            audioChunkService.addAudioData(audioData);
-          });
-
-          // Set up error handling
-          lyriaOrchestrator.onError((error) => {
-            console.error('Lyria error:', error);
-          });
-
-          // Set up state change handling
-          lyriaOrchestrator.onStateChange((state) => {
-            setIsStreaming(state.streaming);
-          });
+        // Note: orchestrationIntegration should already be initialized with wallet
+        // by the parent component. We just need to start the orchestration.
+        
+        const status = orchestrationIntegration.getStatus();
+        if (!status.initialized) {
+          console.warn('⚠️ Orchestration integration not initialized - sensors may not work');
+        } else {
+          console.log('✅ Orchestration integration ready:', status);
         }
-
-        // Initialize web orchestrator
-        if (Platform.OS === 'web' && webOrchestrator) {
-          await webOrchestrator.initializeWebAudio();
-          
-          // Set up sensor data handling from web
-          webOrchestrator.onSensorData((data) => {
-            if (!data.isDecay) {
-              setSensorData(data);
-              processRealTimeSensorData(data);
-            } else {
-              // Apply decay to current sensor data
-              setSensorData(prev => ({
-                x: prev.x * 0.95,
-                y: prev.y * 0.95,
-                z: Math.max(0.05, prev.z * 0.98),
-                timestamp: Date.now(),
-                source: 'decay'
-              }));
-            }
-          });
-          
-          await webOrchestrator.initializeSensors();
-        } else if (mobileOrchestrator) {
-          // Initialize mobile orchestrator
-          mobileOrchestrator.onSensorData((data) => {
-            setSensorData(data);
-            processRealTimeSensorData(data);
-            
-            // Update pattern for mobile visualization
-            if (data.pattern) {
-              setCurrentPattern(data.pattern);
-            }
-          });
-          
-          await mobileOrchestrator.initializeSensors();
-        }
-
+        
         setIsInitialized(true);
-        console.log('Orchestration system initialized successfully');
+        console.log('✅ New orchestration architecture ready');
 
       } catch (error) {
-        console.error('Orchestration initialization failed:', error);
+        console.error('❌ Orchestration initialization failed:', error);
         setIsInitialized(true); // Still allow UI to function
       }
     };
@@ -228,7 +165,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     initializeOrchestration();
 
     return () => {
-      // Cleanup all orchestrators with null checks
+      // Cleanup intervals
       if (updateIntervalRef.current) {
         clearInterval(updateIntervalRef.current);
         updateIntervalRef.current = null;
@@ -238,48 +175,31 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         rtaProgressIntervalRef.current = null;
       }
       
-      // Clean up with null safety
-      if (webOrchestrator && typeof webOrchestrator.cleanup === 'function') {
-        webOrchestrator.cleanup();
-      }
-      if (mobileOrchestrator && typeof mobileOrchestrator.cleanup === 'function') {
-        mobileOrchestrator.cleanup();
-      }
-      if (lyriaOrchestrator && typeof lyriaOrchestrator.cleanup === 'function') {
-        lyriaOrchestrator.cleanup();
-      }
+      // Cleanup orchestration integration
+      orchestrationIntegration.cleanup();
     };
   }, []);
 
   // =============================================================================
-  // SECTION: REAL-TIME PROCESSING
+  // REAL-TIME PROCESSING
   // =============================================================================
   const processRealTimeSensorData = useCallback(async (sensorData: SensorData) => {
     try {
-      // Interpret sensor data using the modular interpreter
-      const interpretation = sensorInterpreter.interpretSensorData(sensorData);
-      
-      // Send interpretation to Lyria orchestrator
-      if (isStreaming && lyriaOrchestrator) {
-        await lyriaOrchestrator.updateStream(interpretation);
-      }
-      
-      // Update UI based on interpretation
-      const magnitude = interpretation.magnitude;
+      // Note: Sensor data is automatically sent to server by orchestrationIntegration
+      // We just need to update the UI based on sensor data
+      const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
       setCurrentAmplitude(Math.min(magnitude * 0.8 + 0.2, 1));
       setCurrentFrequency(1 + Math.abs(sensorData.x) * 3);
       
     } catch (error) {
       console.warn('Real-time processing error:', error);
     }
-  }, [isStreaming]);
+  }, []);
 
   // =============================================================================
-  // SECTION: STREAMING CONTROL
+  // STREAMING CONTROL
   // =============================================================================
   const startVibestream = async () => {
-    if (isStreaming) return;
-
     try {
       setIsStreaming(true);
       startTimeRef.current = Date.now();
@@ -290,37 +210,29 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         audioChunkService.reloadBackendUrl();
         audioChunkService.startCollecting(rtaID, config.creator);
         console.log('🎵 Audio chunk service started for RTA:', rtaID);
+        
+        // Start vibestream in orchestration (enables sensor data collection)
+        orchestrationIntegration.startVibestream(rtaID, audioChunkService);
       }
 
-      // Start Lyria orchestration with proper configuration
-      if (lyriaOrchestrator) {
-        await lyriaOrchestrator.connect();
-        
-        // Create proper interpretation for Lyria
-        const interpretation = {
-          weightedPrompts: [
-            { text: "Electronic dance music", weight: 0.4 },
-            { text: "Rave party atmosphere", weight: 0.3 },
-            { text: "High energy beats", weight: 0.3 }
-          ],
-          lyriaConfig: {
-            bpm: 128,
-            density: 0.7,
-            brightness: 0.8,
-            guidance: 0.5
-          },
-          stylePrompt: "Electronic dance music with rave party atmosphere and high energy beats",
-          hasTransition: true
-        };
-        
-        await lyriaOrchestrator.startStream(interpretation);
+      // Start orchestration - this will:
+      // 1. Connect directly to Lyria (client-side)
+      // 2. Start sensor data collection (only now that vibestream is active)
+      // 3. Begin server interpretation communication
+      // NO client-side prompts - orchestration will wait for server-generated prompts
+      const success = await orchestrationIntegration.startOrchestration(null);
+      
+      if (!success) {
+        console.error('❌ Failed to start orchestration');
+        setIsStreaming(false);
+        return;
       }
       
-      console.log('✅ Vibestream started successfully');
+      console.log('✅ New orchestration architecture vibestream started successfully');
 
     } catch (error) {
       setIsStreaming(false);
-      console.error('Failed to start vibestream:', error);
+      console.error('❌ Failed to start vibestream:', error);
     }
   };
 
@@ -332,26 +244,27 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
       updateIntervalRef.current = null;
     }
     
+    // Stop vibestream (this stops sensor data collection)
+    orchestrationIntegration.stopVibestream();
+    
     // Stop audio chunk service (will process remaining chunks)
     await audioChunkService.stopCollecting();
     console.log('🛑 Audio chunk service stopped');
     
-    // Stop Lyria session
-    if (lyriaOrchestrator) {
-      await lyriaOrchestrator.stop();
-      await lyriaOrchestrator.disconnect();
-    }
+    // Stop orchestration - this will:
+    // 1. Stop Lyria session (client-side)
+    // 2. Close server connection
+    // 3. Cleanup sensors
+    await orchestrationIntegration.stopOrchestration();
     
-    // Pure music player cleanup - no blockchain notifications needed
-    
-    console.log('Vibestream closed');
+    console.log('✅ New orchestration architecture vibestream closed');
     onBack(); // Navigate to user profile
   };
 
   // VibePlayer is now pure - no blockchain/worker management needed
 
   // =============================================================================
-  // SECTION: AUTO-START OPTIMIZATION
+  // AUTO-START OPTIMIZATION
   // =============================================================================
   useEffect(() => {
     if (isInitialized && !isStreaming) {
@@ -361,7 +274,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   }, [isInitialized]);
 
   // =============================================================================
-  // SECTION: UI EFFECTS AND ANIMATIONS
+  // UI EFFECTS AND ANIMATIONS
   // =============================================================================
   useEffect(() => {
     let animationFrame: number;
@@ -495,7 +408,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   }, [waveformAnimation, glitchAnimation, isStreaming]);
 
   // =============================================================================
-  // SECTION: UI EVENT HANDLERS
+  // UI EVENT HANDLERS
   // =============================================================================
   const handleWaveformClick = (event: any) => {
     const { locationX } = event.nativeEvent;
@@ -519,7 +432,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   };
 
   // =============================================================================
-  // SECTION: LOADING STATE
+  // LOADING STATE
   // =============================================================================
   if (!isInitialized) {
     return (
@@ -532,7 +445,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   }
 
   // =============================================================================
-  // SECTION: MAIN UI RENDER
+  // : MAIN UI RENDER
   // =============================================================================
   return (
     <View style={styles.container}>

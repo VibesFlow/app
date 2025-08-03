@@ -689,7 +689,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       const mode = config.mode; // 'solo' or 'group'
       const storeToFilecoin = config.store_to_filecoin;
       const distance = BigInt(config.distance || 0);
-      // Upload metadata to Pinata and get real IPFS URI
+      // Upload metadata to Pinata and get IPFS URI
       const metadataURI = await uploadMetadataToPinata(rtaId, config);
       const ticketsAmount = BigInt(config.ticket_amount || 0);
       

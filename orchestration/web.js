@@ -2,10 +2,10 @@
  * WEB.JS - Web Platform Orchestration Module
  * Handles browser-specific sensor inputs and audio outputs for VibesFlow
  * Optimized for ultra-low latency real-time rave experience with ROBUST AUDIO BUFFERING
+ * 
  */
 
 import { Platform } from 'react-native';
-
 
 export class WebOrchestrator {
   constructor() {
@@ -18,7 +18,7 @@ export class WebOrchestrator {
     this.lastMouseX = 0;
     this.lastMouseY = 0;
     this.lastMouseTime = Date.now();
-    this.mouseSensitivityMultiplier = 8.0; // ULTRA-HIGH sensitivity (doubled from 4.0)
+    this.mouseSensitivityMultiplier = 8.0; // ULTRA-HIGH sensitivity
     this.cameraStream = null;
     this.videoElement = null;
     this.canvas = null;
@@ -39,6 +39,7 @@ export class WebOrchestrator {
     this.adaptiveSensitivity = true;
     this.currentSensitivityBoost = 1.0;
     this.isBuffering = false; // Control audio buffering loop
+    this.lastDeviceMotion = null; // Store last device motion data for rich sensor enhancement
 
     // Initialize immediately for web platform
     if (Platform.OS === 'web') {
@@ -69,7 +70,7 @@ export class WebOrchestrator {
       // Mark as initialized so audio can be played
       this.isInitialized = true;
       
-      console.log('🎧 Ultra-low latency Web Audio Context initialized');
+      console.log('🎧 Ultra-low latency Web Audio Context initialized for server audio');
       return true;
     } catch (error) {
       console.error('Web Audio initialization failed:', error);
@@ -77,7 +78,7 @@ export class WebOrchestrator {
     }
   }
 
-  // ROBUST AUDIO BUFFERING SYSTEM for seamless Lyria chunk playback
+  // ROBUST AUDIO BUFFERING SYSTEM for seamless server audio chunk playback
   startAudioBuffering() {
     if (this.isBuffering) return; // Already running
     
@@ -95,8 +96,12 @@ export class WebOrchestrator {
       // Process queued audio buffers
       while (this.audioBufferQueue.length > 0 && this.nextStartTime < currentTime + this.bufferLookAhead) {
         const audioBuffer = this.audioBufferQueue.shift();
-        this.playBufferedAudio(audioBuffer, this.nextStartTime);
-        this.nextStartTime += audioBuffer.duration;
+        if (audioBuffer && audioBuffer.duration) {
+          this.playBufferedAudio(audioBuffer, this.nextStartTime);
+          this.nextStartTime += audioBuffer.duration;
+        } else {
+          console.warn('Invalid audio buffer in queue, skipping');
+        }
       }
       
       requestAnimationFrame(scheduleAudio);
@@ -151,253 +156,230 @@ export class WebOrchestrator {
     this.sensorCallbacks.push(callback);
   }
 
-  // Emit sensor data to all registered callbacks
+  // Emit sensor data to all registered callbacks with ULTRA-LOW latency
   emitSensorData(sensorData) {
+    const now = Date.now();
+    this.lastMovementTime = now;
+    
+    // Update adaptive sensitivity
+    this.updateAdaptiveSensitivity();
+
+    // Add movement to history
+    this.movementHistory.push(now);
+
+    // ENHANCE sensor data with additional rich features for backend analysis
+    const enhancedSensorData = {
+      ...sensorData,
+      // Ensure all backend-expected fields are present
+      pressure: sensorData.pressure || 0.5,
+      tiltX: sensorData.tiltX || 0,
+      tiltY: sensorData.tiltY || 0,
+      force: sensorData.force || 0,
+      // Add device motion if available
+      deviceMotion: this.lastDeviceMotion || null,
+      // Rich movement context
+      movementHistory: this.movementHistory.slice(-5), // Last 5 movement timestamps
+      sensitivityBoost: this.currentSensitivityBoost,
+      adaptiveSensitivity: this.adaptiveSensitivity
+    };
+
+    // Debug log rich sensor data occasionally
+    if (Math.random() < 0.02) { // 2% of the time
+      console.log('🎛️ Rich sensor data generated:', {
+        source: enhancedSensorData.source,
+        x: enhancedSensorData.x?.toFixed(3),
+        y: enhancedSensorData.y?.toFixed(3), 
+        z: enhancedSensorData.z?.toFixed(3),
+        pressure: enhancedSensorData.pressure,
+        tiltX: enhancedSensorData.tiltX,
+        force: enhancedSensorData.force,
+        velocity: enhancedSensorData.velocity,
+        acceleration: enhancedSensorData.acceleration,
+        hasFrequencyData: !!enhancedSensorData.frequencyData
+      });
+    }
+
+    // ULTRA-LOW LATENCY sensor callback emission
     this.sensorCallbacks.forEach(callback => {
       try {
-        callback(sensorData);
+        callback(enhancedSensorData);
       } catch (error) {
-        console.warn('Sensor callback error:', error);
+        console.warn('Web sensor callback error:', error);
       }
     });
   }
 
-  // ULTRA-HIGH SENSITIVITY mouse tracking for maximum responsiveness
+  // ULTRA-SENSITIVE mouse tracking for IMMEDIATE music response
   initializeMouseTracking() {
-    if (Platform.OS !== 'web') return;
+    if (Platform.OS !== 'web') return null;
 
-    const handleMouseMove = (event) => {
+    const handleMouseMove = (e) => {
       const currentTime = Date.now();
-      const deltaTime = Math.max(currentTime - this.lastMouseTime, 1);
-      const deltaX = event.clientX - this.lastMouseX;
-      const deltaY = event.clientY - this.lastMouseY;
+      const deltaTime = currentTime - this.lastMouseTime;
       
-      // Update adaptive sensitivity
-      this.updateAdaptiveSensitivity();
-      
-      // ULTRA-HIGH sensitivity velocity calculation with adaptive boost
-      const sensitivityFactor = this.mouseSensitivityMultiplier * this.currentSensitivityBoost;
-      const velocityX = (deltaX / deltaTime) * 300 * sensitivityFactor; // Increased base multiplier
-      const velocityY = (deltaY / deltaTime) * 300 * sensitivityFactor;
-      const velocityMagnitude = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
-      
-      // MICRO-movement detection with amplified response
-      const rawDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      const microMovementDetected = rawDistance > this.microMovementThreshold;
-      
-      if (microMovementDetected) {
-        this.lastMovementTime = currentTime;
-        this.movementHistory.push(currentTime);
-        
-        // Enhanced intensity calculation for micro-movements
-        const baseIntensity = Math.min(velocityMagnitude * 0.6, 2.0); // Higher response range
-        const microBoost = rawDistance < 1.0 ? 2.0 : 1.0; // Boost for tiny movements
+      if (deltaTime > 0) {
+        // Calculate ULTRA-ENHANCED velocity and acceleration with sensitivity boost
+        const deltaX = (e.clientX - this.lastMouseX) * this.currentSensitivityBoost;
+        const deltaY = (e.clientY - this.lastMouseY) * this.currentSensitivityBoost;
+        const velocity = Math.sqrt(deltaX ** 2 + deltaY ** 2) / deltaTime;
+        const normalizedVelocity = Math.min(velocity * this.mouseSensitivityMultiplier, 10);
+
+        // Calculate MICRO-MOVEMENT detection
+        const microMovement = Math.sqrt(deltaX ** 2 + deltaY ** 2);
+        const isMicroMovement = microMovement > this.microMovementThreshold;
+
+        // Exponential amplification for sensitivity
+        const amplifiedVelocity = normalizedVelocity ** 1.3;
+
+              // Enhanced sensor data
+      const acceleration = velocity - this.lastVelocity || 0;
+      const jerk = acceleration - this.lastAcceleration || 0;
       
       const sensorData = {
-          x: Math.max(-12, Math.min(12, velocityX * microBoost)), // Extended range
-          y: Math.max(-12, Math.min(12, velocityY * microBoost)),
-          z: Math.max(baseIntensity * 0.8, Math.min(12, velocityMagnitude * 1.5 * microBoost)),
+        x: deltaX * 0.08 * this.mouseSensitivityMultiplier,
+        y: deltaY * 0.08 * this.mouseSensitivityMultiplier,
+        z: amplifiedVelocity * 0.15,
         timestamp: currentTime,
-          source: 'mouse',
-          microMovement: rawDistance < 1.0,
-          adaptiveBoost: this.currentSensitivityBoost
+        source: 'mouse',
+        velocity: normalizedVelocity,
+        acceleration: acceleration,
+        jerk: jerk,
+        pressure: e.pressure || 0.5, // Pointer pressure API
+        tiltX: e.tiltX || 0, // Stylus tilt
+        tiltY: e.tiltY || 0,
+        twist: e.twist || 0, // Stylus rotation
+        pointerType: e.pointerType || 'mouse',
+        isMicroMovement,
+        sensitivityBoost: this.currentSensitivityBoost,
+        screenPosition: { x: e.screenX, y: e.screenY },
+        clientPosition: { x: e.clientX, y: e.clientY }
       };
-
-      this.emitSensorData(sensorData);
-      }
       
-      this.lastMouseX = event.clientX;
-      this.lastMouseY = event.clientY;
-      this.lastMouseTime = currentTime;
+      this.lastVelocity = velocity;
+      this.lastAcceleration = acceleration;
+
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        this.lastMouseTime = currentTime;
+
+        this.emitSensorData(sensorData);
+      }
     };
 
-    // Use passive listeners for maximum performance + higher frequency sampling
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     
-    // Additional mouse events for enhanced sensitivity
-    window.addEventListener('mousedown', (event) => {
-      const intensity = 2.0 + Math.random() * 1.2; // Increased intensity
-      this.emitSensorData({
-        x: (Math.random() - 0.5) * intensity * 3,
-        y: (Math.random() - 0.5) * intensity * 3,
-        z: intensity * 2.0,
-        timestamp: Date.now(),
-        source: 'mouse_click',
-        button: event.button
-      });
-    }, { passive: true });
-
-    // Mouse wheel for additional input variety
-    window.addEventListener('wheel', (event) => {
-      const wheelIntensity = Math.abs(event.deltaY) / 100;
-      this.emitSensorData({
-        x: event.deltaX / 100,
-        y: wheelIntensity * Math.sign(event.deltaY),
-        z: wheelIntensity * 1.5,
-        timestamp: Date.now(),
-        source: 'mouse_wheel'
-      });
-    }, { passive: true });
-
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mousedown', this.handleMouseDown);
-      window.removeEventListener('wheel', this.handleMouseWheel);
     };
   }
 
-  // ULTRA-SENSITIVE camera motion detection with upgraded resolution
+  // ENHANCED camera motion detection for immersive visual-audio feedback
   async initializeCameraMotion() {
     if (Platform.OS !== 'web') return null;
 
     try {
-      // Request high-performance camera stream with enhanced settings
-      this.cameraStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          width: { ideal: 640 }, // Higher resolution for better sensitivity
-          height: { ideal: 480 },
-          frameRate: { ideal: 30, max: 60 } // Higher FPS for ultra-responsiveness
-        } 
+      this.cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          frameRate: { ideal: 30 }
+        }
       });
-      
+
       this.videoElement = document.createElement('video');
       this.videoElement.srcObject = this.cameraStream;
-      this.videoElement.muted = true;
-      await this.videoElement.play();
-      
+      this.videoElement.play();
+
       this.canvas = document.createElement('canvas');
-      this.canvas.width = 640;
-      this.canvas.height = 480;
-      this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
-      
-      const detectMotion = () => {
-        if (!this.videoElement || !this.canvas || !this.ctx) return;
-        
-        this.ctx.drawImage(this.videoElement, 0, 0, 640, 480);
-        const currentImageData = this.ctx.getImageData(0, 0, 640, 480);
-        
-        if (this.previousImageData) {
-          let totalDiff = 0;
-          let maxDiff = 0;
-          const pixels = currentImageData.data;
-          const prevPixels = this.previousImageData.data;
-          
-          // Enhanced motion calculation with higher sensitivity
-          for (let i = 0; i < pixels.length; i += 12) { // Increased sampling density
-            const diff = Math.abs(pixels[i] - prevPixels[i]) + 
-                        Math.abs(pixels[i + 1] - prevPixels[i + 1]) + 
-                        Math.abs(pixels[i + 2] - prevPixels[i + 2]);
-            totalDiff += diff;
-            maxDiff = Math.max(maxDiff, diff);
-          }
-          
-          const motionIntensity = totalDiff / (640 * 480 * 3 / 12);
-          const normalizedMotion = Math.min(motionIntensity / 15, 8); // ULTRA-HIGH sensitivity
-          const peakMotion = Math.min(maxDiff / 30, 4); // Peak motion detection
-          
-          // MICRO-movement detection threshold (lowered from 0.01 to 0.005)
-          if (normalizedMotion > 0.005) {
-            this.lastMovementTime = Date.now();
-            
+      this.canvas.width = 320;
+      this.canvas.height = 240;
+      this.ctx = this.canvas.getContext('2d');
+
+      this.motionInterval = setInterval(() => {
+        if (this.videoElement.readyState === this.videoElement.HAVE_ENOUGH_DATA) {
+          this.ctx.drawImage(this.videoElement, 0, 0, 320, 240);
+          const currentImageData = this.ctx.getImageData(0, 0, 320, 240);
+
+          if (this.previousImageData) {
+            let totalDiff = 0;
+            const pixels = currentImageData.data.length;
+
+            // Enhanced motion detection algorithm
+            for (let i = 0; i < pixels; i += 16) { // Sample every 4th pixel for performance
+              const diff = Math.abs(currentImageData.data[i] - this.previousImageData.data[i]);
+              totalDiff += diff;
+            }
+
+            const averageDiff = totalDiff / (pixels / 16);
+            const motionIntensity = Math.min(averageDiff / 30, 5); // Enhanced sensitivity range
+
+            // ULTRA-SENSITIVE camera motion with enhanced responsiveness
             const sensorData = {
-              x: normalizedMotion * 1.5 * (Math.random() - 0.5),
-              y: normalizedMotion * 1.2,
-              z: Math.max(normalizedMotion * 3.0, peakMotion * 2.0), // Enhanced Z response
+              x: (Math.random() - 0.5) * motionIntensity * 0.6,
+              y: (Math.random() - 0.5) * motionIntensity * 0.6,
+              z: motionIntensity * 0.8, // Enhanced camera Z-axis sensitivity
               timestamp: Date.now(),
               source: 'camera',
-              motionIntensity: normalizedMotion,
-              peakMotion: peakMotion
+              motionIntensity: motionIntensity,
+              isSignificantMotion: motionIntensity > 0.3
             };
+
             this.emitSensorData(sensorData);
           }
+
+          this.previousImageData = currentImageData;
         }
-        
-        this.previousImageData = currentImageData;
+      }, 33); // ~30 FPS for responsive camera motion
+
+      return () => {
+        this.cleanupCameraMotion();
       };
-      
-      // HIGHER FREQUENCY motion detection (increased from 33ms to 25ms)
-      this.motionInterval = setInterval(detectMotion, 25); // 40 FPS
-      
-      return () => this.cleanupCameraMotion();
-      
     } catch (error) {
-      console.warn('Camera access denied or not available:', error);
+      console.warn('Camera motion initialization failed:', error);
       return null;
     }
   }
 
-  // ULTRA-SENSITIVE keyboard activity detection with enhanced key mapping
+  // ULTRA-RESPONSIVE keyboard tracking for rhythmic input
   initializeKeyboardTracking() {
-    if (Platform.OS !== 'web') return;
+    if (Platform.OS !== 'web') return null;
 
-    const handleKeyEvent = (event, eventType) => {
-      // Map different key types to different intensities and patterns
-      let keyIntensity = 1.0;
-      let xVariation = 0;
-      let yVariation = 0;
-      let keyType = 'other';
-      
-      // Enhanced key type mapping with specific musical responses
-      if (event.code.startsWith('Key')) {
-        // Letter keys - harmonic response with vowel/consonant distinction
-        keyType = 'letter';
-        const char = event.code.slice(3);
-        const isVowel = ['A', 'E', 'I', 'O', 'U'].includes(char);
-        keyIntensity = isVowel ? 1.5 + Math.random() * 1.2 : 1.0 + Math.random() * 0.8;
-        xVariation = (event.code.charCodeAt(3) - 65) / 26 * 6 - 3; // A-Z mapped to -3 to +3
-        yVariation = isVowel ? 0.5 + Math.random() * 0.8 : Math.random() * 0.4;
-      } else if (event.code.startsWith('Digit')) {
-        // Number keys - rhythmic response with mathematical harmonics
-        keyType = 'number';
-        const digit = parseInt(event.code.slice(-1));
-        keyIntensity = 1.8 + Math.random() * 1.0;
-        xVariation = Math.sin(digit * Math.PI / 5) * 3; // Harmonic mapping
-        yVariation = digit / 10 * 5 - 2.5; // 0-9 mapped to -2.5 to +2.5
-      } else if (event.code === 'Space') {
-        // Spacebar - massive energy burst with chaos
-        keyType = 'space';
-        keyIntensity = 3.5 + Math.random() * 1.5;
-        xVariation = (Math.random() - 0.5) * 8;
-        yVariation = (Math.random() - 0.5) * 8;
-      } else if (event.code.startsWith('Arrow')) {
-        // Arrow keys - directional mapping
-        keyType = 'arrow';
-        keyIntensity = 1.4 + Math.random() * 0.8;
-        switch (event.code) {
-          case 'ArrowUp': yVariation = 2.5; break;
-          case 'ArrowDown': yVariation = -2.5; break;
-          case 'ArrowLeft': xVariation = -2.5; break;
-          case 'ArrowRight': xVariation = 2.5; break;
-        }
-      } else if (['Enter', 'Tab', 'Escape', 'Backspace'].includes(event.code)) {
-        // Special keys - punctuation in music
-        keyType = 'special';
-        keyIntensity = 2.0 + Math.random() * 1.0;
-        xVariation = (Math.random() - 0.5) * 4;
-        yVariation = (Math.random() - 0.5) * 4;
-      } else {
-        // Other keys - moderate response
-        keyType = 'other';
-        keyIntensity = 1.0 + Math.random() * 0.8;
-        xVariation = (Math.random() - 0.5) * 3;
-        yVariation = (Math.random() - 0.5) * 3;
+    let activeKeys = new Set();
+    let lastKeyTime = Date.now();
+    let keyVelocityAccumulator = 0;
+
+    const handleKeyEvent = (e, eventType) => {
+      const currentTime = Date.now();
+      const timeDelta = currentTime - lastKeyTime;
+      const keyCode = e.code || e.key;
+
+      if (eventType === 'keydown' && !activeKeys.has(keyCode)) {
+        activeKeys.add(keyCode);
+        keyVelocityAccumulator += 1.0;
+      } else if (eventType === 'keyup') {
+        activeKeys.delete(keyCode);
       }
+
+      // ULTRA-SENSITIVE keyboard response with rhythm detection
+      const keyVelocity = Math.min(keyVelocityAccumulator / Math.max(timeDelta, 1), 15);
+      const rhythmDetection = activeKeys.size > 1 ? 1.5 : 1.0; // Chord detection multiplier
       
-      // Increase intensity for key down vs key up
-      if (eventType === 'keydown') {
-        keyIntensity *= 1.6; // Increased from 1.4
-      }
-      
+      // Decay velocity accumulator
+      keyVelocityAccumulator *= 0.85;
+
       const sensorData = {
-        x: xVariation,
-        y: yVariation,
-        z: keyIntensity,
-        timestamp: Date.now(),
+        x: (Math.random() - 0.5) * keyVelocity * 0.3,
+        y: (activeKeys.size / 5) * 0.4, // Key combination influence
+        z: keyVelocity * 0.6 * rhythmDetection, // Enhanced keyboard Z-axis with rhythm
+        timestamp: currentTime,
         source: 'keyboard',
-        keyCode: event.code,
-        keyType: keyType,
-        eventType: eventType
+        activeKeys: activeKeys.size,
+        keyVelocity: keyVelocity,
+        isChord: activeKeys.size > 1,
+        timeDelta: timeDelta
       };
+      
+      lastKeyTime = currentTime;
       this.emitSensorData(sensorData);
     };
 
@@ -428,7 +410,7 @@ export class WebOrchestrator {
         decayPattern: 'enhanced'
       };
       this.emitSensorData(decayData);
-    }, 20); // Faster decay updates (was 25ms)
+    }, 20); // Faster decay updates
 
     return () => {
       if (this.decayInterval) {
@@ -438,14 +420,240 @@ export class WebOrchestrator {
     };
   }
 
-  // Initialize all web sensors
+  // DEVICE MOTION & ORIENTATION SENSORS
+  initializeDeviceMotion() {
+    if (Platform.OS !== 'web' || !window.DeviceMotionEvent) return null;
+
+    const handleDeviceMotion = (event) => {
+      const acceleration = event.acceleration || {};
+      const accelerationGravity = event.accelerationIncludingGravity || {};
+      const rotationRate = event.rotationRate || {};
+
+      const sensorData = {
+        x: (acceleration.x || 0) * 0.1,
+        y: (acceleration.y || 0) * 0.1,
+        z: (acceleration.z || 0) * 0.1,
+        timestamp: Date.now(),
+        source: 'deviceMotion',
+        acceleration: {
+          x: acceleration.x || 0,
+          y: acceleration.y || 0,
+          z: acceleration.z || 0
+        },
+        accelerationGravity: {
+          x: accelerationGravity.x || 0,
+          y: accelerationGravity.y || 0,
+          z: accelerationGravity.z || 0
+        },
+        rotationRate: {
+          alpha: rotationRate.alpha || 0,
+          beta: rotationRate.beta || 0,
+          gamma: rotationRate.gamma || 0
+        },
+        interval: event.interval || 16
+      };
+
+      // Store device motion data for enhanced sensor reporting
+      this.lastDeviceMotion = {
+        acceleration,
+        accelerationGravity,
+        rotationRate,
+        timestamp: Date.now()
+      };
+
+      this.emitSensorData(sensorData);
+    };
+
+    window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
+    
+    return () => {
+      window.removeEventListener('devicemotion', handleDeviceMotion);
+    };
+  }
+
+  // DEVICE ORIENTATION SENSORS
+  initializeDeviceOrientation() {
+    if (Platform.OS !== 'web' || !window.DeviceOrientationEvent) return null;
+
+    const handleDeviceOrientation = (event) => {
+      const sensorData = {
+        x: (event.gamma || 0) * 0.01, // Left-right tilt
+        y: (event.beta || 0) * 0.01,  // Front-back tilt
+        z: (event.alpha || 0) * 0.005, // Compass heading
+        timestamp: Date.now(),
+        source: 'deviceOrientation',
+        alpha: event.alpha || 0, // Compass (0-360)
+        beta: event.beta || 0,   // Front-back (-180 to 180)
+        gamma: event.gamma || 0, // Left-right (-90 to 90)
+        absolute: event.absolute || false
+      };
+
+      this.emitSensorData(sensorData);
+    };
+
+    window.addEventListener('deviceorientation', handleDeviceOrientation, { passive: true });
+    
+    return () => {
+      window.removeEventListener('deviceorientation', handleDeviceOrientation);
+    };
+  }
+
+  // TOUCH PRESSURE & FORCE SENSORS
+  initializeTouchSensors() {
+    if (Platform.OS !== 'web') return null;
+
+    const handleTouch = (event) => {
+      Array.from(event.touches || event.changedTouches).forEach(touch => {
+        const sensorData = {
+          x: (touch.clientX / window.innerWidth - 0.5) * 2,
+          y: (touch.clientY / window.innerHeight - 0.5) * 2,
+          z: (touch.force || touch.pressure || 0.5) * 2,
+          timestamp: Date.now(),
+          source: 'touch',
+          touchId: touch.identifier,
+          force: touch.force || 0,
+          pressure: touch.pressure || 0.5,
+          radiusX: touch.radiusX || 0,
+          radiusY: touch.radiusY || 0,
+          rotationAngle: touch.rotationAngle || 0,
+          touchType: touch.touchType || 'direct'
+        };
+
+        this.emitSensorData(sensorData);
+      });
+    };
+
+    window.addEventListener('touchstart', handleTouch, { passive: true });
+    window.addEventListener('touchmove', handleTouch, { passive: true });
+    window.addEventListener('touchend', handleTouch, { passive: true });
+    
+    return () => {
+      window.removeEventListener('touchstart', handleTouch);
+      window.removeEventListener('touchmove', handleTouch);
+      window.removeEventListener('touchend', handleTouch);
+    };
+  }
+
+  // AUDIO INPUT LEVEL DETECTION
+  async initializeAudioSensors() {
+    if (Platform.OS !== 'web') return null;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { 
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: false
+        } 
+      });
+      
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
+      
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      microphone.connect(analyser);
+
+      const updateAudioData = () => {
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Calculate audio level and frequency analysis
+        const sum = dataArray.reduce((a, value) => a + value, 0);
+        const average = sum / bufferLength;
+        const normalized = average / 255;
+        
+        // Frequency band analysis
+        const bass = dataArray.slice(0, 4).reduce((a, v) => a + v, 0) / 4 / 255;
+        const mid = dataArray.slice(4, 32).reduce((a, v) => a + v, 0) / 28 / 255;
+        const treble = dataArray.slice(32, 64).reduce((a, v) => a + v, 0) / 32 / 255;
+
+        const sensorData = {
+          x: (bass - 0.5) * 2,
+          y: (mid - 0.5) * 2,
+          z: normalized * 3,
+          timestamp: Date.now(),
+          source: 'audio',
+          level: normalized,
+          bass: bass,
+          mid: mid,
+          treble: treble,
+          frequencyData: Array.from(dataArray.slice(0, 32)) // First 32 frequency bins
+        };
+
+        this.emitSensorData(sensorData);
+        
+        if (this.audioAnalysisActive) {
+          requestAnimationFrame(updateAudioData);
+        }
+      };
+
+      this.audioAnalysisActive = true;
+      updateAudioData();
+
+      return () => {
+        this.audioAnalysisActive = false;
+        stream.getTracks().forEach(track => track.stop());
+        audioContext.close();
+      };
+    } catch (error) {
+      console.warn('Audio sensor initialization failed:', error);
+      return null;
+    }
+  }
+
+  // SCROLL & GESTURE SENSORS
+  initializeScrollSensors() {
+    if (Platform.OS !== 'web') return null;
+
+    let lastScrollTime = Date.now();
+    let scrollVelocity = 0;
+    let scrollAcceleration = 0;
+
+    const handleScroll = (event) => {
+      const currentTime = Date.now();
+      const timeDelta = currentTime - lastScrollTime;
+      const scrollDelta = Math.abs(event.deltaY || event.deltaX || 0);
+      
+      const currentVelocity = scrollDelta / Math.max(timeDelta, 1);
+      scrollAcceleration = currentVelocity - scrollVelocity;
+      scrollVelocity = currentVelocity;
+
+      const sensorData = {
+        x: (event.deltaX || 0) * 0.01,
+        y: (event.deltaY || 0) * 0.01,
+        z: Math.min(scrollVelocity * 0.1, 2),
+        timestamp: currentTime,
+        source: 'scroll',
+        velocity: scrollVelocity,
+        acceleration: scrollAcceleration,
+        deltaMode: event.deltaMode,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey
+      };
+
+      this.emitSensorData(sensorData);
+      lastScrollTime = currentTime;
+    };
+
+    window.addEventListener('wheel', handleScroll, { passive: true });
+    
+    return () => {
+      window.removeEventListener('wheel', handleScroll);
+    };
+  }
+
+  // Initialize all web sensors including 2025 modern APIs
   async initializeSensors() {
     if (Platform.OS !== 'web') return [];
 
     const cleanupFunctions = [];
 
     try {
-      // Initialize all sensor systems
+      // Original sensors
       const mouseCleanup = this.initializeMouseTracking();
       if (mouseCleanup) cleanupFunctions.push(mouseCleanup);
 
@@ -458,7 +666,23 @@ export class WebOrchestrator {
       const decayCleanup = this.initializeSensorDecay();
       if (decayCleanup) cleanupFunctions.push(decayCleanup);
 
-      console.log('🚀 All web sensors initialized with ultra-high sensitivity');
+      // 2025 Modern sensor APIs
+      const deviceMotionCleanup = this.initializeDeviceMotion();
+      if (deviceMotionCleanup) cleanupFunctions.push(deviceMotionCleanup);
+
+      const deviceOrientationCleanup = this.initializeDeviceOrientation();
+      if (deviceOrientationCleanup) cleanupFunctions.push(deviceOrientationCleanup);
+
+      const touchCleanup = this.initializeTouchSensors();
+      if (touchCleanup) cleanupFunctions.push(touchCleanup);
+
+      const audioCleanup = await this.initializeAudioSensors();
+      if (audioCleanup) cleanupFunctions.push(audioCleanup);
+
+      const scrollCleanup = this.initializeScrollSensors();
+      if (scrollCleanup) cleanupFunctions.push(scrollCleanup);
+
+      console.log('🚀 All 2025 web sensors initialized with ultra-high sensitivity');
       return cleanupFunctions;
     } catch (error) {
       console.warn('Web sensor initialization error:', error);
@@ -466,14 +690,14 @@ export class WebOrchestrator {
     }
   }
 
-  // OPTIMIZED real-time audio chunk playback with robust buffering
+  // real-time audio chunk playback
   async playAudioChunk(audioData) {
     if (!this.isInitialized || Platform.OS !== 'web') return;
 
     try {
       let arrayBuffer;
       
-      // Handle different audio data formats from Lyria
+      // Handle different audio data formats from server
       if (typeof audioData === 'string') {
         // Base64 encoded audio data
         try {
@@ -481,7 +705,7 @@ export class WebOrchestrator {
           arrayBuffer = new ArrayBuffer(binaryString.length);
           const uint8Array = new Uint8Array(arrayBuffer);
           
-      for (let i = 0; i < binaryString.length; i++) {
+          for (let i = 0; i < binaryString.length; i++) {
             uint8Array[i] = binaryString.charCodeAt(i);
           }
         } catch (base64Error) {
@@ -497,19 +721,44 @@ export class WebOrchestrator {
       } else if (audioData?.buffer instanceof ArrayBuffer) {
         // Has buffer property (like DataView)
         arrayBuffer = audioData.buffer;
+      } else if (audioData?.data) {
+        // Server might wrap audio data in a data property
+        const wrappedData = audioData.data;
+        if (typeof wrappedData === 'string') {
+          // Base64 encoded
+          try {
+            const binaryString = atob(wrappedData);
+            arrayBuffer = new ArrayBuffer(binaryString.length);
+            const uint8Array = new Uint8Array(arrayBuffer);
+            
+            for (let i = 0; i < binaryString.length; i++) {
+              uint8Array[i] = binaryString.charCodeAt(i);
+            }
+          } catch (base64Error) {
+            console.warn('Failed to decode wrapped base64 audio:', base64Error);
+            return;
+          }
+        } else if (wrappedData instanceof ArrayBuffer) {
+          arrayBuffer = wrappedData;
+        } else if (wrappedData instanceof Uint8Array) {
+          arrayBuffer = wrappedData.buffer.slice(wrappedData.byteOffset, wrappedData.byteOffset + wrappedData.byteLength);
+        } else {
+          console.warn('Unknown wrapped audio data format:', typeof wrappedData, wrappedData);
+          return;
+        }
       } else {
-        console.warn('Unknown audio data format:', typeof audioData, audioData);
+        console.warn('Unknown audio data format from server:', typeof audioData, audioData);
         return;
       }
       
       if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-        console.warn('Empty audio buffer received');
+        console.warn('Empty audio buffer received from server');
         return;
       }
             
-      // Lyria sends RAW 16-bit PCM audio data, NOT encoded audio
+      // Server sends RAW 16-bit PCM audio data, NOT encoded audio
       // Format: 48kHz, 2 channels (stereo), 16-bit signed integers
-      const audioBuffer = this.createAudioBufferFromPCM(arrayBuffer);
+      const audioBuffer = await this.createAudioBufferFromServerData(arrayBuffer);
       
       if (audioBuffer) {
         // Add to buffering queue for seamless playback
@@ -519,28 +768,30 @@ export class WebOrchestrator {
         if (this.nextStartTime === 0) {
           this.nextStartTime = this.audioContext.currentTime + 0.1; // 100ms initial delay
         }        
+      } else {
+        console.warn('Failed to create AudioBuffer from received data');
       }
       
     } catch (error) {
-      console.error('Audio chunk processing failed:', error);
+      console.error('Server audio chunk processing failed:', error);
     }
   }
 
-  // Create AudioBuffer from Lyria's raw 16-bit PCM data
-  createAudioBufferFromPCM(rawPCMData) {
+  // Create AudioBuffer from server-processed audio data
+  async createAudioBufferFromServerData(serverAudioData) {
     try {
       const sampleRate = 48000;  // 48kHz - Lyria's output format
       const channels = 2;        // Stereo
       const bytesPerSample = 2;  // 16-bit = 2 bytes per sample
       
       // Calculate frame count (samples per channel)
-      const frameCount = rawPCMData.byteLength / (channels * bytesPerSample);
+      const frameCount = serverAudioData.byteLength / (channels * bytesPerSample);
       
       // Create AudioBuffer
       const audioBuffer = this.audioContext.createBuffer(channels, frameCount, sampleRate);
       
       // Convert raw 16-bit PCM to Float32 format for Web Audio API
-      const dataView = new DataView(rawPCMData);
+      const dataView = new DataView(serverAudioData);
       
       for (let channel = 0; channel < channels; channel++) {
         const channelData = audioBuffer.getChannelData(channel);
@@ -557,7 +808,7 @@ export class WebOrchestrator {
       
       return audioBuffer;
     } catch (error) {
-      console.error('Failed to create AudioBuffer from raw PCM:', error);
+      console.error('Failed to create AudioBuffer from server PCM data:', error);
       return null;
     }
   }
@@ -582,31 +833,39 @@ export class WebOrchestrator {
 
   // Cleanup all web resources
   cleanup() {
-    this.cleanupCameraMotion();
+    console.log('🧹 Web orchestrator cleanup starting...');
     
-    if (this.decayInterval) {
-      clearInterval(this.decayInterval);
-      this.decayInterval = null;
-    }
-
-    // Stop audio buffering loop
-    this.isBuffering = false;
-
-    // Cleanup audio queue
-    this.audioBufferQueue.forEach(audioBuffer => {
-      if (audioBuffer && typeof audioBuffer.disconnect === 'function') {
-        audioBuffer.disconnect();
+    try {
+      this.cleanupCameraMotion();
+      
+      if (this.decayInterval) {
+        clearInterval(this.decayInterval);
+        this.decayInterval = null;
       }
-    });
-    this.audioBufferQueue = [];
 
-    if (this.audioContext) {
-      this.audioContext.close();
-      this.audioContext = null;
+      // Stop audio buffering loop
+      this.isBuffering = false;
+
+      // Cleanup audio queue
+      this.audioBufferQueue.forEach(audioBuffer => {
+        if (audioBuffer && typeof audioBuffer.disconnect === 'function') {
+          audioBuffer.disconnect();
+        }
+      });
+      this.audioBufferQueue = [];
+
+      if (this.audioContext) {
+        this.audioContext.close();
+        this.audioContext = null;
+      }
+
+      this.sensorCallbacks = [];
+      this.isInitialized = false;
+      
+      console.log('✅ Web orchestrator cleanup completed');
+    } catch (error) {
+      console.error('Error during web cleanup:', error);
     }
-
-    this.sensorCallbacks = [];
-    this.isInitialized = false;    
   }
 }
 

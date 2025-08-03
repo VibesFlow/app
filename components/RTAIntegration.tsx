@@ -2,9 +2,8 @@
  * RTA (Real-Time Asset) Integration for VibesFlow
  * MIT License
  * 
- * UPDATED: Network-aware integration supporting both NEAR (rtav2) and Metis (RTAWrapper) contracts
- * UPDATED: Proper rtaId handling for both networks with fallback support
- * UPDATED: Correct worker call sequence: CHUNKER -> DISPATCHER -> PRODUCER
+ * Network-aware integration supporting both NEAR (rtav2) and Metis (RTAWrapper) contracts
+ * Proper rtaId handling for both networks with fallback support
  */
 
 import React, { useRef, useEffect, useState, useCallback, useContext } from 'react';

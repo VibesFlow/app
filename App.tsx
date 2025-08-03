@@ -7,6 +7,7 @@ import VibeMarket from './components/VibeMarket';
 import { COLORS, FONT_SIZES, SPACING } from './theme';
 import { WalletProvider, useWallet } from './context/connector';
 import { FilCDNProvider } from './context/filcdn';
+import { orchestrationIntegration } from './orchestration/coordinator';
 import { StatusBar } from 'expo-status-bar';
 
 // Add ethereum error handling for browser compatibility
@@ -32,6 +33,34 @@ function AppContent() {
     config: any;
   } | null>(null);
   const { account } = useWallet();
+
+  // Initialize orchestration integration with wallet
+  useEffect(() => {
+    const initializeOrchestration = async () => {
+      try {
+        console.log('🔗 Initializing orchestration integration with wallet...');
+        
+        // Get wallet integration context
+        const walletIntegration = { account };
+        
+        // Initialize orchestration with wallet
+        const success = await orchestrationIntegration.initializeWithWallet(walletIntegration);
+        
+        if (success) {
+          console.log('✅ Orchestration integration initialized with wallet');
+        } else {
+          console.warn('⚠️ Orchestration integration initialization failed');
+        }
+      } catch (error) {
+        console.error('❌ Failed to initialize orchestration:', error);
+      }
+    };
+
+    // Initialize when wallet is available
+    if (account) {
+      initializeOrchestration();
+    }
+  }, [account]);
 
   const handleStart = () => {
     setCurrentScreen('main');

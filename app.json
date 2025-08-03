@@ -46,7 +46,7 @@
     "scheme": "vibesflow",
     "extra": {
       "eas": {
-        "projectId": "vibesflow-production"
+        "projectId": "vibesflow"
       }
     },
     "experiments": {

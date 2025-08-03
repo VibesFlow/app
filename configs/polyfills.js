@@ -1,5 +1,5 @@
 // Platform-aware polyfills for Web3 and Node.js compatibility
-// Supports both Web (production) and React Native mobile
+// Supports both Web and mobile
 
 import { Platform } from 'react-native';
 
@@ -7,7 +7,7 @@ import { Platform } from 'react-native';
 import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 
-// CRITICAL: Ensure globalThis exists for dynamic imports (webpack will handle import.meta)
+// Ensure globalThis exists for dynamic imports (webpack will handle import.meta)
 (function() {
   'use strict';
   
@@ -30,7 +30,7 @@ import 'react-native-url-polyfill/auto';
 
 // Note: import.meta is now handled by webpack DefinePlugin for better compatibility
 
-// CRITICAL: Set up stream polyfills BEFORE any other imports
+// Set up stream polyfills BEFORE any other imports
 if (Platform.OS !== 'web') {
   // Import stream polyfills immediately
   try {
@@ -56,7 +56,7 @@ if (Platform.OS !== 'web') {
     // Make stream available as a module that can be required
     global.stream = Stream;
     
-    // CRITICAL: Override require for stream module (for cipher-base compatibility)
+    // Override require for stream module (for cipher-base compatibility)
     const originalRequire = require;
     global.require = function(id) {
       if (id === 'stream') {
@@ -353,10 +353,66 @@ try {
       global.TextEncoder = TextEncoder;
       global.TextDecoder = TextDecoder;
     } catch (err) {
-      // Fallback to older text-encoding package
-      const { TextEncoder, TextDecoder } = require('text-encoding');
-      global.TextEncoder = TextEncoder;
-      global.TextDecoder = TextDecoder;
+      // Fallback to basic implementation if text-encoding-polyfill is not available
+      global.TextEncoder = class TextEncoder {
+        encode(str) {
+          const bytes = [];
+          for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            if (char < 0x80) {
+              bytes.push(char);
+            } else if (char < 0x800) {
+              bytes.push(0xc0 | (char >> 6));
+              bytes.push(0x80 | (char & 0x3f));
+            } else if (char < 0xd800 || char >= 0xe000) {
+              bytes.push(0xe0 | (char >> 12));
+              bytes.push(0x80 | ((char >> 6) & 0x3f));
+              bytes.push(0x80 | (char & 0x3f));
+            } else {
+              // Surrogate pair
+              i++;
+              const char2 = str.charCodeAt(i);
+              const codePoint = 0x10000 + (((char & 0x3ff) << 10) | (char2 & 0x3ff));
+              bytes.push(0xf0 | (codePoint >> 18));
+              bytes.push(0x80 | ((codePoint >> 12) & 0x3f));
+              bytes.push(0x80 | ((codePoint >> 6) & 0x3f));
+              bytes.push(0x80 | (codePoint & 0x3f));
+            }
+          }
+          return new Uint8Array(bytes);
+        }
+      };
+      
+      global.TextDecoder = class TextDecoder {
+        decode(bytes) {
+          let str = '';
+          let i = 0;
+          while (i < bytes.length) {
+            const byte1 = bytes[i++];
+            if (byte1 < 0x80) {
+              str += String.fromCharCode(byte1);
+            } else if ((byte1 >> 5) === 0x06) {
+              const byte2 = bytes[i++];
+              str += String.fromCharCode(((byte1 & 0x1f) << 6) | (byte2 & 0x3f));
+            } else if ((byte1 >> 4) === 0x0e) {
+              const byte2 = bytes[i++];
+              const byte3 = bytes[i++];
+              str += String.fromCharCode(((byte1 & 0x0f) << 12) | ((byte2 & 0x3f) << 6) | (byte3 & 0x3f));
+            } else if ((byte1 >> 3) === 0x1e) {
+              const byte2 = bytes[i++];
+              const byte3 = bytes[i++];
+              const byte4 = bytes[i++];
+              const codePoint = ((byte1 & 0x07) << 18) | ((byte2 & 0x3f) << 12) | ((byte3 & 0x3f) << 6) | (byte4 & 0x3f);
+              const surrogate1 = 0xd800 + ((codePoint - 0x10000) >> 10);
+              const surrogate2 = 0xdc00 + ((codePoint - 0x10000) & 0x3ff);
+              str += String.fromCharCode(surrogate1, surrogate2);
+            }
+          }
+          return str;
+        }
+      };
+      
+      console.log('✅ Using basic TextEncoder/TextDecoder implementation');
     }
   }
   
@@ -418,4 +474,4 @@ if (Platform.OS !== 'web') {
   console.error = createGroupedLogger(originalError, '❌');
 }
 
-console.log(`🚀 Comprehensive platform polyfills loaded for ${Platform.OS} (production ready with import.meta support)`);
+console.log(`🚀 Comprehensive platform polyfills loaded for ${Platform.OS}`);
