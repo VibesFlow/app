@@ -76,10 +76,10 @@ export class Agent extends EventEmitter {
     
     // Default URLs by platform
     if (Platform.OS === 'web') {
-      return 'wss://stream.vibesflow.ai';
+      return 'wss://alith.vibesflow.ai/orchestrator';
     } else {
       // For mobile, also use production URL
-      return 'wss://stream.vibesflow.ai';
+      return 'wss://alith.vibesflow.ai/orchestrator';
     }
   }
 

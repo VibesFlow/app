@@ -152,9 +152,32 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         } else {
           console.log('✅ Orchestration integration ready:', status);
         }
+
+        // ✅ Register sensor data callback to update waveforms
+        orchestrationIntegration.onSensorData((data) => {
+          if (!data.isDecay) {
+            setSensorData(data);
+            processRealTimeSensorData(data);
+          } else {
+            // Apply decay to current sensor data for smooth transitions
+            setSensorData(prev => ({
+              x: prev.x * 0.95,
+              y: prev.y * 0.95, 
+              z: Math.max(0.05, prev.z * 0.98),
+              timestamp: Date.now(),
+              source: 'decay'
+            }));
+          }
+        });
+
+        // Also listen for sensor data events if using EventEmitter pattern
+        orchestrationIntegration.on('sensorData', (data) => {
+          setSensorData(data);
+          processRealTimeSensorData(data);
+        });
         
         setIsInitialized(true);
-        console.log('✅ New orchestration architecture ready');
+        console.log('✅ New orchestration architecture ready with waveform updates');
 
       } catch (error) {
         console.error('❌ Orchestration initialization failed:', error);

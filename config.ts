@@ -10,14 +10,6 @@ export const CONTRACTS = {
   NETWORK: process.env.EXPO_PUBLIC_NEAR_NETWORK || 'testnet'
 };
 
-// Using correct Phala Cloud URLs (Fixed Node.js 20)
-export const WORKERS = {
-  CHUNKER: process.env.EXPO_PUBLIC_CHUNKER_URL || 'https://8ec0fb580f553033b2a2a6102f562fe7cdbb9409-3000.dstack-prod5.phala.network',
-  SWAPPER: process.env.EXPO_PUBLIC_SWAPPER_URL || 'https://swapper.placeholder.network',
-  DISPATCHER: process.env.EXPO_PUBLIC_DISPATCHER_URL || 'https://dispatcher.placeholder.network', 
-  PRODUCER: process.env.EXPO_PUBLIC_PRODUCER_URL || 'https://producer.placeholder.network',
-};
-
 export const NETWORKS = {
   NEAR: {
     RPC: process.env.EXPO_PUBLIC_NEAR_RPC_URL || 'https://rpc.testnet.near.org',

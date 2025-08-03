@@ -672,7 +672,7 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack }) => {
           console.error('Cannot set invalid currentTime:', timeInChunk);
         }
       } else {
-        // Fallback: load chunk if not preloaded
+        // Load chunk if not preloaded
         console.log(`🔄 Loading chunk ${targetChunkIndex + 1} for seek operation`);
         state.audio.pause();
         state.audio.src = state.chunkUrls[targetChunkIndex];

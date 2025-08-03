@@ -96,6 +96,14 @@ export class OrchestrationCoordinator extends EventEmitter {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     
+    // ADAPTIVE RATE LIMITING - Prevent server flooding
+    this.lastServerSendTime = 0;
+    this.serverLatency = 1000; // Start with 1 second based on observed performance
+    this.minSendInterval = 1000; // Minimum 1 second between sends
+    this.maxSendInterval = 1500; // Maximum 1.5 seconds if server is slow
+    this.pendingResponse = false;
+    this.sensorDataBuffer = null; // Buffer latest sensor data
+    
     // Client-side Gemini Buffer Manager
     this.geminiBufferManager = null;
     this.geminiApiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
@@ -315,7 +323,7 @@ export class OrchestrationCoordinator extends EventEmitter {
     try {
       console.log('🔌 Connecting to interpretation server...');
       
-      const serverUrl = process.env.EXPO_PUBLIC_STREAM_URL?.replace('https://', 'wss://') || 'wss://stream.vibesflow.ai';
+      const serverUrl = process.env.EXPO_PUBLIC_STREAM_URL?.replace('https://', 'wss://') || 'wss://alith.vibesflow.ai/orchestrator';
       const wsUrl = `${serverUrl}`;
       
       this.serverConnection = new WebSocket(wsUrl);
@@ -367,11 +375,34 @@ export class OrchestrationCoordinator extends EventEmitter {
     }
   }
 
-  // Send sensor data to server for interpretation
+
+
+  // Send sensor data to server for interpretation with INTELLIGENT RATE LIMITING
   sendSensorDataToServer(sensorData) {
     // Only send sensor data when vibestream is active
     if (!this.vibestreamActive) {
       return; // Ignore sensor data when no vibestream is running
+    }
+
+    // Adaptive rate limiting - respect server processing time
+    const now = Date.now();
+    const timeSinceLastSend = now - this.lastServerSendTime;
+    const adaptiveInterval = Math.max(this.minSendInterval, Math.min(this.serverLatency * 1.2, this.maxSendInterval));
+    
+    // Buffer the latest sensor data but don't send if too soon or response pending
+    this.sensorDataBuffer = sensorData;
+    
+    if (timeSinceLastSend < adaptiveInterval || this.pendingResponse) {
+      // Rate limited - just update buffer, don't send
+      if (Math.random() < 0.01) { // Log 1% of the time to avoid spam
+        console.log('⏱️ Rate limiting sensor data:', {
+          timeSinceLastSend: Math.round(timeSinceLastSend),
+          adaptiveInterval: Math.round(adaptiveInterval),
+          serverLatency: Math.round(this.serverLatency),
+          pendingResponse: this.pendingResponse
+        });
+      }
+      return;
     }
 
     if (!this.isServerConnected || !this.serverConnection) {
@@ -405,15 +436,25 @@ export class OrchestrationCoordinator extends EventEmitter {
         });
       }
 
-      // FIXED: Use correct message format that backend expects
+      // Use correct message format that backend expects
       const message = {
-        type: 'sensor-data', // Backend expects 'sensor-data' not 'sensor_data'
+        type: 'sensor-data',
         sensorData: sensorData,
         timestamp: Date.now(),
         sessionId: this.walletIntegration?.account?.accountId || 'anonymous'
       };
 
+      // Track send time and mark response as pending for adaptive rate limiting
+      this.lastServerSendTime = now;
+      this.pendingResponse = true;
+      this.serverRequestStart = now; // For latency calculation
+
       this.serverConnection.send(JSON.stringify(message));
+      
+      console.log('📡 Sensor data sent to server (adaptive rate limited):', {
+        interval: Math.round(adaptiveInterval),
+        latency: Math.round(this.serverLatency)
+      });
     } catch (error) {
       console.warn('Failed to send sensor data to server:', error);
     }
@@ -421,6 +462,22 @@ export class OrchestrationCoordinator extends EventEmitter {
 
     // Handle interpretation response from server
   handleServerInterpretation(response) {
+    // Adaptive Rate Limit - calculate server latency and prompts queue
+    if (this.pendingResponse && this.serverRequestStart) {
+      const responseTime = Date.now() - this.serverRequestStart;
+      // Exponential moving average for smoother latency tracking
+      this.serverLatency = this.serverLatency * 0.7 + responseTime * 0.3;
+      this.pendingResponse = false;
+      
+      if (Math.random() < 0.1) { // Log 10% of responses
+        console.log('⏱️ Server latency updated:', {
+          responseTime: Math.round(responseTime),
+          avgLatency: Math.round(this.serverLatency),
+          nextInterval: Math.round(Math.max(this.minSendInterval, Math.min(this.serverLatency * 1.2, this.maxSendInterval)))
+        });
+      }
+    }
+    
     if (!response || response.type !== 'interpretation') {
       console.log('⚠️ Received non-interpretation message from server:', response?.type || 'undefined');
       return;

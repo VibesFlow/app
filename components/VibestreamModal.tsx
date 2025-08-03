@@ -214,8 +214,8 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
       if (creationSucceeded) {
         console.log(`🎉 ${networkInfo.type} vibestream created - full functionality enabled`);
       } else {
-        console.log(`🎯 Vibestream starting in fallback mode for ${networkInfo.type}`);
-        console.log('📊 Fallback vibestream will still enable: chunking → backend processing');
+        console.log(`Vibestream starting in fallback mode for ${networkInfo.type}`);
+        console.log('Fallback vibestream will still enable: chunking → backend processing');
         
         // Show user notification about fallback mode
         if (Platform.OS === 'web') {
