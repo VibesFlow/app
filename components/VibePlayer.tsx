@@ -177,7 +177,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         });
         
         setIsInitialized(true);
-        console.log('✅ New orchestration architecture ready with waveform updates');
 
       } catch (error) {
         console.error('❌ Orchestration initialization failed:', error);
@@ -250,9 +249,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         setIsStreaming(false);
         return;
       }
-      
-      console.log('✅ New orchestration architecture vibestream started successfully');
-
     } catch (error) {
       setIsStreaming(false);
       console.error('❌ Failed to start vibestream:', error);

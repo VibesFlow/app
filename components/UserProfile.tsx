@@ -37,9 +37,16 @@ const UserProfile: React.FC<UserProfileProps> = ({
   onCreateVibestream,
   onBack 
 }) => {
-  const { account, getNetworkInfo } = useWallet();
+  const { 
+    account, 
+    getNetworkInfo, 
+    getUserVibestreams, 
+    getUserVibestreamCount 
+  } = useWallet();
   const [vibestreams, setVibestreams] = useState<any[]>([]);
+  const [vibestreamCount, setVibestreamCount] = useState<number>(0);
   const [modalVisible, setModalVisible] = useState(false);
+  const [loadingVibestreams, setLoadingVibestreams] = useState(false);
   const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [displayName, setDisplayName] = useState<string>('');
@@ -86,17 +93,41 @@ const UserProfile: React.FC<UserProfileProps> = ({
     };
     loadProfileData();
     fetchVibestreams();
-  }, [accountId]);
+  }, [accountId, account]); // Also re-fetch when account changes
 
-  // Fetch vibestreams from contracts
+  // Refresh handler for manual updates
+  const handleRefreshVibestreams = () => {
+    console.log('🔄 Manually refreshing user vibestreams...');
+    fetchVibestreams();
+  };
+
+  // Fetch vibestreams from contracts with cross-matched FilCDN data
   const fetchVibestreams = async () => {
-    try {
-      const networkInfo = getNetworkInfo();
-      // TODO: Implement actual contract calls when contracts support querying user vibestreams
-      // For now, keeping empty array as per user's original request
+    if (!account) {
       setVibestreams([]);
+      setVibestreamCount(0);
+      return;
+    }
+
+    try {
+      setLoadingVibestreams(true);
+      console.log('📊 Fetching user vibestreams for profile...');
+      
+      // Fetch on-chain vibestreams with cross-matched FilCDN data
+      const userVibestreams = await getUserVibestreams();
+      const count = await getUserVibestreamCount();
+      
+      console.log(`✅ Found ${userVibestreams.length} vibestreams for user profile`);
+      
+      setVibestreams(userVibestreams);
+      setVibestreamCount(count);
+      
     } catch (error) {
-      console.warn('Failed to fetch vibestreams:', error);
+      console.warn('⚠️ Failed to fetch vibestreams for profile:', error);
+      setVibestreams([]);
+      setVibestreamCount(0);
+    } finally {
+      setLoadingVibestreams(false);
     }
   };
 
@@ -254,9 +285,39 @@ const UserProfile: React.FC<UserProfileProps> = ({
     setModalVisible(true);
   };
 
+  // Calculate total duration from all vibestreams
+  const calculateTotalDuration = (streams: any[]): string => {
+    if (!streams || streams.length === 0) return "0:00:00";
+    
+    let totalSeconds = 0;
+    
+    streams.forEach(stream => {
+      if (stream.filcdn_duration) {
+        // Parse duration in "MM:SS" format
+        const parts = stream.filcdn_duration.split(':');
+        if (parts.length === 2) {
+          const minutes = parseInt(parts[0], 10) || 0;
+          const seconds = parseInt(parts[1], 10) || 0;
+          totalSeconds += minutes * 60 + seconds;
+        }
+      }
+    });
+    
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   const renderVibestreamGrid = () => (
     <GlitchContainer intensity="low" style={styles.gridContainer}>
-      {vibestreams.length === 0 ? (
+      {loadingVibestreams ? (
+        <View style={styles.gridPlaceholder}>
+          <FontAwesome5 name="spinner" size={width * 0.06} color={COLORS.primary} />
+          <GlitchText text="LOADING VIBESTREAMS..." style={styles.createText} />
+        </View>
+      ) : vibestreams.length === 0 ? (
         <TouchableOpacity style={styles.gridPlaceholder} onPress={openVibestreamModal}>
           <View style={styles.plusIcon}>
             <FontAwesome5 name="plus" size={width * 0.06} color={COLORS.primary} />
@@ -264,11 +325,64 @@ const UserProfile: React.FC<UserProfileProps> = ({
           <GlitchText text="CREATE VIBESTREAM" style={styles.createText} />
         </TouchableOpacity>
       ) : (
-        vibestreams.map((stream, index) => (
-          <View key={index} style={styles.gridItem}>
-            {/* Render stream thumbnail */}
+        <View style={styles.vibestreamsList}>
+          {vibestreams.map((stream, index) => (
+            <View key={stream.vibeId || index} style={styles.gridItem}>
+              <View style={styles.vibestreamHeader}>
+                <GlitchText 
+                  text={`${stream.rtaId.toUpperCase()}`} 
+                  style={styles.vibestreamTitle} 
+                />
+                <Text style={[
+                  styles.vibestreamStatus,
+                  { color: stream.is_closed ? COLORS.secondary : COLORS.primary }
+                ]}>
+                  {stream.is_closed ? "COMPLETE" : "ACTIVE"}
+                </Text>
+              </View>
+              
+              <View style={styles.vibestreamInfo}>
+                <View style={styles.vibestreamStat}>
+                  <FontAwesome5 name="clock" size={12} color={COLORS.accent} />
+                  <Text style={styles.vibestreamStatText}>
+                    {stream.filcdn_duration || "0:00"}
+                  </Text>
+                </View>
+                
+                <View style={styles.vibestreamStat}>
+                  <FontAwesome5 name="layer-group" size={12} color={COLORS.accent} />
+                  <Text style={styles.vibestreamStatText}>
+                    {stream.total_chunks || 0} chunks
+                  </Text>
+                </View>
+                
+                <View style={styles.vibestreamStat}>
+                  <FontAwesome5 name="database" size={12} color={COLORS.accent} />
+                  <Text style={styles.vibestreamStatText}>
+                    {stream.filcdn_size_mb ? `${stream.filcdn_size_mb.toFixed(1)}MB` : "0MB"}
+                  </Text>
+                </View>
+              </View>
+              
+              <View style={styles.vibestreamFooter}>
+                <Text style={styles.vibestreamMode}>
+                  {(stream.mode || 'solo').toUpperCase()}
+                </Text>
+                <Text style={styles.vibestreamDate}>
+                  {stream.created_at ? new Date(stream.created_at * 1000).toLocaleDateString() : ""}
+                </Text>
+              </View>
+            </View>
+          ))}
+          
+          {/* Add new vibestream button */}
+          <TouchableOpacity style={styles.addVibestreamButton} onPress={openVibestreamModal}>
+            <View style={styles.plusIcon}>
+              <FontAwesome5 name="plus" size={width * 0.04} color={COLORS.primary} />
+            </View>
+            <Text style={styles.addVibestreamText}>ADD NEW</Text>
+          </TouchableOpacity>
           </View>
-        ))
       )}
     </GlitchContainer>
   );
@@ -284,7 +398,17 @@ const UserProfile: React.FC<UserProfileProps> = ({
           <FontAwesome5 name="arrow-left" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <GlitchText text="PROFILE" style={styles.title} />
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity 
+          onPress={handleRefreshVibestreams} 
+          style={styles.refreshButton}
+          disabled={loadingVibestreams}
+        >
+          <FontAwesome5 
+            name={loadingVibestreams ? "spinner" : "sync-alt"} 
+            size={20} 
+            color={COLORS.primary} 
+          />
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -363,12 +487,15 @@ const UserProfile: React.FC<UserProfileProps> = ({
         {/* Stats Container */}
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
-            <GlitchText text="0" style={styles.statValue} />
+            <GlitchText text={vibestreamCount.toString()} style={styles.statValue} />
             <Text style={styles.statLabel}>VIBESTREAMS</Text>
           </View>
           <View style={styles.statsDivider} />
           <View style={styles.statItem}>
-            <GlitchText text="0:00:00" style={styles.statValue} />
+            <GlitchText 
+              text={calculateTotalDuration(vibestreams)} 
+              style={styles.statValue} 
+            />
             <Text style={styles.statLabel}>TOTAL TIME</Text>
           </View>
         </View>
@@ -430,6 +557,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.primary + '60',
   },
+  refreshButton: {
+    padding: SPACING.small,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '60',
+  },
   title: {
     fontSize: Platform.OS === 'web' ? FONT_SIZES.xl : FONT_SIZES.large,
     color: COLORS.textPrimary,
@@ -437,9 +569,7 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
     textTransform: 'uppercase',
   },
-  headerSpacer: {
-    width: 40,
-  },
+
   content: {
     flex: 1,
     paddingHorizontal: SPACING.medium,
@@ -592,12 +722,88 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
   },
+  vibestreamsList: {
+    paddingVertical: SPACING.small,
+  },
   gridItem: {
     width: '100%',
-    height: 120,
-    backgroundColor: COLORS.backgroundLight,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.primary,
+    backgroundColor: COLORS.backgroundLight + '80',
+    borderWidth: 1,
+    borderColor: COLORS.primary + '40',
+    marginBottom: SPACING.small,
+    padding: SPACING.medium,
+  },
+  vibestreamHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.small,
+  },
+  vibestreamTitle: {
+    fontSize: FONT_SIZES.medium,
+    color: COLORS.textPrimary,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  vibestreamStatus: {
+    fontSize: FONT_SIZES.xs,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+  },
+  vibestreamInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.small,
+  },
+  vibestreamStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  vibestreamStatText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    marginLeft: SPACING.xs,
+    letterSpacing: 0.5,
+  },
+  vibestreamFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.primary + '20',
+    paddingTop: SPACING.small,
+  },
+  vibestreamMode: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.accent,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+  },
+  vibestreamDate: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textTertiary,
+    letterSpacing: 0.5,
+  },
+  addVibestreamButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.backgroundLight + '40',
+    borderWidth: 2,
+    borderColor: COLORS.primary + '60',
+    borderStyle: 'dashed',
+    padding: SPACING.medium,
+    marginTop: SPACING.small,
+  },
+  addVibestreamText: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.primary,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginLeft: SPACING.small,
   },
   brandFooter: {
     alignItems: 'center',

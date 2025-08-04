@@ -1,11 +1,12 @@
 /**
  * WEB.JS - Web Platform Orchestration Module
  * Handles browser-specific sensor inputs and audio outputs for VibesFlow
- * Optimized for ultra-low latency real-time rave experience with ROBUST AUDIO BUFFERING
+ * Optimized for ultra-low latency real-time rave experience with robust audio buffering
  * 
  */
 
 import { Platform } from 'react-native';
+import { logSensorData, logAudioChunk, logPerformance, logInfo, logWarning, logError } from './logger';
 
 export class WebOrchestrator {
   constructor() {
@@ -70,15 +71,15 @@ export class WebOrchestrator {
       // Mark as initialized so audio can be played
       this.isInitialized = true;
       
-      console.log('🎧 Ultra-low latency Web Audio Context initialized for server audio');
+      logInfo('Ultra-low latency Web Audio Context initialized for server audio');
       return true;
     } catch (error) {
-      console.error('Web Audio initialization failed:', error);
+      logError('Web Audio initialization failed', { error: error.message, stack: error.stack });
       return false;
     }
   }
 
-  // ROBUST AUDIO BUFFERING SYSTEM for seamless server audio chunk playback
+  // Robust audio buffering system for seamless server audio chunk playback
   startAudioBuffering() {
     if (this.isBuffering) return; // Already running
     
@@ -100,7 +101,7 @@ export class WebOrchestrator {
           this.playBufferedAudio(audioBuffer, this.nextStartTime);
           this.nextStartTime += audioBuffer.duration;
         } else {
-          console.warn('Invalid audio buffer in queue, skipping');
+          logWarning('Invalid audio buffer in queue, skipping', { queueLength: this.audioBufferQueue.length });
         }
       }
       
@@ -183,28 +184,26 @@ export class WebOrchestrator {
       adaptiveSensitivity: this.adaptiveSensitivity
     };
 
-    // Debug log rich sensor data occasionally
-    if (Math.random() < 0.02) { // 2% of the time
-      console.log('🎛️ Rich sensor data generated:', {
-        source: enhancedSensorData.source,
-        x: enhancedSensorData.x?.toFixed(3),
-        y: enhancedSensorData.y?.toFixed(3), 
-        z: enhancedSensorData.z?.toFixed(3),
-        pressure: enhancedSensorData.pressure,
-        tiltX: enhancedSensorData.tiltX,
-        force: enhancedSensorData.force,
-        velocity: enhancedSensorData.velocity,
-        acceleration: enhancedSensorData.acceleration,
-        hasFrequencyData: !!enhancedSensorData.frequencyData
-      });
-    }
+    // Log rich sensor data using throttled logger
+    logSensorData({
+      source: enhancedSensorData.source,
+      x: enhancedSensorData.x?.toFixed(3),
+      y: enhancedSensorData.y?.toFixed(3), 
+      z: enhancedSensorData.z?.toFixed(3),
+      pressure: enhancedSensorData.pressure,
+      tiltX: enhancedSensorData.tiltX,
+      force: enhancedSensorData.force,
+      velocity: enhancedSensorData.velocity,
+      acceleration: enhancedSensorData.acceleration,
+      hasFrequencyData: !!enhancedSensorData.frequencyData
+    });
 
     // ULTRA-LOW LATENCY sensor callback emission
     this.sensorCallbacks.forEach(callback => {
       try {
         callback(enhancedSensorData);
       } catch (error) {
-        console.warn('Web sensor callback error:', error);
+        logWarning('Web sensor callback error', { error: error.message, callback: callback.name });
       }
     });
   }
@@ -335,7 +334,7 @@ export class WebOrchestrator {
         this.cleanupCameraMotion();
       };
     } catch (error) {
-      console.warn('Camera motion initialization failed:', error);
+      logWarning('Camera motion initialization failed', { error: error.message });
       return null;
     }
   }
@@ -599,7 +598,7 @@ export class WebOrchestrator {
         audioContext.close();
       };
     } catch (error) {
-      console.warn('Audio sensor initialization failed:', error);
+      logWarning('Audio sensor initialization failed', { error: error.message });
       return null;
     }
   }
@@ -682,15 +681,15 @@ export class WebOrchestrator {
       const scrollCleanup = this.initializeScrollSensors();
       if (scrollCleanup) cleanupFunctions.push(scrollCleanup);
 
-      console.log('🚀 All 2025 web sensors initialized with ultra-high sensitivity');
+      logInfo('All 2025 web sensors initialized with ultra-high sensitivity', { sensorsCount: cleanupFunctions.length });
       return cleanupFunctions;
     } catch (error) {
-      console.warn('Web sensor initialization error:', error);
+      logWarning('Web sensor initialization error', { error: error.message });
       return cleanupFunctions;
     }
   }
 
-  // real-time audio chunk playback
+  // Real-time audio chunk playback
   async playAudioChunk(audioData) {
     if (!this.isInitialized || Platform.OS !== 'web') return;
 
@@ -709,7 +708,7 @@ export class WebOrchestrator {
             uint8Array[i] = binaryString.charCodeAt(i);
           }
         } catch (base64Error) {
-          console.warn('Failed to decode base64 audio:', base64Error);
+          logWarning('Failed to decode base64 audio', { error: base64Error.message });
           return;
         }
       } else if (audioData instanceof ArrayBuffer) {
@@ -735,7 +734,7 @@ export class WebOrchestrator {
               uint8Array[i] = binaryString.charCodeAt(i);
             }
           } catch (base64Error) {
-            console.warn('Failed to decode wrapped base64 audio:', base64Error);
+            logWarning('Failed to decode wrapped base64 audio', { error: base64Error.message });
             return;
           }
         } else if (wrappedData instanceof ArrayBuffer) {
@@ -743,16 +742,16 @@ export class WebOrchestrator {
         } else if (wrappedData instanceof Uint8Array) {
           arrayBuffer = wrappedData.buffer.slice(wrappedData.byteOffset, wrappedData.byteOffset + wrappedData.byteLength);
         } else {
-          console.warn('Unknown wrapped audio data format:', typeof wrappedData, wrappedData);
+          logWarning('Unknown wrapped audio data format', { type: typeof wrappedData, hasData: !!wrappedData });
           return;
         }
       } else {
-        console.warn('Unknown audio data format from server:', typeof audioData, audioData);
+        logWarning('Unknown audio data format from server', { type: typeof audioData, hasData: !!audioData });
         return;
       }
       
       if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-        console.warn('Empty audio buffer received from server');
+        logWarning('Empty audio buffer received from server', { byteLength: arrayBuffer?.byteLength || 0 });
         return;
       }
             
@@ -769,11 +768,11 @@ export class WebOrchestrator {
           this.nextStartTime = this.audioContext.currentTime + 0.1; // 100ms initial delay
         }        
       } else {
-        console.warn('Failed to create AudioBuffer from received data');
+        logWarning('Failed to create AudioBuffer from received data', { arrayBufferSize: arrayBuffer?.byteLength || 0 });
       }
       
     } catch (error) {
-      console.error('Server audio chunk processing failed:', error);
+      logError('Server audio chunk processing failed', { error: error.message, stack: error.stack });
     }
   }
 
@@ -808,7 +807,7 @@ export class WebOrchestrator {
       
       return audioBuffer;
     } catch (error) {
-      console.error('Failed to create AudioBuffer from server PCM data:', error);
+      logError('Failed to create AudioBuffer from server PCM data', { error: error.message, dataSize: serverAudioData?.byteLength || 0 });
       return null;
     }
   }
@@ -833,7 +832,7 @@ export class WebOrchestrator {
 
   // Cleanup all web resources
   cleanup() {
-    console.log('🧹 Web orchestrator cleanup starting...');
+    logInfo('Web orchestrator cleanup starting');
     
     try {
       this.cleanupCameraMotion();
@@ -862,9 +861,9 @@ export class WebOrchestrator {
       this.sensorCallbacks = [];
       this.isInitialized = false;
       
-      console.log('✅ Web orchestrator cleanup completed');
+      logInfo('Web orchestrator cleanup completed');
     } catch (error) {
-      console.error('Error during web cleanup:', error);
+      logError('Error during web cleanup', { error: error.message, stack: error.stack });
     }
   }
 }

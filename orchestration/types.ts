@@ -43,7 +43,8 @@ export interface WeightedPrompt {
 // Sensor interpretation result
 export interface Interpretation {
   stylePrompt: string;
-  weightedPrompts: WeightedPrompt[];
+  singleCoherentPrompt: string; // Single coherent prompt instead of weighted prompts
+  weightedPrompts?: WeightedPrompt[]; // DEPRECATED
   lyriaConfig: LyriaConfig;
   magnitude: number;
   rawMagnitude: number;
@@ -52,6 +53,7 @@ export interface Interpretation {
   hasTransition: boolean;
   intensity: string;
   movement: string;
+  reasoning?: string; // Agent reasoning for the interpretation
 }
 
 // Rave genre definition

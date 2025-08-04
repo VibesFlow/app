@@ -103,6 +103,23 @@ interface RTAConfig {
   created_at: number;
 }
 
+interface UserVibestreamData {
+  vibeId: string;
+  rtaId: string;
+  creator: string;
+  created_at: number;
+  mode: 'solo' | 'group';
+  is_closed: boolean;
+  total_chunks: number;
+  filecoin_master_cid?: string;
+  // Cross-matched FilCDN data
+  filcdn_duration?: string;
+  filcdn_chunks?: number;
+  filcdn_size_mb?: number;
+  // Participant data (for group mode)
+  participants?: string[];
+}
+
 interface WalletContextType {
   account: WalletAccount | null;
   connecting: boolean;
@@ -132,6 +149,16 @@ interface WalletContextType {
   addChunkToRTA: (rtaId: string, chunkId: number, filecoinCid: string, chunkOwner: string) => Promise<void>;
   finalizeRTA: (rtaId: string, masterCid: string) => Promise<void>;
   isRTAClosed: (rtaId: string) => Promise<boolean>;
+  
+  // User vibestream query methods
+  getUserVibestreams: () => Promise<UserVibestreamData[]>;
+  getUserVibestreamCount: () => Promise<number>;
+  getVibestreamMetadata: (vibeId: string) => Promise<any>;
+  
+  // Participant tracking methods (for future group mode)
+  addParticipantToVibestream: (vibeId: string, participantId: string) => Promise<void>;
+  removeParticipantFromVibestream: (vibeId: string, participantId: string) => Promise<void>;
+  getVibestreamParticipants: (vibeId: string) => Promise<string[]>;
   
   // Network-aware session info
   getNetworkInfo: () => { type: NetworkType; contracts: any } | null;
@@ -1096,6 +1123,398 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
   }, []);
 
+  // Get user's vibestreams with cross-matched FilCDN data
+  const getUserVibestreams = useCallback(async (): Promise<UserVibestreamData[]> => {
+    if (!account) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      let onChainVibestreams: any[] = [];
+
+      if (account.network === 'metis-hyperion') {
+        // Query Metis VibeFactory contract for user's vibestreams
+        console.log('🔍 Querying Metis VibeFactory for user vibestreams...');
+        
+        try {
+          if (Platform.OS === 'web' && typeof window !== 'undefined' && (window as any).ethereum) {
+            const ethProvider = (window as any).ethereum;
+            
+            // Create public client for reading contract state
+            const publicClient = createPublicClient({
+              chain: {
+                id: CONTRACT_ADDRESSES.METIS.CHAIN_ID,
+                name: 'Metis Hyperion',
+                nativeCurrency: { name: 'tMETIS', symbol: 'tMETIS', decimals: 18 },
+                rpcUrls: { default: { http: [CONTRACT_ADDRESSES.METIS.RPC_URL] } },
+              },
+              transport: custom(ethProvider)
+            });
+
+            // Get current block number and limit the range to avoid RPC limits
+            const currentBlock = await publicClient.getBlockNumber();
+            const maxBlockRange = 50000n; // Metis RPC limit is 100k, use 50k for safety
+            const fromBlock = currentBlock > maxBlockRange ? currentBlock - maxBlockRange : 0n;
+
+            console.log(`📊 Querying Metis events from block ${fromBlock} to ${currentBlock}`);
+
+            // Query VibestreamCreated events for this user
+            const vibestreamCreatedEvents = await publicClient.getLogs({
+              address: CONTRACT_ADDRESSES.METIS.VIBE_FACTORY as `0x${string}`,
+              event: parseAbiItem('event VibestreamCreated(uint256 indexed vibeId, address indexed creator, uint256 timestamp, string mode, uint256 ticketsAmount, uint256 ticketPrice, address requestedDelegatee)'),
+              args: {
+                creator: account.accountId as `0x${string}`
+              },
+              fromBlock,
+              toBlock: currentBlock
+            });
+
+            console.log(`📊 Found ${vibestreamCreatedEvents.length} vibestreams for user on Metis`);
+
+            // Convert events to vibestream data
+            onChainVibestreams = vibestreamCreatedEvents.map((event: any) => ({
+              vibeId: event.args.vibeId.toString(),
+              rtaId: `metis_${event.args.vibeId}`, // Generate RTA ID for cross-matching
+              creator: event.args.creator,
+              created_at: Number(event.args.timestamp),
+              mode: event.args.mode.toLowerCase(),
+              is_closed: false, // TODO: Query contract state to check if finalized
+              total_chunks: 0, // Will be filled from FilCDN data
+              participants: []
+            }));
+          }
+        } catch (metisError) {
+          console.warn('⚠️ Failed to query Metis contract:', metisError);
+          // Continue with empty array if Metis query fails
+        }
+      } else if (account.network === 'near-testnet') {
+        // Query NEAR rtav2 contract for user's NFTs
+        console.log('🔍 Querying NEAR rtav2 contract for user RTAs...');
+        
+        try {
+          if (account.walletType === 'guest' && guestKeyPair) {
+            const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
+            await keyStore.setKey(CONTRACT_ADDRESSES.NEAR.NETWORK, GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+            
+            const nearConnection = await nearAPI.connect({
+              networkId: CONTRACT_ADDRESSES.NEAR.NETWORK,
+              keyStore: keyStore,
+              nodeUrl: process.env.EXPO_PUBLIC_NEAR_NODE_URL || 'https://test.rpc.fastnear.com',
+              walletUrl: process.env.EXPO_PUBLIC_NEAR_WALLET_URL || 'https://wallet.testnet.near.org',
+              helperUrl: process.env.EXPO_PUBLIC_NEAR_HELPER_URL || 'https://helper.testnet.near.org',
+            });
+
+            const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
+
+            // Query user's NFTs using nft_tokens_for_owner
+            const tokens = await guestAccount.viewFunction({
+              contractId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
+              methodName: 'nft_tokens_for_owner',
+              args: {
+                account_id: account.accountId,
+                from_index: '0',
+                limit: 100
+              }
+            });
+
+            console.log(`📊 Found ${tokens.length} RTAs for user on NEAR`);
+
+            // Convert tokens to vibestream data
+            onChainVibestreams = tokens.map((token: any) => {
+              const metadata = token.metadata?.extra ? JSON.parse(token.metadata.extra) : {};
+              return {
+                vibeId: token.token_id.replace('rta_', ''),
+                rtaId: metadata.rta_id || token.token_id.replace('rta_', ''),
+                creator: metadata.config?.creator || account.accountId,
+                created_at: metadata.config?.created_at || 0,
+                mode: metadata.config?.mode || 'solo',
+                is_closed: metadata.is_closed || false,
+                total_chunks: metadata.total_chunks || 0,
+                filecoin_master_cid: metadata.filecoin_master_cid,
+                participants: []
+              };
+            });
+          } else {
+            // Use wallet selector for other NEAR wallets
+            if (Platform.OS === 'web' && globalNearSelector) {
+              const wallet = await globalNearSelector.wallet();
+              const walletId = globalNearSelector.store.getState().selectedWalletId;
+              
+              console.log(`📊 Using NEAR wallet: ${walletId}`);
+              
+              // Use signAndSendTransaction approach for view methods
+              const nearConnection = await nearAPI.connect({
+                networkId: CONTRACT_ADDRESSES.NEAR.NETWORK,
+                keyStore: new nearAPI.keyStores.BrowserLocalStorageKeyStore(),
+                nodeUrl: process.env.EXPO_PUBLIC_NEAR_NODE_URL || 'https://test.rpc.fastnear.com',
+                walletUrl: process.env.EXPO_PUBLIC_NEAR_WALLET_URL || 'https://wallet.testnet.near.org',
+                helperUrl: process.env.EXPO_PUBLIC_NEAR_HELPER_URL || 'https://helper.testnet.near.org',
+              });
+
+              const nearAccount = await nearConnection.account(account.accountId);
+              
+              const tokens = await nearAccount.viewFunction({
+                contractId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
+                methodName: 'nft_tokens_for_owner',
+                args: {
+                  account_id: account.accountId,
+                  from_index: '0',
+                  limit: 100
+                }
+              });
+
+              console.log(`📊 Found ${tokens.length} RTAs for user on NEAR`);
+
+              onChainVibestreams = tokens.map((token: any) => {
+                const metadata = token.metadata?.extra ? JSON.parse(token.metadata.extra) : {};
+                return {
+                  vibeId: token.token_id.replace('rta_', ''),
+                  rtaId: metadata.rta_id || token.token_id.replace('rta_', ''),
+                  creator: metadata.config?.creator || account.accountId,
+                  created_at: metadata.config?.created_at || 0,
+                  mode: metadata.config?.mode || 'solo',
+                  is_closed: metadata.is_closed || false,
+                  total_chunks: metadata.total_chunks || 0,
+                  filecoin_master_cid: metadata.filecoin_master_cid,
+                  participants: []
+                };
+              });
+            }
+          }
+        } catch (nearError) {
+          console.warn('⚠️ Failed to query NEAR contract via wallet, trying direct RPC:', nearError);
+          
+          // Fallback: Try direct RPC call
+          try {
+            const response = await fetch(`${process.env.EXPO_PUBLIC_NEAR_NODE_URL || 'https://test.rpc.fastnear.com'}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 'dontcare',
+                method: 'query',
+                params: {
+                  request_type: 'call_function',
+                  finality: 'final',
+                  account_id: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
+                  method_name: 'nft_tokens_for_owner',
+                  args_base64: typeof Buffer !== 'undefined' 
+                    ? Buffer.from(JSON.stringify({
+                        account_id: account.accountId,
+                        from_index: '0',
+                        limit: 100
+                      })).toString('base64')
+                    : btoa(JSON.stringify({
+                        account_id: account.accountId,
+                        from_index: '0',
+                        limit: 100
+                      }))
+                }
+              })
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              if (result.result && result.result.result) {
+                // result.result.result is a Uint8Array representing the JSON string
+                const resultBytes = result.result.result;
+                const jsonString = new TextDecoder().decode(new Uint8Array(resultBytes));
+                const tokens = JSON.parse(jsonString);
+                console.log(`📊 Found ${tokens.length} RTAs for user on NEAR (via RPC)`);
+
+                onChainVibestreams = tokens.map((token: any) => {
+                  const metadata = token.metadata?.extra ? JSON.parse(token.metadata.extra) : {};
+                  return {
+                    vibeId: token.token_id.replace('rta_', ''),
+                    rtaId: metadata.rta_id || token.token_id.replace('rta_', ''),
+                    creator: metadata.config?.creator || account.accountId,
+                    created_at: metadata.config?.created_at || 0,
+                    mode: metadata.config?.mode || 'solo',
+                    is_closed: metadata.is_closed || false,
+                    total_chunks: metadata.total_chunks || 0,
+                    filecoin_master_cid: metadata.filecoin_master_cid,
+                    participants: []
+                  };
+                });
+              }
+            }
+          } catch (rpcError) {
+            console.warn('⚠️ Direct RPC call also failed:', rpcError);
+            // Continue with empty array if both approaches fail
+          }
+        }
+      }
+
+      // Cross-match with FilCDN data for enhanced metadata
+      try {
+        console.log('🔄 Cross-matching with FilCDN data...');
+        const backendUrl = process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai';
+        const cacheBuster = Date.now();
+        const response = await fetch(`${backendUrl}/api/vibestreams?t=${cacheBuster}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        });
+
+        if (response.ok) {
+          const filcdnVibestreams = await response.json();
+          
+          // Cross-match on-chain data with FilCDN data
+          onChainVibestreams = onChainVibestreams.map(onChainVibe => {
+            const filcdnMatch = filcdnVibestreams.find((filcdnVibe: any) => 
+              filcdnVibe.rta_id === onChainVibe.rtaId || 
+              filcdnVibe.creator === onChainVibe.creator
+            );
+
+            if (filcdnMatch) {
+              return {
+                ...onChainVibe,
+                filcdn_duration: filcdnMatch.rta_duration,
+                filcdn_chunks: filcdnMatch.chunks,
+                filcdn_size_mb: filcdnMatch.total_size_mb,
+                total_chunks: filcdnMatch.chunks || onChainVibe.total_chunks
+              };
+            }
+
+            return onChainVibe;
+          });
+
+          console.log(`✅ Cross-matched ${onChainVibestreams.length} vibestreams with FilCDN data`);
+        }
+      } catch (filcdnError) {
+        console.warn('⚠️ Failed to cross-match with FilCDN data:', filcdnError);
+        // Continue with on-chain data only
+      }
+
+      return onChainVibestreams;
+
+    } catch (error) {
+      console.error('❌ Failed to fetch user vibestreams:', error);
+      throw error;
+    }
+  }, [account, guestKeyPair]);
+
+  // Get count of user's vibestreams
+  const getUserVibestreamCount = useCallback(async (): Promise<number> => {
+    try {
+      const vibestreams = await getUserVibestreams();
+      return vibestreams.length;
+    } catch (error) {
+      console.warn('⚠️ Failed to get vibestream count:', error);
+      return 0;
+    }
+  }, [getUserVibestreams]);
+
+  // Get specific vibestream metadata
+  const getVibestreamMetadata = useCallback(async (vibeId: string): Promise<any> => {
+    if (!account) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      if (account.network === 'metis-hyperion') {
+        // Query Metis VibeFactory contract
+        if (Platform.OS === 'web' && typeof window !== 'undefined' && (window as any).ethereum) {
+          const ethProvider = (window as any).ethereum;
+          
+          const publicClient = createPublicClient({
+            chain: {
+              id: CONTRACT_ADDRESSES.METIS.CHAIN_ID,
+              name: 'Metis Hyperion',
+              nativeCurrency: { name: 'tMETIS', symbol: 'tMETIS', decimals: 18 },
+              rpcUrls: { default: { http: [CONTRACT_ADDRESSES.METIS.RPC_URL] } },
+            },
+            transport: custom(ethProvider)
+          });
+
+          // Read vibestream data from contract
+          const vibeData = await publicClient.readContract({
+            address: CONTRACT_ADDRESSES.METIS.VIBE_FACTORY as `0x${string}`,
+            abi: [parseAbiItem('function getVibestream(uint256 vibeId) external view returns (tuple(address creator, uint256 startDate, string mode, bool storeToFilecoin, uint256 distance, string metadataURI, uint256 ticketsAmount, uint256 ticketPrice, bool finalized))')],
+            functionName: 'getVibestream',
+            args: [BigInt(vibeId)]
+          });
+
+          return vibeData;
+        }
+      } else if (account.network === 'near-testnet') {
+        // Query NEAR rtav2 contract
+        try {
+          if (account.walletType === 'guest' && guestKeyPair) {
+            const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
+            await keyStore.setKey(CONTRACT_ADDRESSES.NEAR.NETWORK, GUEST_CONFIG.ACCOUNT_ID, guestKeyPair);
+            
+            const nearConnection = await nearAPI.connect({
+              networkId: CONTRACT_ADDRESSES.NEAR.NETWORK,
+              keyStore: keyStore,
+              nodeUrl: process.env.EXPO_PUBLIC_NEAR_NODE_URL || 'https://test.rpc.fastnear.com',
+              walletUrl: process.env.EXPO_PUBLIC_NEAR_WALLET_URL || 'https://wallet.testnet.near.org',
+              helperUrl: process.env.EXPO_PUBLIC_NEAR_HELPER_URL || 'https://helper.testnet.near.org',
+            });
+
+            const guestAccount = await nearConnection.account(GUEST_CONFIG.ACCOUNT_ID);
+
+            const metadata = await guestAccount.viewFunction({
+              contractId: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
+              methodName: 'get_rta_metadata',
+              args: { rta_id: vibeId }
+            });
+
+            return metadata;
+          }
+        } catch (nearError) {
+          console.warn('⚠️ Failed to query NEAR metadata:', nearError);
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ Failed to get vibestream metadata:', error);
+      throw error;
+    }
+  }, [account, guestKeyPair]);
+
+  // Participant tracking methods (for future group mode)
+  const addParticipantToVibestream = useCallback(async (vibeId: string, participantId: string): Promise<void> => {
+    if (!account) {
+      throw new Error('Wallet not connected');
+    }
+
+    // TODO: Implement participant tracking when group mode contracts are ready
+    console.log(`🎯 Adding participant ${participantId} to vibestream ${vibeId} (placeholder for future group mode)`);
+    
+    // This will be implemented when group mode contracts are deployed
+    // For now, just log the action for future reference
+  }, [account]);
+
+  const removeParticipantFromVibestream = useCallback(async (vibeId: string, participantId: string): Promise<void> => {
+    if (!account) {
+      throw new Error('Wallet not connected');
+    }
+
+    // TODO: Implement participant tracking when group mode contracts are ready
+    console.log(`🎯 Removing participant ${participantId} from vibestream ${vibeId} (placeholder for future group mode)`);
+    
+    // This will be implemented when group mode contracts are deployed
+  }, [account]);
+
+  const getVibestreamParticipants = useCallback(async (vibeId: string): Promise<string[]> => {
+    if (!account) {
+      throw new Error('Wallet not connected');
+    }
+
+    // TODO: Implement participant tracking when group mode contracts are ready
+    console.log(`🎯 Getting participants for vibestream ${vibeId} (placeholder for future group mode)`);
+    
+    // For now, return empty array until group mode contracts are ready
+    return [];
+  }, [account]);
+
   const getNetworkInfo = useCallback(() => {
     if (!account) return null;
     
@@ -1134,6 +1553,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     addChunkToRTA,
     finalizeRTA,
     isRTAClosed,
+    getUserVibestreams,
+    getUserVibestreamCount,
+    getVibestreamMetadata,
+    addParticipantToVibestream,
+    removeParticipantFromVibestream,
+    getVibestreamParticipants,
     getNetworkInfo,
   };
 

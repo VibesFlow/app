@@ -9,6 +9,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai/web';
+import { logBufferStatus, logInterpretation, logInfo, logWarning, logError } from './logger';
 
 /**
  * Gemini-based Buffer Manager for Client-side Predictive Buffering
@@ -93,8 +94,9 @@ export class BufferManager {
     try {
       const currentTime = Date.now();
       
-      // LOG: Track buffering activity
-      console.log('🔄 Buffering audio chunk:', {
+      // LOG: Track buffering activity using throttled logger
+      logBufferStatus({
+        action: 'buffering-chunk',
         size: audioData?.byteLength || audioData?.length || 0,
         queueLength: this.bufferQueue.length,
         bufferType: this.genAI ? 'GEMINI_INTELLIGENT' : 'BASIC_FALLBACK',
@@ -128,13 +130,14 @@ export class BufferManager {
       // Update buffer health metrics
       this.updateBufferHealthMetrics();
 
-      // LOG: Buffer status every 10 chunks
-      if (this.bufferQueue.length % 10 === 0) {
-        console.log('📊 Buffer Status Update:', this.getBufferStatus());
-      }
+      // LOG: Buffer status using throttled logger (replaces every 10 chunks logic)
+      logBufferStatus({
+        action: 'status-update',
+        ...this.getBufferStatus()
+      });
 
     } catch (error) {
-      console.warn('Buffer management error:', error);
+      logWarning('Buffer management error', { error: error.message, queueLength: this.bufferQueue.length });
       this.qualityMetrics.dropoutsDetected++;
     }
   }
@@ -142,10 +145,12 @@ export class BufferManager {
   async processInterpretation(interpretation) {
     this.currentInterpretation = interpretation;
     
-    // LOG: Track interpretation processing
-    console.log('🎵 Processing interpretation for intelligent buffering:', {
-      hasWeightedPrompts: !!interpretation.weightedPrompts,
-      promptCount: interpretation.weightedPrompts?.length || 0,
+    // LOG: Track interpretation processing using throttled logger
+    logInterpretation({
+      action: 'processing-for-buffering',
+      singleCoherentPrompt: interpretation.singleCoherentPrompt?.substring(0, 50) + '...',
+      hasWeightedPrompts: !!interpretation.weightedPrompts, // Legacy support
+      promptCount: interpretation.weightedPrompts?.length || 0, // Legacy support
       bpm: interpretation.lyriaConfig?.bpm,
       density: interpretation.lyriaConfig?.density,
       geminiAvailable: !!this.genAI,
@@ -154,7 +159,7 @@ export class BufferManager {
     
     // Rate limiting: Only call Gemini API when buffer strategy needs significant change
     if (!this.shouldCallGeminiAPI(interpretation)) {
-      console.log('⏱️ Skipping Gemini API call due to rate limiting or minimal change');
+      logInfo('Skipping Gemini API call due to rate limiting or minimal change');
       return;
     }
     
@@ -162,13 +167,16 @@ export class BufferManager {
     if (this.isInitialized && this.genAI) {
       try {
         // Extract rich prompt information for predictive buffering
-        const weightedPrompts = interpretation.weightedPrompts || [];
-        const promptTexts = weightedPrompts.map(p => p.text).join(', ');
-        const primaryGenre = weightedPrompts[0]?.text || 'electronic';
+        const singleCoherentPrompt = interpretation.singleCoherentPrompt || '';
+        const weightedPrompts = interpretation.weightedPrompts || []; // Legacy fallback
+        const promptTexts = singleCoherentPrompt || weightedPrompts.map(p => p.text).join(', ');
+        const primaryGenre = this.extractPrimaryGenre(singleCoherentPrompt) || weightedPrompts[0]?.text || 'electronic';
         
-        // LOG: Show Gemini analysis input
-        console.log('🧠 Sending Lyria analysis to Gemini for intelligent buffering:', {
+        // LOG: Show Gemini analysis input using throttled logger
+        logInterpretation({
+          action: 'sending-to-gemini',
           primaryGenre,
+          singleCoherentPrompt: singleCoherentPrompt.substring(0, 100) + '...',
           promptTexts: promptTexts.substring(0, 100) + '...',
           bpm: interpretation.lyriaConfig?.bpm,
           density: interpretation.lyriaConfig?.density,
@@ -181,7 +189,7 @@ export class BufferManager {
         You are analyzing upcoming musical patterns to optimize audio buffering for seamless playback.
         
         CURRENT MUSICAL CONTEXT:
-        - Weighted Prompts: ${promptTexts}
+        - Single Coherent Prompt: ${promptTexts}
         - Primary Genre: ${primaryGenre}
         - BPM: ${interpretation.lyriaConfig?.bpm || 120}
         - Density: ${interpretation.lyriaConfig?.density || 0.5} (0=sparse, 1=busy)
@@ -219,8 +227,9 @@ export class BufferManager {
         });
         const response = result.response?.text() || result.text;
         
-        // LOG: Show Gemini response
-        console.log('✨ Gemini intelligent buffering response received:', {
+        // LOG: Show Gemini response using throttled logger
+        logInterpretation({
+          action: 'gemini-response-received',
           responseLength: response?.length || 0,
           responsePreview: response?.substring(0, 200) + '...' || 'No response'
         });
@@ -230,23 +239,27 @@ export class BufferManager {
           const bufferStrategy = this.parseGeminiResponse(response);
           
           // LOG: Show parsed strategy before applying
-          console.log('🎯 Gemini parsed intelligent buffer strategy:', bufferStrategy);
+          logInterpretation({
+            action: 'parsed-buffer-strategy',
+            strategy: bufferStrategy
+          });
           
           this.applyBufferStrategy(bufferStrategy);
-          console.log('✅ Applied Gemini intelligent buffer strategy successfully');
+          logInfo('Applied Gemini intelligent buffer strategy successfully');
           
         } catch (parseError) {
-          console.warn('❌ Failed to parse Gemini buffer strategy:', parseError);
-          console.log('📝 Raw Gemini response for debugging:', response);
+          logWarning('Failed to parse Gemini buffer strategy', { 
+            error: parseError.message,
+            responsePreview: response?.substring(0, 200) + '...' || 'No response'
+          });
         }
 
       } catch (error) {
-        console.warn('❌ Gemini buffer prediction failed:', error);
-        console.log('🔄 Falling back to basic buffering');
+        logWarning('Gemini buffer prediction failed - falling back to basic buffering', { error: error.message });
       }
     } else {
       // LOG: When using basic buffering
-      console.log('⚠️ Using basic buffering - Gemini not available:', {
+      logWarning('Using basic buffering - Gemini not available', {
         isInitialized: this.isInitialized,
         hasGeminiClient: !!this.genAI,
         reason: !this.isInitialized ? 'Not initialized' : !this.genAI ? 'No Gemini client' : 'Unknown'
@@ -276,7 +289,7 @@ export class BufferManager {
 
   applyBufferStrategy(strategy) {
     // LOG: Show strategy being applied
-    console.log('🔧 Applying Gemini intelligent buffer strategy...');
+    logInfo('Applying Gemini intelligent buffer strategy');
     
     const oldSettings = {
       maxBufferSize: this.maxBufferSize,
@@ -310,16 +323,13 @@ export class BufferManager {
       predictionAccuracy: this.predictionAccuracy
     };
     
-    console.log('📊 Applied Gemini intelligent buffer strategy:', {
+    logBufferStatus({
+      action: 'strategy-applied',
       oldSettings,
       newSettings,
       strategy: strategy.genrePrediction,
-      bufferingReasoning: strategy.bufferingReasoning
-    });
-    
-    console.log('🎵 Gemini buffering intelligence active:', {
-      genrePrediction: strategy.genrePrediction,
-      bufferingReasoning: strategy.bufferingReasoning
+      bufferingReasoning: strategy.bufferingReasoning,
+      genrePrediction: strategy.genrePrediction
     });
   }
 
@@ -464,6 +474,28 @@ export class BufferManager {
   }
 
   /**
+   * Extract primary genre from coherent prompt
+   */
+  extractPrimaryGenre(singleCoherentPrompt) {
+    if (!singleCoherentPrompt) return null;
+    
+    const genreKeywords = [
+      'hardcore', 'acid', 'techno', 'rave', 'electronic', 'psytrance', 
+      'ambient', 'trance', 'house', 'drum', 'bass', 'dubstep', 'minimal',
+      'industrial', 'breakbeat', 'jungle', 'gabber', 'hardstyle'
+    ];
+    
+    const lowerPrompt = singleCoherentPrompt.toLowerCase();
+    for (const genre of genreKeywords) {
+      if (lowerPrompt.includes(genre)) {
+        return genre;
+      }
+    }
+    
+    return 'electronic'; // Default fallback
+  }
+
+  /**
    * Enhanced JSON parsing to handle Gemini responses with markdown code blocks
    */
   parseGeminiResponse(response) {
@@ -543,12 +575,12 @@ export class BufferManager {
         await this.playAudioData();
       }
     } catch (error) {
-      console.warn('Failed to handle Lyria audio chunk:', error);
+      logWarning('Failed to handle Lyria audio chunk', { error: error.message });
     }
   }
 
   /**
-   * Play audio data with seamless buffering (from js-genai samples)
+   * Play audio data with seamless buffering and enhanced crossfading (enhanced from js-genai samples)
    */
   async playAudioData() {
     this.isQueueProcessing = true;
@@ -556,6 +588,10 @@ export class BufferManager {
     if (!this.audioContext || this.audioContext.state === "closed") {
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
       this.nextStartTime = this.audioContext.currentTime;
+      
+      // Create a master gain node for volume control
+      this.masterGain = this.audioContext.createGain();
+      this.masterGain.connect(this.audioContext.destination);
     }
 
     // Resume audio context if suspended
@@ -578,21 +614,60 @@ export class BufferManager {
         rightChannel[i] = audioChunks[i * 2 + 1];
       }
 
-      // Create an AudioBufferSourceNode
+      // Create an AudioBufferSourceNode with crossfading for smooth transitions
       const source = this.audioContext.createBufferSource();
+      const fadeGain = this.audioContext.createGain();
+      
       source.buffer = audioBuffer;
+      source.connect(fadeGain);
+      fadeGain.connect(this.masterGain);
 
-      // Connect the source to the destination (speakers)
-      source.connect(this.audioContext.destination);
-
-      // Schedule the audio to play seamlessly
-      if (this.nextStartTime < this.audioContext.currentTime) {
-        this.nextStartTime = this.audioContext.currentTime;
+      // Determine start time and apply intelligent crossfading
+      let startTime = this.nextStartTime;
+      if (startTime < this.audioContext.currentTime) {
+        startTime = this.audioContext.currentTime;
       }
-      source.start(this.nextStartTime);
 
-      // Advance the next start time by the duration of the current buffer
-      this.nextStartTime += audioBuffer.duration;
+      // Enhanced crossfading strategy based on Gemini predictions
+      const crossfadeDuration = this.crossfadeTime; // Use adaptive crossfade time
+      const bufferDuration = audioBuffer.duration;
+      
+      // Apply smooth fade-in for seamless transitions
+      fadeGain.gain.setValueAtTime(0, startTime);
+      fadeGain.gain.linearRampToValueAtTime(1, startTime + crossfadeDuration);
+      
+      // Apply smooth fade-out at the end for seamless chunk transitions
+      const fadeOutStart = startTime + bufferDuration - crossfadeDuration;
+      if (fadeOutStart > startTime + crossfadeDuration) {
+        fadeGain.gain.setValueAtTime(1, fadeOutStart);
+        fadeGain.gain.linearRampToValueAtTime(0, startTime + bufferDuration);
+      }
+
+      // Schedule the audio to play with overlap for crossfading
+      source.start(startTime);
+      source.stop(startTime + bufferDuration);
+      
+      // Cleanup to prevent memory leaks
+      source.onended = () => {
+        try {
+          source.disconnect();
+          fadeGain.disconnect();
+        } catch (error) {
+          // Ignore disconnect errors
+        }
+      };
+
+      // Advance the next start time with overlap for crossfading
+      this.nextStartTime = startTime + bufferDuration - crossfadeDuration;
+      
+      // Log crossfading activity for debugging
+      logBufferStatus({
+        action: 'audio-chunk-played',
+        startTime: startTime.toFixed(3),
+        duration: bufferDuration.toFixed(3),
+        crossfadeDuration: crossfadeDuration.toFixed(3),
+        overlap: crossfadeDuration.toFixed(3)
+      });
     }
     this.isQueueProcessing = false;
   }
@@ -612,6 +687,14 @@ export class BufferManager {
     // Clean up Web Audio API
     this.audioQueue = [];
     this.isQueueProcessing = false;
+    if (this.masterGain) {
+      try {
+        this.masterGain.disconnect();
+      } catch (error) {
+        // Ignore disconnect errors
+      }
+      this.masterGain = null;
+    }
     if (this.audioContext && this.audioContext.state !== 'closed') {
       this.audioContext.close();
     }
@@ -622,7 +705,7 @@ export class BufferManager {
     this.lastGeminiCall = 0;
     this.lastInterpretationSignature = null;
 
-    console.log('🧹 Enhanced Gemini buffer manager cleaned up');
+    logInfo('Enhanced Gemini buffer manager cleaned up');
   }
 }
 
@@ -632,7 +715,7 @@ export class BufferManager {
 export function createBufferManager(geminiApiKey) {
   // Validate API key is provided
   if (!geminiApiKey) {
-    console.error('❌ Gemini API key is required for buffer manager');
+    logError('Gemini API key is required for buffer manager', { provided: false });
     throw new Error('Gemini API key is required for buffer manager');
   }
   

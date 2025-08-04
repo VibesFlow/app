@@ -409,7 +409,7 @@ const ConnectModal: React.FC = () => {
           {renderContent()}
 
           <View style={styles.modalFooter}>
-            <Text style={styles.footerText}>POWERED BY NEAR & METIS</Text>
+            <Text style={styles.footerText}>POWERED BY (﹙˓ ‍🎧 ˒﹚)</Text>
           </View>
 
         </Animated.View>

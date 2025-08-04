@@ -40,6 +40,8 @@ interface FilCDNContextType {
   downloadChunk: (cid: string) => Promise<ArrayBuffer>;
   getVibestreamsByCreator: (creator: string) => VibestreamData[];
   getVibestreamByRTA: (rtaId: string) => VibestreamData | null;
+  findVibestreamByCriteria: (rtaId?: string, creator?: string) => VibestreamData[];
+  getVibestreamStats: (creator?: string) => { count: number; totalDuration: string; totalSize: number };
 }
 
 const FilCDNContext = createContext<FilCDNContextType | undefined>(undefined);
@@ -141,6 +143,46 @@ export const FilCDNProvider: React.FC<FilCDNProviderProps> = ({ children }) => {
     return vibestreams.find(stream => stream.rta_id === rtaId) || null;
   };
 
+  const findVibestreamByCriteria = (rtaId?: string, creator?: string): VibestreamData[] => {
+    return vibestreams.filter(stream => {
+      if (rtaId && creator) {
+        return stream.rta_id === rtaId || stream.creator === creator;
+      } else if (rtaId) {
+        return stream.rta_id === rtaId;
+      } else if (creator) {
+        return stream.creator === creator;
+      }
+      return false;
+    });
+  };
+
+  const getVibestreamStats = (creator?: string) => {
+    const filteredStreams = creator ? getVibestreamsByCreator(creator) : vibestreams;
+    
+    const count = filteredStreams.length;
+    let totalSeconds = 0;
+    let totalSize = 0;
+    
+    filteredStreams.forEach(stream => {
+      // Parse duration
+      if (stream.rta_duration) {
+        const parts = stream.rta_duration.split(':');
+        if (parts.length === 2) {
+          const minutes = parseInt(parts[0], 10) || 0;
+          const seconds = parseInt(parts[1], 10) || 0;
+          totalSeconds += minutes * 60 + seconds;
+        }
+      }
+    });
+    
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const totalDuration = `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    return { count, totalDuration, totalSize };
+  };
+
   // Load vibestreams on mount - on-demand.
   // Only load when explicitly requested to avoid 500 errors on empty state
   // useEffect(() => {
@@ -155,6 +197,8 @@ export const FilCDNProvider: React.FC<FilCDNProviderProps> = ({ children }) => {
     downloadChunk,
     getVibestreamsByCreator,
     getVibestreamByRTA,
+    findVibestreamByCriteria,
+    getVibestreamStats,
   };
 
   return (

@@ -22,6 +22,7 @@ import { Platform } from 'react-native';
 import { GoogleGenAI } from '@google/genai/web';
 import { webOrchestrator } from './web';
 import { createBufferManager as createGeminiBufferManager } from './buffering';
+import { logServerCommunication, logInterpretation, logPerformance, logInfo, logWarning, logError } from './logger';
 
 // Platform-specific orchestrator imports
 let mobileOrchestrator = null;
@@ -321,17 +322,17 @@ export class OrchestrationCoordinator extends EventEmitter {
   // Connect to server for enhanced sensor interpretation
   async connectToInterpretationServer() {
     try {
-      console.log('🔌 Connecting to interpretation server...');
-      
       const serverUrl = process.env.EXPO_PUBLIC_STREAM_URL?.replace('https://', 'wss://') || 'wss://alith.vibesflow.ai/orchestrator';
       const wsUrl = `${serverUrl}`;
+      
+      logServerCommunication({ action: 'connecting-to-server', url: wsUrl });
       
       this.serverConnection = new WebSocket(wsUrl);
       
       this.serverConnection.onopen = () => {
         this.isServerConnected = true;
         this.reconnectAttempts = 0;
-        console.log('✅ Connected to interpretation server - enhanced AI processing enabled');
+        logServerCommunication({ action: 'connected-to-server', status: 'enhanced-ai-processing-enabled' });
         this.processQueuedSensorData();
       };
       
@@ -340,24 +341,24 @@ export class OrchestrationCoordinator extends EventEmitter {
           const response = JSON.parse(event.data);
           this.handleServerInterpretation(response);
     } catch (error) {
-          console.warn('Failed to parse server response:', error);
+          logWarning('Failed to parse server response', { error: error.message });
         }
       };
       
       this.serverConnection.onclose = () => {
         this.isServerConnected = false;
-        console.log('🔌 Server connection closed');
+        logServerCommunication({ action: 'server-connection-closed' });
         this.handleServerReconnect();
       };
       
       this.serverConnection.onerror = (error) => {
-        console.warn('⚠️ Server unavailable - continuing with client-side processing');
+        logWarning('Server unavailable - continuing with client-side processing', { error: error.type || 'connection_error' });
         this.isServerConnected = false;
       };
       
       return true;
     } catch (error) {
-      console.error('❌ Failed to connect to interpretation server:', error);
+      logError('Failed to connect to interpretation server', { error: error.message, stack: error.stack });
       return false;
     }
   }
@@ -365,7 +366,10 @@ export class OrchestrationCoordinator extends EventEmitter {
   // Process queued sensor data when server becomes available
   processQueuedSensorData() {
     if (this.sensorQueue.length > 0) {
-      console.log(`📡 Processing ${this.sensorQueue.length} queued sensor messages`);
+      logServerCommunication({
+        action: 'processing-queued-sensor-messages',
+        queueLength: this.sensorQueue.length
+      });
       const queue = [...this.sensorQueue];
       this.sensorQueue = [];
       
@@ -394,14 +398,13 @@ export class OrchestrationCoordinator extends EventEmitter {
     
     if (timeSinceLastSend < adaptiveInterval || this.pendingResponse) {
       // Rate limited - just update buffer, don't send
-      if (Math.random() < 0.01) { // Log 1% of the time to avoid spam
-        console.log('⏱️ Rate limiting sensor data:', {
-          timeSinceLastSend: Math.round(timeSinceLastSend),
-          adaptiveInterval: Math.round(adaptiveInterval),
-          serverLatency: Math.round(this.serverLatency),
-          pendingResponse: this.pendingResponse
-        });
-      }
+      logPerformance({
+        action: 'rate-limiting',
+        timeSinceLastSend: Math.round(timeSinceLastSend),
+        adaptiveInterval: Math.round(adaptiveInterval),
+        serverLatency: Math.round(this.serverLatency),
+        pendingResponse: this.pendingResponse
+      });
       return;
     }
 
@@ -420,21 +423,20 @@ export class OrchestrationCoordinator extends EventEmitter {
     }
 
     try {
-      // Log detailed sensor data being sent (throttled)
-      if (Math.random() < 0.05) { // Log 5% of sensor data for debugging
-        console.log('📡 Sending detailed sensor data to server:', {
-          x: sensorData.x?.toFixed(3),
-          y: sensorData.y?.toFixed(3),
-          z: sensorData.z?.toFixed(3),
-          source: sensorData.source,
-          pressure: sensorData.pressure,
-          tiltX: sensorData.tiltX,
-          velocity: sensorData.velocity,
-          acceleration: sensorData.acceleration,
-          serverConnected: this.isServerConnected,
-          vibestreamActive: this.vibestreamActive
-        });
-      }
+      // Log detailed sensor data being sent using throttled logger
+      logServerCommunication({
+        action: 'sending-sensor-data',
+        x: sensorData.x?.toFixed(3),
+        y: sensorData.y?.toFixed(3),
+        z: sensorData.z?.toFixed(3),
+        source: sensorData.source,
+        pressure: sensorData.pressure,
+        tiltX: sensorData.tiltX,
+        velocity: sensorData.velocity,
+        acceleration: sensorData.acceleration,
+        serverConnected: this.isServerConnected,
+        vibestreamActive: this.vibestreamActive
+      });
 
       // Use correct message format that backend expects
       const message = {
@@ -451,12 +453,13 @@ export class OrchestrationCoordinator extends EventEmitter {
 
       this.serverConnection.send(JSON.stringify(message));
       
-      console.log('📡 Sensor data sent to server (adaptive rate limited):', {
+      logServerCommunication({
+        action: 'sent-sensor-data',
         interval: Math.round(adaptiveInterval),
         latency: Math.round(this.serverLatency)
       });
     } catch (error) {
-      console.warn('Failed to send sensor data to server:', error);
+      logWarning('Failed to send sensor data to server', { error: error.message });
     }
   }
 
@@ -469,25 +472,26 @@ export class OrchestrationCoordinator extends EventEmitter {
       this.serverLatency = this.serverLatency * 0.7 + responseTime * 0.3;
       this.pendingResponse = false;
       
-      if (Math.random() < 0.1) { // Log 10% of responses
-        console.log('⏱️ Server latency updated:', {
-          responseTime: Math.round(responseTime),
-          avgLatency: Math.round(this.serverLatency),
-          nextInterval: Math.round(Math.max(this.minSendInterval, Math.min(this.serverLatency * 1.2, this.maxSendInterval)))
-        });
-      }
+      logPerformance({
+        action: 'server-latency-update',
+        responseTime: Math.round(responseTime),
+        avgLatency: Math.round(this.serverLatency),
+        nextInterval: Math.round(Math.max(this.minSendInterval, Math.min(this.serverLatency * 1.2, this.maxSendInterval)))
+      });
     }
     
     if (!response || response.type !== 'interpretation') {
-      console.log('⚠️ Received non-interpretation message from server:', response?.type || 'undefined');
+      logWarning('Received non-interpretation message from server', { type: response?.type || 'undefined' });
       return;
     }
 
     try {
       const { data: interpretation } = response;
       
-      console.log('🎼 Received server interpretation:', {
-        prompts: interpretation.weightedPrompts?.length,
+      logInterpretation({
+        action: 'received-interpretation',
+        singleCoherentPrompt: interpretation.singleCoherentPrompt?.substring(0, 50) + '...',
+        prompts: interpretation.weightedPrompts?.length, // Legacy support
         bpm: interpretation.lyriaConfig?.bpm,
         density: interpretation.lyriaConfig?.density,
         reasoning: interpretation.reasoning?.substring(0, 100) + '...',
@@ -501,9 +505,10 @@ export class OrchestrationCoordinator extends EventEmitter {
 
       // Check if this is a fallback response (indicates Alith agent failed)
       if (interpretation.fallback) {
-        console.warn('⚠️ Received fallback interpretation - Alith agent may have failed:', response.error);
+        logWarning('Received fallback interpretation - Alith agent may have failed', { error: response.error });
       } else {
-        console.log('✅ Received full Alith agent interpretation with:', {
+        logInterpretation({
+          action: 'full-alith-interpretation',
           memory: response.hasMemory,
           knowledge: response.hasKnowledge,
           poetry: response.usedPoetry,
@@ -523,26 +528,46 @@ export class OrchestrationCoordinator extends EventEmitter {
       this.emit('interpretation', interpretation);
       
     } catch (error) {
-      console.error('Failed to handle server interpretation:', error);
+      logError('Failed to handle server interpretation', { error: error.message, stack: error.stack });
     }
   }
 
   // Apply server interpretation to Lyria session
   async applyInterpretationToLyria(interpretation) {
     if (!this.isLyriaConnected || !this.lyriaSession) {
-      console.warn('⚠️ Cannot apply interpretation - Lyria not connected');
+      logWarning('Cannot apply interpretation - Lyria not connected', { isConnected: this.isLyriaConnected });
       return;
   }
 
   try {
-      console.log('🎵 Applying interpretation to Lyria...');
+      logInterpretation({
+      action: 'applying-to-lyria',
+      singleCoherentPrompt: interpretation.singleCoherentPrompt?.substring(0, 50) + '...',
+      promptCount: interpretation.weightedPrompts?.length, // Legacy support
+      hasBpmConfig: !!interpretation.lyriaConfig?.bpm,
+      hasDensityConfig: !!interpretation.lyriaConfig?.density
+    });
     
-      // Apply weighted prompts
-      if (interpretation.weightedPrompts) {
+      // Apply single coherent prompt (preferred) or weighted prompts (legacy)
+      if (interpretation.singleCoherentPrompt) {
+        // Convert coherent prompt to single weighted prompt for Lyria
+        await this.lyriaSession.setWeightedPrompts({
+          weightedPrompts: [{ text: interpretation.singleCoherentPrompt, weight: 1.0 }]
+        });
+        logInterpretation({
+          action: 'updated-lyria-coherent-prompt',
+          singleCoherentPrompt: interpretation.singleCoherentPrompt.substring(0, 50) + '...'
+        });
+      } else if (interpretation.weightedPrompts) {
+        // Fallback to legacy weighted prompts
         await this.lyriaSession.setWeightedPrompts({
       weightedPrompts: interpretation.weightedPrompts
     });
-        console.log('📝 Updated Lyria prompts:', interpretation.weightedPrompts);
+        logInterpretation({
+          action: 'updated-lyria-weighted-prompts',
+          promptCount: interpretation.weightedPrompts.length,
+          prompts: interpretation.weightedPrompts.map(p => p.text?.substring(0, 30) + '...')
+        });
       }
 
       // Apply configuration
@@ -550,13 +575,21 @@ export class OrchestrationCoordinator extends EventEmitter {
         await this.lyriaSession.setMusicGenerationConfig({
       musicGenerationConfig: interpretation.lyriaConfig
     });
-        console.log('⚙️ Updated Lyria config:', interpretation.lyriaConfig);
+        logInterpretation({
+          action: 'updated-lyria-config',
+          config: interpretation.lyriaConfig
+        });
       }
 
-      console.log('✅ Interpretation applied to Lyria successfully');
+      logInterpretation({
+        action: 'interpretation-applied-successfully',
+        singleCoherentPrompt: interpretation.singleCoherentPrompt ? 'coherent_prompt_applied' : 'no_coherent_prompt',
+        promptCount: interpretation.weightedPrompts?.length, // Legacy support  
+        bpm: interpretation.lyriaConfig?.bpm
+      });
 
   } catch (error) {
-      console.error('❌ Failed to apply interpretation to Lyria:', error);
+      logError('Failed to apply interpretation to Lyria', { error: error.message, stack: error.stack });
     }
   }
 
@@ -566,13 +599,18 @@ export class OrchestrationCoordinator extends EventEmitter {
       this.reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
       
-      console.log(`🔄 Attempting to reconnect to server (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms`);
+      logServerCommunication({
+        action: 'attempting-reconnect',
+        attempt: this.reconnectAttempts,
+        maxAttempts: this.maxReconnectAttempts,
+        delayMs: delay
+      });
       
       setTimeout(() => {
         this.connectToInterpretationServer();
       }, delay);
     } else {
-      console.error('❌ Max reconnection attempts reached');
+      logError('Max reconnection attempts reached', { attempts: this.maxReconnectAttempts });
     }
   }
 
@@ -689,12 +727,12 @@ export class OrchestrationCoordinator extends EventEmitter {
         try {
           callback(sensorData);
         } catch (error) {
-          console.warn('Sensor callback error:', error);
+          logWarning('Sensor callback error', { error: error.message });
         }
       });
       
     } catch (error) {
-      console.error('Error processing sensor data:', error);
+      logError('Error processing sensor data', { error: error.message, stack: error.stack });
     }
   }
 
@@ -721,14 +759,14 @@ export class OrchestrationCoordinator extends EventEmitter {
       
       // Debug logging
       if (!audioData && message.serverContent) {
-        console.log('🔍 No audio data found. ServerContent structure:', Object.keys(message.serverContent));
-        if (message.serverContent.audioChunks) {
-          console.log('🔍 AudioChunks structure:', message.serverContent.audioChunks);
-        }
+        logWarning('No audio data found in Lyria message', { 
+          serverContentKeys: Object.keys(message.serverContent),
+          hasAudioChunks: !!message.serverContent.audioChunks
+        });
       }
 
       if (audioData) {
-        console.log('🎵 Audio chunk received, processing...');
+        logInfo('Audio chunk received, processing');
         
         // Send to Gemini buffer manager for seamless playback with predictive buffering
         if (this.geminiBufferManager) {
@@ -753,26 +791,26 @@ export class OrchestrationCoordinator extends EventEmitter {
           try {
             callback(audioData);
           } catch (error) {
-            console.warn('Audio chunk callback error:', error);
+            logWarning('Audio chunk callback error', { error: error.message });
           }
         });
       }
 
       // Handle other message types
       if (message.serverContent?.status) {
-        console.info('Lyria status:', message.serverContent.status);
+        logInfo('Lyria status update', { status: message.serverContent.status });
         this.emit('status', message.serverContent.status);
       }
       
     } catch (error) {
-      console.error('Failed to handle Lyria message:', error);
+      logError('Failed to handle Lyria message', { error: error.message, stack: error.stack });
       this.callbacks.onError.forEach(callback => callback(error));
     }
   }
 
   // Handle Lyria errors
   handleLyriaError(error) {
-    console.error('Lyria connection error:', error);
+    logError('Lyria connection error', { error: error.message || error, stack: error.stack });
     this.isLyriaConnected = false;
     this.connectionState = 'error';
     
@@ -791,7 +829,7 @@ export class OrchestrationCoordinator extends EventEmitter {
 
   // Handle Lyria connection close
   handleLyriaClose() {
-    console.log('Lyria connection closed');
+    logInfo('Lyria connection closed');
     this.isLyriaConnected = false;
     this.connectionState = 'closed';
     
@@ -854,7 +892,7 @@ export class OrchestrationCoordinator extends EventEmitter {
       await this.lyriaSession.play();
       
       console.log('📡 Server will send enhanced prompts via sensor data interpretation');
-      console.log('✅ Orchestration started successfully - music should be playing!');
+      console.log('✅ Orchestration started successfully!');
       
       this.emit('orchestrationStarted', true);
       return true;
@@ -909,17 +947,97 @@ export class OrchestrationCoordinator extends EventEmitter {
     console.log('🎯 Vibestream started:', rtaId);
     console.log('📡 Sensors will now send data for active vibestream');
     
+    // Send session-start message to server for user pattern loading
+    this.sendSessionStartToServer(rtaId);
+    
     this.emit('vibestreamStarted', rtaId);
   }
   
   // Stop vibestream - this stops sensors and chunk service
   stopVibestream() {
+    const endingRtaId = this.currentRtaId; // Store before clearing
+    
+    // Send session-end message to server for user pattern saving
+    if (endingRtaId) {
+      this.sendSessionEndToServer(endingRtaId, 'user_closed');
+    }
+    
     this.currentRtaId = null;
     this.audioChunkService = null;
     this.vibestreamActive = false;
     
     console.log('🛑 Vibestream stopped - sensor data will no longer be processed');
     this.emit('vibestreamStopped', true);
+  }
+
+  // ============================================================================
+  // SESSION BOUNDARY MESSAGING
+  // ============================================================================
+  
+  // Send session-start message to server for user pattern loading
+  sendSessionStartToServer(rtaId) {
+    if (!this.isServerConnected || !this.serverConnection) {
+      console.warn('⚠️ Cannot send session-start - server not connected');
+      return;
+    }
+    
+    try {
+      const walletAddress = this.walletIntegration?.account?.accountId || 'anonymous';
+      const message = {
+        type: 'session-start',
+        walletAddress,
+        vibeId: rtaId,
+        config: {
+          platform: this.platform,
+          timestamp: Date.now()
+        },
+        timestamp: Date.now()
+      };
+      
+      this.serverConnection.send(JSON.stringify(message));
+      
+      logServerCommunication({
+        action: 'session-start-sent',
+        walletAddress: walletAddress.substring(0, 8) + '...',
+        vibeId: rtaId,
+        platform: this.platform
+      });
+      
+    } catch (error) {
+      logWarning('Failed to send session-start message', { error: error.message });
+    }
+  }
+  
+  // Send session-end message to server for user pattern saving
+  sendSessionEndToServer(rtaId, reason) {
+    if (!this.isServerConnected || !this.serverConnection) {
+      console.warn('⚠️ Cannot send session-end - server not connected');
+      return;
+    }
+    
+    try {
+      const walletAddress = this.walletIntegration?.account?.accountId || 'anonymous';
+      const message = {
+        type: 'session-end',
+        walletAddress,
+        vibeId: rtaId,
+        reason: reason || 'unknown',
+        timestamp: Date.now()
+      };
+      
+      this.serverConnection.send(JSON.stringify(message));
+      
+      logServerCommunication({
+        action: 'session-end-sent',
+        walletAddress: walletAddress.substring(0, 8) + '...',
+        vibeId: rtaId,
+        reason,
+        platform: this.platform
+      });
+      
+    } catch (error) {
+      logWarning('Failed to send session-end message', { error: error.message });
+    }
   }
 
   // ============================================================================
