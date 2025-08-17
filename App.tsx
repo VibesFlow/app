@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import SplashScreen from './components/SplashScreen';
 import VibePlayer from './components/VibePlayer';
 import UserProfile from './components/UserProfile';
 import VibeMarket from './components/VibeMarket';
+import Playback from './components/Playback';
 import { COLORS, FONT_SIZES, SPACING } from './theme';
 import { WalletProvider, useWallet } from './context/connector';
 import { FilCDNProvider } from './context/filcdn';
@@ -24,7 +25,7 @@ if (typeof window !== 'undefined') {
   };
 }
 
-type AppScreen = 'splash' | 'main' | 'vibe-player' | 'loading' | 'profile' | 'vibe-market';
+type AppScreen = 'splash' | 'main' | 'vibe-player' | 'loading' | 'profile' | 'vibe-market' | 'playback';
 
 function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
@@ -33,6 +34,60 @@ function AppContent() {
     config: any;
   } | null>(null);
   const { account } = useWallet();
+
+  // Web URL routing - sync URL with state
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const updateScreenFromURL = () => {
+        const path = window.location.pathname;
+        if (path === '/market') {
+          setCurrentScreen('vibe-market');
+        } else if (path === '/profile') {
+          setCurrentScreen('profile');
+        } else if (path === '/player') {
+          setCurrentScreen('vibe-player');
+        } else if (path.startsWith('/vibestream/')) {
+          setCurrentScreen('playback');
+          // Extract RTA ID from URL
+          const rtaId = path.substring(12); // Remove '/vibestream/' prefix
+          if (rtaId) {
+            setrtaData({ rtaId, config: { mode: 'playback' } });
+          }
+        } else if (path === '/' || path === '/splash') {
+          setCurrentScreen('splash');
+        }
+      };
+
+      // Update on mount
+      updateScreenFromURL();
+
+      // Listen for URL changes
+      window.addEventListener('popstate', updateScreenFromURL);
+      return () => window.removeEventListener('popstate', updateScreenFromURL);
+    }
+    return undefined;
+  }, []);
+
+  // Update URL when screen changes (web only)
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const getUrlForScreen = (screen: AppScreen) => {
+        switch (screen) {
+          case 'vibe-market': return '/market';
+          case 'profile': return '/profile';
+          case 'vibe-player': return '/player';
+          case 'playback': return rtaData ? `/vibestream/${rtaData.rtaId}` : '/market';
+          case 'splash': return '/';
+          default: return '/';
+        }
+      };
+
+      const url = getUrlForScreen(currentScreen);
+      if (window.location.pathname !== url) {
+        window.history.pushState({}, '', url);
+      }
+    }
+  }, [currentScreen]);
 
   // Initialize orchestration integration with wallet
   useEffect(() => {
@@ -141,6 +196,19 @@ function AppContent() {
     return (
       <VibeMarket 
         onBack={handleBackToMain}
+        onOpenPlayback={(rtaId) => {
+          setrtaData({ rtaId, config: { mode: 'playback' } });
+          setCurrentScreen('playback');
+        }}
+      />
+    );
+  }
+
+  if (currentScreen === 'playback') {
+    return (
+      <Playback 
+        onBack={() => setCurrentScreen('vibe-market')}
+        rtaId={rtaData?.rtaId || ''}
       />
     );
   }

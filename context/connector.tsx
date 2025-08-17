@@ -29,7 +29,6 @@ if (Platform.OS === 'web') {
     nearAPI = require('near-api-js');
     KeyPair = require('near-api-js').KeyPair;
     
-    console.log('✅ Near wallet selector loaded for web');
   } catch (error) {
     console.warn('⚠️ Near wallet dependencies not available:', error);
   }

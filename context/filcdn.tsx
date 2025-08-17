@@ -1,9 +1,10 @@
 /**
- * FilCDN Context - Integration with Synapse SDK
- * Bridges frontend and backend for vibestream data retrieval
+ * FilCDN Context - Direct Synapse SDK Integration  
+ * Provides vibestream data with native FilCDN URL support
  */
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useWallet } from './connector';
 
 interface VibestreamData {
   rta_id: string;
@@ -26,6 +27,7 @@ interface ChunkDetail {
   size: number;
   root_id?: number;
   url: string;
+  filcdn_url?: string; // Direct FilCDN URL
   duration?: number;
   participants?: number;
   owner?: string;
@@ -36,10 +38,14 @@ interface FilCDNContextType {
   vibestreams: VibestreamData[];
   loading: boolean;
   error: string | null;
+  isConnected: boolean;
+  networkType: 'metis' | 'near' | null;
+  currentAddress: string | null;
   refreshVibestreams: () => Promise<void>;
-  downloadChunk: (cid: string) => Promise<ArrayBuffer>;
+  downloadChunk: (cid: string, useDirectCDN?: boolean) => Promise<ArrayBuffer>;
   getVibestreamsByCreator: (creator: string) => VibestreamData[];
   getVibestreamByRTA: (rtaId: string) => VibestreamData | null;
+  constructFilCDNUrl: (cid: string, clientAddress?: string) => string;
 }
 
 const FilCDNContext = createContext<FilCDNContextType | undefined>(undefined);
@@ -49,9 +55,31 @@ interface FilCDNProviderProps {
 }
 
 export const FilCDNProvider: React.FC<FilCDNProviderProps> = ({ children }) => {
+  const { connected, account, getNetworkInfo } = useWallet();
   const [vibestreams, setVibestreams] = useState<VibestreamData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Get current address and network info
+  const currentAddress = account?.accountId || null;
+  const networkInfo = getNetworkInfo();
+
+  // Determine network type based on connected network
+  const getNetworkType = (): 'metis' | 'near' | null => {
+    if (!networkInfo) return null;
+    if (networkInfo.type === 'metis-hyperion') return 'metis';
+    if (networkInfo.type === 'near-testnet' || networkInfo.type === 'near-mainnet') return 'near';
+    return null;
+  };
+
+  // Construct direct FilCDN URL using provider wallet
+  const constructFilCDNUrl = (cid: string, providerAddress?: string): string => {
+    const address = providerAddress || 
+      process.env.EXPO_PUBLIC_FILCDN_PROVIDER_ADDRESS;
+    
+    // Use calibration network
+    return `https://${address}.calibration.filcdn.io/${cid}`;
+  };
 
   const refreshVibestreams = async () => {
     try {
@@ -85,18 +113,34 @@ export const FilCDNProvider: React.FC<FilCDNProviderProps> = ({ children }) => {
         throw new Error('Invalid response format: expected array of vibestreams');
       }
 
-      // Transform the data to ensure proper URL mapping with CORS proxy
+      // Transform the data with proper FilCDN URLs
       const transformedData = data.map((vibestream: any) => ({
         ...vibestream,
-        chunks_detail: vibestream.chunks_detail?.map((chunk: any) => ({
-          ...chunk,
-          // Use CORS proxy for all chunks to avoid CORS issues
-          url: chunk.cid ? `${backendUrl}/api/proxy/${chunk.cid}` : (chunk.url || `https://gateway.pinata.cloud/ipfs/${chunk.cid}`),
-          filcdn_url: chunk.cid ? `https://${process.env.FILECOIN_ADDRESS || '0xedD801D6c993B3c8052e485825A725ee09F1ff4D'}.calibration.filcdn.io/${chunk.cid}` : undefined,
-        })) || []
+        chunks_detail: vibestream.chunks_detail?.map((chunk: any) => {
+          if (!chunk.cid) return chunk;
+          
+          try {
+            // Construct direct FilCDN URL using the provider wallet address
+            const filcdnUrl = constructFilCDNUrl(chunk.cid);
+            
+            return {
+              ...chunk,
+              // Use backend proxy as fallback
+              url: `${backendUrl}/api/proxy/${chunk.cid}`,
+              // Direct FilCDN URL for optimal performance
+              filcdn_url: filcdnUrl,
+            };
+          } catch (error) {
+            console.warn(`⚠️ Failed to construct FilCDN URL for chunk ${chunk.chunk_id}:`, error);
+            return {
+              ...chunk,
+              url: `${backendUrl}/api/proxy/${chunk.cid}`,
+            };
+          }
+        }) || []
       }));
 
-      console.log(`✅ Loaded ${transformedData.length} vibestreams from Synapse SDK`);
+      console.log(`✅ Loaded ${transformedData.length} vibestreams with FilCDN URLs`);
       setVibestreams(transformedData);
       
     } catch (err) {
@@ -109,14 +153,47 @@ export const FilCDNProvider: React.FC<FilCDNProviderProps> = ({ children }) => {
     }
   };
 
-  const downloadChunk = async (cid: string): Promise<ArrayBuffer> => {
+  const downloadChunk = async (cid: string, useDirectCDN: boolean = true): Promise<ArrayBuffer> => {
     try {
-      console.log(`📥 Downloading chunk ${cid} from FilCDN...`);
+      console.log(`📥 Downloading chunk ${cid} ${useDirectCDN ? 'from FilCDN (provider wallet)' : 'from backend proxy'}...`);
       
-      const backendUrl = process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai';
-      const response = await fetch(`${backendUrl}/api/download/${cid}`, {
-        method: 'GET'
-      });
+      let response: Response;
+      
+      if (useDirectCDN) {
+        try {
+          // Attempt direct FilCDN download using provider wallet
+          const filcdnUrl = constructFilCDNUrl(cid);
+          response = await fetch(filcdnUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'audio/*',
+              'Cache-Control': 'public, max-age=31536000' // Cache for 1 year
+            }
+          });
+          
+          if (response.ok) {
+            console.log(`✅ FilCDN download successful for ${cid} using provider wallet`);
+          } else if (response.status === 402) {
+            console.warn('📋 FilCDN requires payment - using backend proxy fallback');
+            throw new Error('FilCDN payment required');
+          } else {
+            throw new Error(`FilCDN failed with status: ${response.status}`);
+          }
+        } catch (filcdnError) {
+          console.warn(`⚠️ FilCDN download failed for ${cid}:`, filcdnError);
+          // Fall back to backend proxy
+          const backendUrl = process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai';
+          response = await fetch(`${backendUrl}/api/proxy/${cid}`, {
+            method: 'GET'
+          });
+        }
+      } else {
+        // Use backend proxy directly
+        const backendUrl = process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai';
+        response = await fetch(`${backendUrl}/api/proxy/${cid}`, {
+          method: 'GET'
+        });
+      }
 
       if (!response.ok) {
         throw new Error(`Failed to download chunk: ${response.status} ${response.statusText}`);
@@ -153,10 +230,14 @@ export const FilCDNProvider: React.FC<FilCDNProviderProps> = ({ children }) => {
     vibestreams,
     loading,
     error,
+    isConnected: connected,
+    networkType: getNetworkType(),
+    currentAddress,
     refreshVibestreams,
     downloadChunk,
     getVibestreamsByCreator,
     getVibestreamByRTA,
+    constructFilCDNUrl,
   };
 
   return (

@@ -42,7 +42,12 @@ export class WebOrchestrator {
     this.isBuffering = false; // Control audio buffering loop
     this.lastDeviceMotion = null; // Store last device motion data for rich sensor enhancement
 
-    // Initialize immediately for web platform
+    // CRITICAL: Sensor control state - only collect during active vibestreams
+    this.isSensorCollectionActive = false;
+    this.sensorCleanupFunctions = [];
+    this.activeVibestreamId = null;
+
+    // Initialize audio but NOT sensors (sensors only start when vibestream is active)
     if (Platform.OS === 'web') {
       this.initializeWebAudio();
     }
@@ -645,48 +650,83 @@ export class WebOrchestrator {
     };
   }
 
-  // Initialize all web sensors including 2025 modern APIs
-  async initializeSensors() {
-    if (Platform.OS !== 'web') return [];
+  // START sensor collection for active vibestream (only called when vibestream starts)
+  async startSensorCollection(vibestreamId) {
+    if (this.isSensorCollectionActive) {
+      logWarning('Sensor collection already active, stopping previous session');
+      this.stopSensorCollection();
+    }
 
-    const cleanupFunctions = [];
+    console.log(`🎯 Starting sensor collection for vibestream: ${vibestreamId}`);
+    this.isSensorCollectionActive = true;
+    this.activeVibestreamId = vibestreamId;
+
+    if (Platform.OS !== 'web') return;
 
     try {
       // Original sensors
       const mouseCleanup = this.initializeMouseTracking();
-      if (mouseCleanup) cleanupFunctions.push(mouseCleanup);
+      if (mouseCleanup) this.sensorCleanupFunctions.push(mouseCleanup);
 
       const cameraCleanup = await this.initializeCameraMotion();
-      if (cameraCleanup) cleanupFunctions.push(cameraCleanup);
+      if (cameraCleanup) this.sensorCleanupFunctions.push(cameraCleanup);
 
       const keyboardCleanup = this.initializeKeyboardTracking();
-      if (keyboardCleanup) cleanupFunctions.push(keyboardCleanup);
+      if (keyboardCleanup) this.sensorCleanupFunctions.push(keyboardCleanup);
 
       const decayCleanup = this.initializeSensorDecay();
-      if (decayCleanup) cleanupFunctions.push(decayCleanup);
+      if (decayCleanup) this.sensorCleanupFunctions.push(decayCleanup);
 
       // 2025 Modern sensor APIs
       const deviceMotionCleanup = this.initializeDeviceMotion();
-      if (deviceMotionCleanup) cleanupFunctions.push(deviceMotionCleanup);
+      if (deviceMotionCleanup) this.sensorCleanupFunctions.push(deviceMotionCleanup);
 
       const deviceOrientationCleanup = this.initializeDeviceOrientation();
-      if (deviceOrientationCleanup) cleanupFunctions.push(deviceOrientationCleanup);
+      if (deviceOrientationCleanup) this.sensorCleanupFunctions.push(deviceOrientationCleanup);
 
       const touchCleanup = this.initializeTouchSensors();
-      if (touchCleanup) cleanupFunctions.push(touchCleanup);
+      if (touchCleanup) this.sensorCleanupFunctions.push(touchCleanup);
 
       const audioCleanup = await this.initializeAudioSensors();
-      if (audioCleanup) cleanupFunctions.push(audioCleanup);
+      if (audioCleanup) this.sensorCleanupFunctions.push(audioCleanup);
 
       const scrollCleanup = this.initializeScrollSensors();
-      if (scrollCleanup) cleanupFunctions.push(scrollCleanup);
+      if (scrollCleanup) this.sensorCleanupFunctions.push(scrollCleanup);
 
-      logInfo('All 2025 web sensors initialized with ultra-high sensitivity', { sensorsCount: cleanupFunctions.length });
-      return cleanupFunctions;
+      logInfo(`Sensor collection started for vibestream ${vibestreamId}`, { sensorsCount: this.sensorCleanupFunctions.length });
     } catch (error) {
       logWarning('Web sensor initialization error', { error: error.message });
-      return cleanupFunctions;
     }
+  }
+
+  // STOP sensor collection (called when vibestream ends)
+  stopSensorCollection() {
+    if (!this.isSensorCollectionActive) {
+      return; // Already stopped
+    }
+
+    console.log(`🛑 Stopping sensor collection for vibestream: ${this.activeVibestreamId}`);
+    
+    // Clean up all sensor listeners
+    this.sensorCleanupFunctions.forEach(cleanup => {
+      try {
+        cleanup();
+      } catch (error) {
+        logWarning('Error during sensor cleanup', { error: error.message });
+      }
+    });
+
+    this.sensorCleanupFunctions = [];
+    this.isSensorCollectionActive = false;
+    this.activeVibestreamId = null;
+
+    logInfo('Sensor collection stopped and resources cleaned up');
+  }
+
+  // Initialize all web sensors including 2025 modern APIs (DEPRECATED - use startSensorCollection instead)
+  async initializeSensors() {
+    logWarning('initializeSensors() is deprecated. Use startSensorCollection(vibestreamId) instead.');
+    return this.startSensorCollection('legacy_session');
   }
 
   // Real-time audio chunk playback
@@ -835,6 +875,9 @@ export class WebOrchestrator {
     logInfo('Web orchestrator cleanup starting');
     
     try {
+      // Stop sensor collection if active
+      this.stopSensorCollection();
+      
       this.cleanupCameraMotion();
       
       if (this.decayInterval) {

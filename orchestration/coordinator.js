@@ -96,23 +96,22 @@ export class OrchestrationCoordinator extends EventEmitter {
     this.isProcessingSensors = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
+    this.currentBaseline = null; // Track current baseline for crossfading
     
-    // ADAPTIVE RATE LIMITING - Prevent server flooding
+    // Smooth rate limiting - optimized for seamless transitions
     this.lastServerSendTime = 0;
-    this.serverLatency = 1000; // Start with 1 second based on observed performance
-    this.minSendInterval = 1000; // Minimum 1 second between sends
-    this.maxSendInterval = 1500; // Maximum 1.5 seconds if server is slow
+    this.serverLatency = 250; // Increased to 250ms for stability
+    this.minSendInterval = 200; // Increased to 200ms for smoother server processing
+    this.maxSendInterval = 400; // Maximum 400ms if server is slow
     this.pendingResponse = false;
     this.sensorDataBuffer = null; // Buffer latest sensor data
+    this.sensorSmoothingQueue = []; // Queue for sensor smoothing
+    this.maxSmoothingQueue = 8; // Increased to 8 for better smoothing
+    this.transitionBuffering = new Map(); // NEW: Buffer for ultra-smooth transitions
     
     // Client-side Gemini Buffer Manager
     this.geminiBufferManager = null;
     this.geminiApiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-    console.log('🔑 Gemini API key availability:', this.geminiApiKey ? 'AVAILABLE' : 'MISSING');
-    console.log('🔑 Gemini API key length:', this.geminiApiKey?.length || 0);
-    if (this.geminiApiKey) {
-      console.log('🔑 Gemini API key prefix:', this.geminiApiKey.substring(0, 8) + '...');
-    }
     
     // Vibestream tracking and audio chunk handling
     this.currentRtaId = null;
@@ -233,18 +232,41 @@ export class OrchestrationCoordinator extends EventEmitter {
       await this.connectToInterpretationServer();
       
       // 4. Initialize platform-specific sensor systems
-      if (Platform.OS === 'web' && this.orchestrators.web) {
-        await this.initializeWebSensors();
-      } else if (Platform.OS !== 'web' && this.orchestrators.mobile) {
-        await this.initializeMobileSensors();
-      }
-
+      
       this.coordinationEnabled = true;
       
-      console.log('✅ Unified orchestration architecture initialized successfully');
+      console.log('✅ Unified orchestration architecture initialized (sensors on standby)');
       return true;
     } catch (error) {
       console.error('❌ Failed to initialize unified orchestration architecture:', error);
+      return false;
+    }
+  }
+
+  // Start vibestream session when user creates new vibestream
+  async startVibestreamSession(rtaId, audioChunkService) {
+    try {
+      console.log('🎯 Starting new vibestream session:', rtaId);
+      console.log('📡 NOW starting sensor collection for active vibestream generation...');
+      
+      // Start actual sensor collection (ONLY NOW!)
+      if (Platform.OS === 'web' && this.orchestrators.web) {
+        await this.orchestrators.web.startSensorCollection(rtaId);
+      } else if (Platform.OS !== 'web' && this.orchestrators.mobile) {
+        await this.orchestrators.mobile.startSensorCollection(rtaId);
+      }
+      
+          // Start the vibestream (existing logic)
+    this.startVibestream(rtaId, audioChunkService);
+    
+    console.log('✅ Vibestream session started with sensor collection');
+    
+    // DEBUGGING: Force vibestreamActive to true and verify
+    this.vibestreamActive = true;
+    console.log('🔧 DEBUG: Vibestream active status forced to:', this.vibestreamActive);
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to start vibestream session:', error);
       return false;
     }
   }
@@ -381,29 +403,61 @@ export class OrchestrationCoordinator extends EventEmitter {
 
 
 
-  // Send sensor data to server for interpretation with INTELLIGENT RATE LIMITING
+  // Send sensor data to server for interpretation with ULTRA-RESPONSIVE RATE LIMITING
   sendSensorDataToServer(sensorData) {
     // Only send sensor data when vibestream is active
     if (!this.vibestreamActive) {
+      console.log('⏸️ Sensor data ignored - vibestream not active:', {
+        vibestreamActive: this.vibestreamActive,
+        serverConnected: this.isServerConnected,
+        currentRtaId: this.currentRtaId
+      });
       return; // Ignore sensor data when no vibestream is running
     }
+    
+    // DEBUGGING: Log when sensor data is actually sent
+    console.log('📡 SENDING SENSOR DATA TO SERVER:', {
+      vibestreamActive: this.vibestreamActive,
+      serverConnected: this.isServerConnected,
+      magnitude: Math.sqrt(sensorData.x**2 + sensorData.y**2 + sensorData.z**2).toFixed(3),
+      source: sensorData.source
+    });
 
-    // Adaptive rate limiting - respect server processing time
+    // Ultra-responsive rate limiting - optimized for sensory feedback
     const now = Date.now();
     const timeSinceLastSend = now - this.lastServerSendTime;
+    
+    // Add to sensor smoothing queue for natural transitions
+    this.sensorSmoothingQueue.push({
+      ...sensorData,
+      timestamp: now
+    });
+    
+    // Keep smoothing queue manageable
+    if (this.sensorSmoothingQueue.length > this.maxSmoothingQueue) {
+      this.sensorSmoothingQueue.shift();
+    }
+    
+    // Calculate smoothed sensor data for ultra-responsive yet smooth transitions
+    // Use sensor data directly - web.js already handles smoothing
+    const smoothedSensorData = sensorData;
+    
+    // Smooth adaptive interval (increased to 1.2x for stability)
     const adaptiveInterval = Math.max(this.minSendInterval, Math.min(this.serverLatency * 1.2, this.maxSendInterval));
     
-    // Buffer the latest sensor data but don't send if too soon or response pending
-    this.sensorDataBuffer = sensorData;
+    // Buffer the latest smoothed sensor data
+    this.sensorDataBuffer = smoothedSensorData;
     
-    if (timeSinceLastSend < adaptiveInterval || this.pendingResponse) {
-      // Rate limited - just update buffer, don't send
+    // More permissive sending conditions for ultra-responsiveness
+    if (timeSinceLastSend < adaptiveInterval && this.pendingResponse) {
+      // Only skip if BOTH conditions are restrictive
       logPerformance({
-        action: 'rate-limiting',
+        action: 'ultra-responsive-rate-limiting',
         timeSinceLastSend: Math.round(timeSinceLastSend),
         adaptiveInterval: Math.round(adaptiveInterval),
         serverLatency: Math.round(this.serverLatency),
-        pendingResponse: this.pendingResponse
+        pendingResponse: this.pendingResponse,
+        smoothingQueueSize: this.sensorSmoothingQueue.length
       });
       return;
     }
@@ -460,10 +514,75 @@ export class OrchestrationCoordinator extends EventEmitter {
       });
     } catch (error) {
       logWarning('Failed to send sensor data to server', { error: error.message });
-    }
+        }
   }
 
-    // Handle interpretation response from server
+  // Calculate smoothed sensor data for natural, ultra-responsive transitions
+  calculateSmoothedSensorData(currentSensorData) {
+    if (this.sensorSmoothingQueue.length === 0) {
+      return currentSensorData;
+    }
+
+    // Calculate weighted average with emphasis on recent data
+    let totalWeight = 0;
+    let smoothedX = 0, smoothedY = 0, smoothedZ = 0;
+    
+    this.sensorSmoothingQueue.forEach((sensor, index) => {
+      // Exponential weighting - recent data has more influence
+      const weight = Math.pow(1.5, index); // Recent data weighted more heavily
+      totalWeight += weight;
+      
+      smoothedX += sensor.x * weight;
+      smoothedY += sensor.y * weight;
+      smoothedZ += sensor.z * weight;
+    });
+    
+    // Apply smoothing with natural motion characteristics
+    const smoothed = {
+      ...currentSensorData,
+      x: smoothedX / totalWeight,
+      y: smoothedY / totalWeight,
+      z: smoothedZ / totalWeight,
+      // Add velocity calculation for enhanced responsiveness
+      velocity: this.calculateSensorVelocity(),
+      // Add micro-movement detection
+      microMovement: this.detectMicroMovements(currentSensorData)
+    };
+    
+    return smoothed;
+  }
+
+  // Calculate sensor velocity for enhanced music responsiveness
+  calculateSensorVelocity() {
+    if (this.sensorSmoothingQueue.length < 2) return 0;
+    
+    const recent = this.sensorSmoothingQueue.slice(-2);
+    const deltaTime = (recent[1].timestamp - recent[0].timestamp) / 1000; // Convert to seconds
+    
+    if (deltaTime === 0) return 0;
+    
+    const deltaX = recent[1].x - recent[0].x;
+    const deltaY = recent[1].y - recent[0].y;
+    const deltaZ = recent[1].z - recent[0].z;
+    
+    const velocity = Math.sqrt(deltaX**2 + deltaY**2 + deltaZ**2) / deltaTime;
+    return Math.min(velocity, 10); // Cap velocity for reasonable values
+  }
+
+  // Detect micro-movements for ultra-sensitive music response
+  detectMicroMovements(currentSensorData) {
+    if (this.sensorSmoothingQueue.length === 0) return 0;
+    
+    const lastSensor = this.sensorSmoothingQueue[this.sensorSmoothingQueue.length - 1];
+    const microDeltaX = Math.abs(currentSensorData.x - lastSensor.x);
+    const microDeltaY = Math.abs(currentSensorData.y - lastSensor.y);
+    const microDeltaZ = Math.abs(currentSensorData.z - lastSensor.z);
+    
+    // Sum of micro-movements normalized
+    return (microDeltaX + microDeltaY + microDeltaZ) / 3;
+  }
+
+  // Handle interpretation response from server
   handleServerInterpretation(response) {
     // Adaptive Rate Limit - calculate server latency and prompts queue
     if (this.pendingResponse && this.serverRequestStart) {
@@ -500,7 +619,11 @@ export class OrchestrationCoordinator extends EventEmitter {
         hasMemory: response.hasMemory,
         hasKnowledge: response.hasKnowledge,
         usedPoetry: response.usedPoetry,
-        usedSensorExpertise: response.usedSensorExpertise
+        usedSensorExpertise: response.usedSensorExpertise,
+        // NEW: Baseline-driven metadata
+        baselineDriven: response.baselineDriven,
+        requiresCrossfade: interpretation.requiresCrossfade,
+        baselineEstablished: response.sessionInfo?.baselineEstablished
       });
 
       // Check if this is a fallback response (indicates Alith agent failed)
@@ -516,12 +639,19 @@ export class OrchestrationCoordinator extends EventEmitter {
         });
       }
       
-      // Apply interpretation to Lyria directly
-      this.applyInterpretationToLyria(interpretation);
+      // Apply interpretation to Lyria with enhanced transition handling
+      this.applyInterpretationToLyria(interpretation, response.sessionInfo);
       
       // Apply to Gemini buffer manager for predictive buffering
       if (this.geminiBufferManager) {
+        console.log('🧠 Sending interpretation to buffer manager:', {
+          hasPrompt: !!interpretation.singleCoherentPrompt,
+          promptPreview: interpretation.singleCoherentPrompt?.substring(0, 30) + '...',
+          requiresCrossfade: interpretation.requiresCrossfade
+        });
         this.geminiBufferManager.processInterpretation(interpretation);
+      } else {
+        console.warn('⚠️ No buffer manager available for interpretation processing');
       }
       
       // Emit for UI updates
@@ -532,8 +662,8 @@ export class OrchestrationCoordinator extends EventEmitter {
     }
   }
 
-  // Apply server interpretation to Lyria session
-  async applyInterpretationToLyria(interpretation) {
+  // Apply server interpretation to Lyria session with enhanced transitions
+  async applyInterpretationToLyria(interpretation, sessionInfo) {
     if (!this.isLyriaConnected || !this.lyriaSession) {
       logWarning('Cannot apply interpretation - Lyria not connected', { isConnected: this.isLyriaConnected });
       return;
@@ -541,28 +671,40 @@ export class OrchestrationCoordinator extends EventEmitter {
 
   try {
       logInterpretation({
-      action: 'applying-to-lyria',
+      action: 'applying-to-lyria-enhanced',
       singleCoherentPrompt: interpretation.singleCoherentPrompt?.substring(0, 50) + '...',
       promptCount: interpretation.weightedPrompts?.length, // Legacy support
       hasBpmConfig: !!interpretation.lyriaConfig?.bpm,
-      hasDensityConfig: !!interpretation.lyriaConfig?.density
+      hasDensityConfig: !!interpretation.lyriaConfig?.density,
+      requiresCrossfade: interpretation.requiresCrossfade,
+      baselineEstablished: sessionInfo?.baselineEstablished
     });
     
-      // Apply single coherent prompt (preferred) or weighted prompts (legacy)
+      // Enhanced transition handling based on baseline decisions
       if (interpretation.singleCoherentPrompt) {
-        // Convert coherent prompt to single weighted prompt for Lyria
-        await this.lyriaSession.setWeightedPrompts({
-          weightedPrompts: [{ text: interpretation.singleCoherentPrompt, weight: 1.0 }]
-        });
+        if (interpretation.requiresCrossfade && this.currentBaseline) {
+          // Implement Lyria's recommended crossfading for smooth transitions
+          await this.applyCrossfadeTransition(interpretation.singleCoherentPrompt);
+        } else {
+          // Direct application for layer additions or baseline establishment
+          await this.lyriaSession.setWeightedPrompts({
+            weightedPrompts: [{ text: interpretation.singleCoherentPrompt, weight: 1.0 }]
+          });
+          
+          // Update current baseline for future crossfading
+          this.currentBaseline = interpretation.singleCoherentPrompt;
+        }
+        
         logInterpretation({
-          action: 'updated-lyria-coherent-prompt',
-          singleCoherentPrompt: interpretation.singleCoherentPrompt.substring(0, 50) + '...'
+          action: interpretation.requiresCrossfade ? 'applied-crossfade-transition' : 'updated-lyria-coherent-prompt',
+          singleCoherentPrompt: interpretation.singleCoherentPrompt.substring(0, 50) + '...',
+          transitionType: interpretation.requiresCrossfade ? 'crossfade' : 'direct'
         });
       } else if (interpretation.weightedPrompts) {
         // Fallback to legacy weighted prompts
         await this.lyriaSession.setWeightedPrompts({
-      weightedPrompts: interpretation.weightedPrompts
-    });
+          weightedPrompts: interpretation.weightedPrompts
+        });
         logInterpretation({
           action: 'updated-lyria-weighted-prompts',
           promptCount: interpretation.weightedPrompts.length,
@@ -573,23 +715,102 @@ export class OrchestrationCoordinator extends EventEmitter {
       // Apply configuration
       if (interpretation.lyriaConfig) {
         await this.lyriaSession.setMusicGenerationConfig({
-      musicGenerationConfig: interpretation.lyriaConfig
-    });
+          musicGenerationConfig: interpretation.lyriaConfig
+        });
         logInterpretation({
           action: 'updated-lyria-config',
           config: interpretation.lyriaConfig
         });
       }
 
-      logInterpretation({
-        action: 'interpretation-applied-successfully',
-        singleCoherentPrompt: interpretation.singleCoherentPrompt ? 'coherent_prompt_applied' : 'no_coherent_prompt',
-        promptCount: interpretation.weightedPrompts?.length, // Legacy support  
-        bpm: interpretation.lyriaConfig?.bpm
-      });
+      // Staggered parameter updates to prevent audio clicks
+      if (interpretation.lyriaConfig) {
+        // Apply parameters with 50ms delay between updates for smooth transitions
+        setTimeout(async () => {
+          try {
+            await this.lyriaSession.setMusicGenerationConfig({
+              musicGenerationConfig: interpretation.lyriaConfig
+            });
+            
+            logInterpretation({
+              action: 'updated-lyria-config-staggered',
+              config: interpretation.lyriaConfig
+            });
+          } catch (error) {
+            logWarning('Staggered config update failed', { error: error.message });
+          }
+        }, 50); // 50ms delay for smoother application
+      }
 
-  } catch (error) {
-      logError('Failed to apply interpretation to Lyria', { error: error.message, stack: error.stack });
+    } catch (error) {
+      logError('Failed to apply interpretation to Lyria', { error: error.message });
+    }
+  }
+
+  // NEW: Lyria-optimized crossfading implementation
+  async applyCrossfadeTransition(newPrompt) {
+    try {
+      console.log('🌊 Applying Lyria crossfade transition...');
+      
+      // Phase 1: Introduce new prompt at low weight (30%)
+      await this.lyriaSession.setWeightedPrompts({
+        weightedPrompts: [
+          { text: this.currentBaseline, weight: 0.7 },
+          { text: newPrompt, weight: 0.3 }
+        ]
+      });
+      
+      logInterpretation({
+        action: 'crossfade-phase-1',
+        oldBaseline: this.currentBaseline.substring(0, 30) + '...',
+        newPrompt: newPrompt.substring(0, 30) + '...',
+        weights: '70/30'
+      });
+      
+      // Phase 2: Balance the weights (50/50) after 1.5 seconds
+      setTimeout(async () => {
+        try {
+          await this.lyriaSession.setWeightedPrompts({
+            weightedPrompts: [
+              { text: this.currentBaseline, weight: 0.5 },
+              { text: newPrompt, weight: 0.5 }
+            ]
+          });
+          console.log('🌊 Crossfade phase 2: balanced weights');
+          logInterpretation({
+            action: 'crossfade-phase-2',
+            weights: '50/50'
+          });
+        } catch (error) {
+          logError('Crossfade phase 2 failed', { error: error.message });
+        }
+      }, 1500);
+      
+      // Phase 3: Complete transition to new prompt after 3 seconds
+      setTimeout(async () => {
+        try {
+          await this.lyriaSession.setWeightedPrompts({
+            weightedPrompts: [{ text: newPrompt, weight: 1.0 }]
+          });
+          this.currentBaseline = newPrompt;
+          console.log('🌊 Crossfade completed: new baseline established');
+          logInterpretation({
+            action: 'crossfade-phase-3',
+            newBaseline: newPrompt.substring(0, 30) + '...',
+            weights: '100'
+          });
+        } catch (error) {
+          logError('Crossfade phase 3 failed', { error: error.message });
+        }
+      }, 3000);
+      
+    } catch (error) {
+      logError('Crossfade transition failed', { error: error.message });
+      // Fallback to direct transition
+      await this.lyriaSession.setWeightedPrompts({
+        weightedPrompts: [{ text: newPrompt, weight: 1.0 }]
+      });
+      this.currentBaseline = newPrompt;
     }
   }
 
@@ -670,15 +891,12 @@ export class OrchestrationCoordinator extends EventEmitter {
       console.log('🌐 Initializing web sensors...');
       
       if (this.orchestrators.web) {
-        // Initialize web sensors
-        await this.orchestrators.web.initializeSensors();
-        
         // Register callback to send sensor data to server
         this.orchestrators.web.onSensorData((sensorData) => {
           this.handleSensorData(sensorData);
         });
         
-        console.log('✅ Web sensors initialized');
+        console.log('✅ Web sensors initialized (awaiting vibestream session)');
       }
       
       return true;
@@ -691,17 +909,15 @@ export class OrchestrationCoordinator extends EventEmitter {
   // Initialize mobile sensors
   async initializeMobileSensors() {
     try {
-      console.log('📱 Initializing mobile sensors...');
+      console.log('📱 Initializing mobile sensors...'); 
       
       if (this.orchestrators.mobile) {
-        await this.orchestrators.mobile.initializeSensors();
-        
-        // Register callback to send sensor data to server
+        // Register callback to send sensor data to server (when collection starts)
         this.orchestrators.mobile.onSensorData((sensorData) => {
           this.handleSensorData(sensorData);
         });
         
-        console.log('✅ Mobile sensors initialized');
+        console.log('✅ Mobile sensors initialized (awaiting vibestream session)');
       }
       
       return true;
@@ -945,7 +1161,14 @@ export class OrchestrationCoordinator extends EventEmitter {
     this.vibestreamActive = true;
     
     console.log('🎯 Vibestream started:', rtaId);
-    console.log('📡 Sensors will now send data for active vibestream');
+    console.log('📡 Starting sensor collection for active vibestream');
+    
+    // Start sensor collection on the active orchestrator
+    if (this.activeOrchestrator && this.activeOrchestrator.startSensorCollection) {
+      this.activeOrchestrator.startSensorCollection(rtaId);
+    } else {
+      console.warn('⚠️ Active orchestrator does not support sensor collection');
+    }
     
     // Send session-start message to server for user pattern loading
     this.sendSessionStartToServer(rtaId);
@@ -962,11 +1185,18 @@ export class OrchestrationCoordinator extends EventEmitter {
       this.sendSessionEndToServer(endingRtaId, 'user_closed');
     }
     
+    // Stop sensor collection on the active orchestrator
+    if (this.activeOrchestrator && this.activeOrchestrator.stopSensorCollection) {
+      this.activeOrchestrator.stopSensorCollection();
+    } else {
+      console.warn('⚠️ Active orchestrator does not support sensor collection cleanup');
+    }
+    
     this.currentRtaId = null;
     this.audioChunkService = null;
     this.vibestreamActive = false;
     
-    console.log('🛑 Vibestream stopped - sensor data will no longer be processed');
+    console.log('🛑 Vibestream stopped - sensor collection stopped and resources cleaned up');
     this.emit('vibestreamStopped', true);
   }
 

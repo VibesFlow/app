@@ -141,45 +141,60 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   useEffect(() => {
     const initializeOrchestration = async () => {
       try {
-        console.log('🚀 Initializing orchestration...');
+        console.log('Initializing VibesFlow orchestration system...');
         
-        // Note: orchestrationIntegration should already be initialized with wallet
-        // by the parent component. We just need to start the orchestration.
+        // Start with basic sensor simulation for waveforms while orchestration loads
+        const sensorInterval = setInterval(() => {
+          // Generate realistic sensor data for waveforms
+          const time = Date.now() / 1000;
+          const sensorData = {
+            x: Math.sin(time * 0.5) * 0.8 + Math.random() * 0.4 - 0.2,
+            y: Math.cos(time * 0.7) * 0.6 + Math.random() * 0.3 - 0.15,
+            z: Math.sin(time * 0.3) * 0.5 + 0.5 + Math.random() * 0.2 - 0.1,
+            timestamp: Date.now(),
+            source: 'simulation'
+          };
+          
+          setSensorData(sensorData);
+          processRealTimeSensorData(sensorData);
+        }, 50); // 20fps sensor updates
         
+        updateIntervalRef.current = sensorInterval;
+        
+        // Try to initialize orchestration integration
         const status = orchestrationIntegration.getStatus();
-        if (!status.initialized) {
-          console.warn('⚠️ Orchestration integration not initialized - sensors may not work');
-        } else {
+        if (status.initialized) {
           console.log('✅ Orchestration integration ready:', status);
+          
+          // Try to get real sensor data
+          try {
+            orchestrationIntegration.onSensorData((data) => {
+              if (!data.isDecay) {
+                setSensorData(data);
+                processRealTimeSensorData(data);
+              } else {
+                // Apply decay to current sensor data for smooth transitions
+                setSensorData(prev => ({
+                  x: prev.x * 0.95,
+                  y: prev.y * 0.95, 
+                  z: Math.max(0.05, prev.z * 0.98),
+                  timestamp: Date.now(),
+                  source: 'decay'
+                }));
+              }
+            });
+          } catch (error) {
+            console.warn('⚠️ Real sensor data not available, using simulation');
+          }
+        } else {
+          console.warn('⚠️ Orchestration integration not ready, using simulation for waveforms');
         }
 
-        // ✅ Register sensor data callback to update waveforms
-        orchestrationIntegration.onSensorData((data) => {
-          if (!data.isDecay) {
-            setSensorData(data);
-            processRealTimeSensorData(data);
-          } else {
-            // Apply decay to current sensor data for smooth transitions
-            setSensorData(prev => ({
-              x: prev.x * 0.95,
-              y: prev.y * 0.95, 
-              z: Math.max(0.05, prev.z * 0.98),
-              timestamp: Date.now(),
-              source: 'decay'
-            }));
-          }
-        });
-
-        // Also listen for sensor data events if using EventEmitter pattern
-        orchestrationIntegration.on('sensorData', (data) => {
-          setSensorData(data);
-          processRealTimeSensorData(data);
-        });
-        
         setIsInitialized(true);
+        console.log('Orchestration system initialized successfully');
 
       } catch (error) {
-        console.error('❌ Orchestration initialization failed:', error);
+        console.error('Orchestration initialization failed:', error);
         setIsInitialized(true); // Still allow UI to function
       }
     };
@@ -187,7 +202,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     initializeOrchestration();
 
     return () => {
-      // Cleanup intervals
+      // Cleanup all intervals
       if (updateIntervalRef.current) {
         clearInterval(updateIntervalRef.current);
         updateIntervalRef.current = null;
@@ -198,7 +213,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
       }
       
       // Cleanup orchestration integration
-      orchestrationIntegration.cleanup();
+      try {
+        orchestrationIntegration.cleanup();
+      } catch (error) {
+        console.warn('Cleanup error:', error);
+      }
     };
   }, []);
 
@@ -207,11 +226,20 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   // =============================================================================
   const processRealTimeSensorData = useCallback(async (sensorData: SensorData) => {
     try {
-      // Note: Sensor data is automatically sent to server by orchestrationIntegration
-      // We just need to update the UI based on sensor data
+      // Accurate waveform representation
       const magnitude = Math.sqrt(sensorData.x ** 2 + sensorData.y ** 2 + sensorData.z ** 2);
-      setCurrentAmplitude(Math.min(magnitude * 0.8 + 0.2, 1));
-      setCurrentFrequency(1 + Math.abs(sensorData.x) * 3);
+      
+      // More sensitive and responsive amplitude calculation
+      const amplitudeResponse = Math.min(magnitude * 2.5 + 0.1, 1); // Increased sensitivity from 0.8 to 2.5
+      setCurrentAmplitude(amplitudeResponse);
+      
+      // Enhanced frequency response with multiple sensor axis mapping
+      const frequencyBase = 1.0;
+      const xContribution = Math.abs(sensorData.x) * 4; // Increased from 3 to 4
+      const yContribution = Math.abs(sensorData.y) * 2; // Added Y axis contribution
+      const zContribution = Math.abs(sensorData.z) * 1.5; // Added Z axis contribution
+      setCurrentFrequency(frequencyBase + xContribution + yContribution + zContribution);
+      
       
     } catch (error) {
       console.warn('Real-time processing error:', error);
@@ -233,15 +261,13 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         audioChunkService.startCollecting(rtaID, config.creator);
         console.log('🎵 Audio chunk service started for RTA:', rtaID);
         
-        // Start vibestream in orchestration (enables sensor data collection)
-        orchestrationIntegration.startVibestream(rtaID, audioChunkService);
+        // NOTE: Orchestration system already started by VibestreamModal
+        // We just need to connect to listen for sensor data
+        console.log('🔗 VibePlayer: Connecting to orchestration system (already started by VibestreamModal)');
       }
 
-      // Start orchestration - this will:
-      // 1. Connect directly to Lyria (client-side)
-      // 2. Start sensor data collection (only now that vibestream is active)
-      // 3. Begin server interpretation communication
-      // NO client-side prompts - orchestration will wait for server-generated prompts
+      // Start orchestration - this will connect directly to Lyria for music generation
+      // NOTE: Sensor collection was already started by VibestreamModal
       const success = await orchestrationIntegration.startOrchestration(null);
       
       if (!success) {
@@ -264,23 +290,23 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     }
     
     // Stop vibestream (this stops sensor data collection)
-    orchestrationIntegration.stopVibestream();
-    
     // Stop audio chunk service (will process remaining chunks)
     await audioChunkService.stopCollecting();
     console.log('🛑 Audio chunk service stopped');
     
+    // Stop vibestream session (this will cleanup sensors)
+    orchestrationIntegration.stopVibestream();
+    
     // Stop orchestration - this will:
     // 1. Stop Lyria session (client-side)
     // 2. Close server connection
-    // 3. Cleanup sensors
     await orchestrationIntegration.stopOrchestration();
     
     console.log('✅ New orchestration architecture vibestream closed');
     onBack(); // Navigate to user profile
   };
 
-  // VibePlayer is now pure - no blockchain/worker management needed
+  // VibePlayer is now pure - no blockchain/agent management needed
 
   // =============================================================================
   // AUTO-START OPTIMIZATION
@@ -369,7 +395,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Generate advanced waveform data
+  // Generate advanced waveform data (EXACT LEGACY PATTERN)
   const generateWaveformData = (): number[] => {
     const points: number[] = [];
     const segments = 150;
