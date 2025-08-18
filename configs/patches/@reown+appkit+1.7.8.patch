@@ -1,0 +1,14 @@
+--- node_modules/@reown/appkit/package.json.orig	2025-08-18 22:52:53
++++ node_modules/@reown/appkit/package.json	2025-08-18 22:53:00
+@@ -14,6 +14,11 @@
+       "import": "./dist/esm/exports/index.js",
+       "default": "./dist/esm/exports/index.js"
+     },
++    "./core": {
++      "types": "./dist/types/exports/core.d.ts",
++      "import": "./dist/esm/exports/core.js",
++      "default": "./dist/esm/exports/core.js"
++    },
+     "./react": {
+       "types": "./dist/types/exports/react.d.ts",
+       "import": "./dist/esm/exports/react.js",

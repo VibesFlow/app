@@ -22,7 +22,13 @@ module.exports = async function (env, argv) {
         '@dynamic-labs/ethereum',
         '@dynamic-labs/ethereum-core',
         '@dynamic-labs/wagmi-connector',
-        '@dynamic-labs/react-native-extension'
+        '@dynamic-labs/react-native-extension',
+        // Add @reown packages to transpilation
+        '@reown/appkit',
+        '@reown/appkit-common',
+        '@reown/appkit-controllers',
+        '@reown/appkit-utils',
+        '@walletconnect/ethereum-provider'
       ]
     }
   }, argv);
@@ -87,7 +93,10 @@ module.exports = async function (env, argv) {
   config.resolve.alias = {
     ...config.resolve.alias,
     'react-native$': 'react-native-web',
-    'react-native-web$': 'react-native-web'
+    'react-native-web$': 'react-native-web',
+    // Fix @reown/appkit/core import issue
+    '@reown/appkit/core': path.resolve(__dirname, '../node_modules/@reown/appkit/dist/esm/exports/core.js'),
+    '@reown/appkit/react': '@reown/appkit/react'
   };
 
   // Module rules for better compatibility and import.meta handling

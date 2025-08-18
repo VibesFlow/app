@@ -8,7 +8,9 @@
     "strictBindCallApply": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "typeRoots": ["./node_modules/@types"]
+    "typeRoots": ["./node_modules/@types"],
+    "moduleResolution": "bundler",
+    "resolvePackageJsonImports": false
   },
   "include": [
     "**/*.ts",
