@@ -261,9 +261,10 @@ export class OrchestrationCoordinator extends EventEmitter {
     
     console.log('✅ Vibestream session started with sensor collection');
     
-    // DEBUGGING: Force vibestreamActive to true and verify
+    // Set vibestreamActive to true to enable sensor data flow
     this.vibestreamActive = true;
-    console.log('🔧 DEBUG: Vibestream active status forced to:', this.vibestreamActive);
+    this.currentRtaId = rtaId;
+    console.log('🔧 FIXED: Vibestream active status set to:', this.vibestreamActive, 'RTA:', rtaId);
       return true;
     } catch (error) {
       console.error('❌ Failed to start vibestream session:', error);
@@ -344,7 +345,7 @@ export class OrchestrationCoordinator extends EventEmitter {
   // Connect to server for enhanced sensor interpretation
   async connectToInterpretationServer() {
     try {
-      const serverUrl = process.env.EXPO_PUBLIC_STREAM_URL?.replace('https://', 'wss://') || 'wss://alith.vibesflow.ai/orchestrator';
+      const serverUrl = process.env.EXPO_PUBLIC_ORCHESTRATOR_URL?.replace('https://', 'wss://') || 'wss://alith.vibesflow.ai/orchestrator';
       const wsUrl = `${serverUrl}`;
       
       logServerCommunication({ action: 'connecting-to-server', url: wsUrl });
@@ -994,6 +995,20 @@ export class OrchestrationCoordinator extends EventEmitter {
         if (this.currentRtaId && this.audioChunkService) {
           this.audioChunkService.addAudioData(audioData);
         }
+
+        // Emit audio data to sensor callbacks so VibePlayer receives it
+        this.sensorCallbacks.forEach(callback => {
+          try {
+            callback({ 
+              x: 0, y: 0, z: 0, 
+              timestamp: Date.now(), 
+              audioData: audioData,
+              source: 'lyria_audio'
+            });
+          } catch (error) {
+            logWarning('Sensor callback with audio error', { error: error.message });
+          }
+        });
 
         // Send to appropriate platform orchestrator for additional processing
         if (Platform.OS === 'web' && this.orchestrators.web) {

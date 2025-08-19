@@ -231,24 +231,9 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
         }
       }
 
-      // Launch vibestream
-      onClose();
-      
-      // Notify orchestration system that vibestream is starting
-      try {
-        // Initialize orchestration with wallet first
-        await orchestrationCoordinator.initializeWithWallet({ account });
-        
-        // This will initialize sensors and start the orchestration session
-        await orchestrationCoordinator.startVibestreamSession(fullTokenId, null);
-        
-        // Send session start to server for user pattern loading
-        await orchestrationCoordinator.sendSessionStartToServer(fullTokenId);
-      } catch (error) {
-        console.error('❌ VibestreamModal: Failed to notify orchestration system:', error);
-      }
-      
+      // Launch vibestream after NFT creation
       onLaunchVibePlayer(fullTokenId, rtaConfig);
+      onClose();
 
     } catch (error) {
       console.error('Failed to create vibestream:', error);

@@ -136,12 +136,12 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   // Pure music player state - no blockchain tracking
   
   // =============================================================================
-  // STREAMLINED ORCHESTRATION INITIALIZATION
+  // ORCHESTRATION INITIALIZATION
   // =============================================================================
   useEffect(() => {
     const initializeOrchestration = async () => {
       try {
-        console.log('Initializing VibesFlow orchestration system...');
+        console.log('🎛️ Initializing VibePlayer orchestration system...');
         
         // Start with basic sensor simulation for waveforms while orchestration loads
         const sensorInterval = setInterval(() => {
@@ -172,6 +172,12 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
               if (!data.isDecay) {
                 setSensorData(data);
                 processRealTimeSensorData(data);
+                
+                // Feed audio data to chunks service
+                if (typeof data.audioData === 'string' || data.audioData instanceof ArrayBuffer) {
+                  audioChunkService.addAudioData(data.audioData);
+                  console.log('🎵 Audio data fed to chunks service:', typeof data.audioData);
+                }
               } else {
                 // Apply decay to current sensor data for smooth transitions
                 setSensorData(prev => ({
@@ -191,10 +197,10 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         }
 
         setIsInitialized(true);
-        console.log('Orchestration system initialized successfully');
+        console.log('✅ VibePlayer orchestration system initialized successfully');
 
       } catch (error) {
-        console.error('Orchestration initialization failed:', error);
+        console.error('❌ VibePlayer orchestration initialization failed:', error);
         setIsInitialized(true); // Still allow UI to function
       }
     };
@@ -247,34 +253,55 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   }, []);
 
   // =============================================================================
-  // STREAMING CONTROL
+  // STREAMING CONTROL (RESTORED FROM LEGACY)
   // =============================================================================
   const startVibestream = async () => {
     try {
+      console.log('🎵 Starting vibestream with RTA:', rtaID);
       setIsStreaming(true);
       startTimeRef.current = Date.now();
       
-      // Start audio chunk service for backend upload
+      // RESTORED: Start audio chunk service for backend upload with proper integration
       if (rtaID && config?.creator) {
         // Reload backend URL to ensure we're using latest environment variables
         audioChunkService.reloadBackendUrl();
         audioChunkService.startCollecting(rtaID, config.creator);
         console.log('🎵 Audio chunk service started for RTA:', rtaID);
         
-        // NOTE: Orchestration system already started by VibestreamModal
-        // We just need to connect to listen for sensor data
-        console.log('🔗 VibePlayer: Connecting to orchestration system (already started by VibestreamModal)');
+        // Update participant count in chunks service
+        audioChunkService.updateParticipantCount(participants.count);
       }
 
-      // Start orchestration - this will connect directly to Lyria for music generation
-      // NOTE: Sensor collection was already started by VibestreamModal
-      const success = await orchestrationIntegration.startOrchestration(null);
-      
-      if (!success) {
-        console.error('❌ Failed to start orchestration');
-        setIsStreaming(false);
-        return;
+      // RESTORED: Start orchestration system with proper initialization
+      try {
+        // Initialize orchestration integration with wallet if available
+        if (config?.creator) {
+          await orchestrationIntegration.initializeWithWallet({ account: { accountId: config.creator } });
+        }
+        
+        // Start vibestream session for sensor data collection
+        if (rtaID) {
+          await orchestrationIntegration.startVibestreamSession(rtaID, audioChunkService);
+          
+          // Send session start to server for user pattern loading
+          await orchestrationIntegration.sendSessionStartToServer(rtaID);
+        }
+        
+        // Start orchestration - this will connect directly to Lyria for music generation
+        const success = await orchestrationIntegration.startOrchestration(null);
+        
+        if (!success) {
+          console.error('❌ Failed to start orchestration');
+          setIsStreaming(false);
+          return;
+        }
+        
+        console.log('✅ Orchestration and chunks service started successfully');
+      } catch (error) {
+        console.error('❌ Failed to start orchestration:', error);
+        // Continue anyway - basic functionality should still work
       }
+      
     } catch (error) {
       setIsStreaming(false);
       console.error('❌ Failed to start vibestream:', error);
@@ -282,6 +309,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   };
 
   const closeVibestream = async () => {
+    console.log('🛑 Closing vibestream...');
     setIsStreaming(false);
     
     if (updateIntervalRef.current) {
@@ -289,20 +317,25 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
       updateIntervalRef.current = null;
     }
     
-    // Stop vibestream (this stops sensor data collection)
-    // Stop audio chunk service (will process remaining chunks)
-    await audioChunkService.stopCollecting();
-    console.log('🛑 Audio chunk service stopped');
+    // Cleanup sequence
+    try {
+      // Stop audio chunk service first (will process remaining chunks)
+      await audioChunkService.stopCollecting();
+      console.log('🛑 Audio chunk service stopped');
+      
+      // Stop vibestream session (this will cleanup sensors)
+      orchestrationIntegration.stopVibestream();
+      
+      // Stop orchestration - this will:
+      // 1. Stop Lyria session (client-side)
+      // 2. Close server connection
+      await orchestrationIntegration.stopOrchestration();
+      
+      console.log('✅ Vibestream closed successfully');
+    } catch (error) {
+      console.error('❌ Error during vibestream cleanup:', error);
+    }
     
-    // Stop vibestream session (this will cleanup sensors)
-    orchestrationIntegration.stopVibestream();
-    
-    // Stop orchestration - this will:
-    // 1. Stop Lyria session (client-side)
-    // 2. Close server connection
-    await orchestrationIntegration.stopOrchestration();
-    
-    console.log('✅ New orchestration architecture vibestream closed');
     onBack(); // Navigate to user profile
   };
 
@@ -369,15 +402,19 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     return undefined;
   }, [isStreaming]);
 
-  // Participant simulation
+  // Participant simulation with chunks service integration
   useEffect(() => {
     if (isStreaming) {
       const participantInterval = setInterval(() => {
+        const newCount = 1 + Math.floor(Math.random() * 5);
         setParticipants(prev => ({
-          count: 1 + Math.floor(Math.random() * 5),
+          count: newCount,
           lastUpdate: Date.now(),
           accounts: prev.accounts // Keep existing accounts
         }));
+        
+        // RESTORED: Update participant count in chunks service
+        audioChunkService.updateParticipantCount(newCount);
       }, 10000);
 
       return () => clearInterval(participantInterval);

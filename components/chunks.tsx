@@ -714,8 +714,14 @@ class AudioChunkService {
         isFinal: isFinalChunk
       });
 
-      // Convert to base64
+      // Convert to base64 and ensure minimum size for Synapse SDK (65 bytes minimum)
       const base64Audio = this.arrayBufferToBase64Fast(audioBuffer);
+      
+      // Skip upload if chunk is too small for Synapse SDK
+      if (audioBuffer.byteLength < 65) {
+        console.log(`⚠️ Chunk ${chunkId} too small for Synapse (${audioBuffer.byteLength} bytes < 65 bytes minimum) - skipping upload`);
+        return;
+      }
 
       // Send to backend
       const response = await fetch(`${this.backendUrl}`, {

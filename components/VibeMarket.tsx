@@ -16,6 +16,7 @@ import GlitchContainer from './ui/GlitchContainer';
 import GlitchText from './ui/GlitchText';
 import AuthenticatedImage from './ui/ProfilePic';
 import { useFilCDN } from '../context/filcdn';
+import { ProfileLoader } from '../services/ProfileLoader';
 
 const { width, height } = Dimensions.get('window');
 
@@ -60,6 +61,9 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
   });
 
   const playerRef = useRef<MinimalPlayer>(player);
+  const profileLoader = useRef<ProfileLoader>(new ProfileLoader());
+  const [creatorProfiles, setCreatorProfiles] = useState<Map<string, any>>(new Map());
+  
   playerRef.current = player;
 
   // Load vibestreams when connected or on mount
@@ -68,6 +72,26 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
       refreshVibestreams();
     }
   }, [isConnected]);
+
+  // Preload creator profiles when vibestreams change
+  useEffect(() => {
+    const loadCreatorProfiles = async () => {
+      if (vibestreams.length === 0) return;
+      
+      const uniqueCreators = [...new Set(vibestreams.map(stream => stream.creator))];
+      await profileLoader.current.preloadProfiles(uniqueCreators);
+      
+      // Load profiles into state
+      const profileMap = new Map();
+      for (const creator of uniqueCreators) {
+        const profile = await profileLoader.current.loadCreatorProfile(creator);
+        profileMap.set(creator, profile);
+      }
+      setCreatorProfiles(profileMap);
+    };
+    
+    loadCreatorProfiles();
+  }, [vibestreams]);
 
   // Cleanup audio when component unmounts
   useEffect(() => {
@@ -215,19 +239,10 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
     return rtaId.toUpperCase();
   };
 
-  // Creator display name helper
+  // Creator display name helper (using ProfileLoader)
   const getDisplayName = (creator: string): string => {
-    if (Platform.OS === 'web') {
-      const savedName = localStorage.getItem(`vibesflow_name_${creator}`);
-      if (savedName) {
-        return savedName;
-      }
-    }
-    
-    if (creator.startsWith('0x')) {
-      return `${creator.slice(0, 4)}...${creator.slice(-4)}`;
-    }
-    return creator;
+    const profile = creatorProfiles.get(creator);
+    return profile?.displayName || creator;
   };
 
   // Filter vibestreams
