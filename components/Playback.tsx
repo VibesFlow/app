@@ -17,7 +17,7 @@ import GlitchContainer from './ui/GlitchContainer';
 import GlitchText from './ui/GlitchText';
 import AuthenticatedImage from './ui/ProfilePic';
 import { useFilCDN } from '../context/filcdn';
-import { ContinuousAudioStreamer } from '../services/ContinuousAudioStreamer';
+import { ContinuousAudioStreamer } from '../services/AudioStreamer';
 import { DurationAnalyzer } from '../services/DurationAnalyzer';
 import { ProfileLoader } from '../services/ProfileLoader';
 import { VibestreamRepair } from '../services/VibeRepair';

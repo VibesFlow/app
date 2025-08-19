@@ -43,6 +43,12 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
 
   // Network-aware wallet integration
   const { account, connected, openModal, createRTANFT, getNetworkInfo } = useWallet();
+  
+  // Get network-specific currency
+  const getCurrency = () => {
+    const networkInfo = getNetworkInfo();
+    return networkInfo?.type === 'metis-hyperion' ? 'tMETIS' : 'NEAR';
+  };
 
   const resetModal = () => {
     setStep(1);
@@ -150,9 +156,11 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
       const rawRtaId = generateRtaID();
       
       // Prepare RTA configuration matching contract requirements for both networks
+      // Handle Group mode configuration to match contracts
       const rtaConfig = {
         mode,
         store_to_filecoin: storeToFilecoin,
+        // Group mode specific fields - only include if mode is 'group'
         distance: mode === 'group' ? parseInt(distance) : undefined,
         ticket_amount: mode === 'group' ? parseInt(ticketAmount) : undefined,
         ticket_price: mode === 'group' && !freeTickets ? ticketPrice : undefined,
@@ -186,6 +194,17 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
         console.log(`✅ ${networkInfo.type} vibestream created successfully:`, fullTokenId);
         console.log('📊 Raw RTA ID (for workers):', rawRtaId);
 
+        // For Group mode, log additional information about tickets and participants
+        if (mode === 'group') {
+          console.log('🎫 Group mode vibestream created with settings:', {
+            ticketAmount: parseInt(ticketAmount),
+            ticketPrice: freeTickets ? 'FREE' : ticketPrice,
+            distance: `${distance}m`,
+            payPerStream: payPerStream ? 'YES' : 'NO',
+            streamPrice: payPerStream ? streamPrice : 'N/A'
+          });
+        }
+
       } catch (error) {
         console.warn(`⚠️ ${networkInfo.type} vibestream creation failed or timed out:`, error);
         console.log('🔄 Using fallback mode - vibestream will continue with mock data');
@@ -214,6 +233,16 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
       // Show appropriate success message
       if (creationSucceeded) {
         console.log(`🎉 ${networkInfo.type} vibestream created - full functionality enabled`);
+        
+        // Show Group mode specific success message
+        if (mode === 'group' && Platform.OS === 'web') {
+          const networkName = networkInfo.type === 'metis-hyperion' ? 'Metis Hyperion' : 'NEAR';
+          Alert.alert(
+            'Group Vibestream Created!',
+            `Your Group vibestream is ready on ${networkName}!\n\n🎫 Tickets: ${freeTickets ? 'FREE' : ticketPrice + ' tokens'}\n📍 Distance: ${distance}m\n👥 Max participants: ${ticketAmount}\n\nParticipants can now join your vibestream!`,
+            [{ text: 'Start Vibing!', style: 'default' }]
+          );
+        }
       } else {
         console.log(`Vibestream starting in fallback mode for ${networkInfo.type}`);
         console.log('Fallback vibestream will still enable: chunking → backend processing');
@@ -422,27 +451,30 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
                 </TouchableOpacity>
                 
                 <TouchableOpacity
-                  style={[styles.ynCheckboxContainer, styles.disabledCheckbox]}
-                  activeOpacity={1}
-                  disabled={true}
+                  style={styles.ynCheckboxContainer}
+                  onPress={() => setFreeTickets(false)}
+                  activeOpacity={0.7}
                 >
-                  <View style={[styles.checkbox, styles.disabledCheckbox]}>
+                  <View style={[styles.checkbox, !freeTickets && styles.checkedBox]}>
+                    {!freeTickets && (
+                      <FontAwesome name="check" size={8} color={COLORS.background} />
+                    )}
                   </View>
-                  <Text style={[styles.ynCheckboxText, styles.disabledText]}>Y</Text>
+                  <Text style={styles.ynCheckboxText}>Y</Text>
                 </TouchableOpacity>
-                
-                <View style={[styles.fullWidthPriceInputContainer, freeTickets && styles.disabledInput]}>
-                  <TextInput
-                    style={[styles.textInput, freeTickets && styles.disabledTextInput]}
-                    value={ticketPrice}
-                    onChangeText={setTicketPrice}
-                    placeholder="0"
-                    placeholderTextColor={freeTickets ? COLORS.textTertiary : COLORS.textSecondary}
-                    keyboardType="decimal-pad"
-                    editable={!freeTickets}
-                  />
-                  <Text style={[styles.inputUnit, freeTickets && styles.disabledInputUnit]}>$NEAR</Text>
-                </View>
+              </View>
+              
+              <View style={[styles.inputContainer, freeTickets && styles.disabledInput]}>
+                <TextInput
+                  style={[styles.textInput, freeTickets && styles.disabledTextInput]}
+                  value={ticketPrice}
+                  onChangeText={setTicketPrice}
+                  placeholder="0"
+                  placeholderTextColor={freeTickets ? COLORS.textTertiary : COLORS.textSecondary}
+                  keyboardType="decimal-pad"
+                  editable={!freeTickets}
+                />
+                <Text style={[styles.inputUnit, freeTickets && styles.disabledInputUnit]}>{getCurrency()}</Text>
               </View>
             </View>
 
@@ -463,27 +495,30 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
                 </TouchableOpacity>
                 
                 <TouchableOpacity
-                  style={[styles.ynCheckboxContainer, styles.disabledCheckbox]}
-                  activeOpacity={1}
-                  disabled={true}
+                  style={styles.ynCheckboxContainer}
+                  onPress={() => setPayPerStream(true)}
+                  activeOpacity={0.7}
                 >
-                  <View style={[styles.checkbox, styles.disabledCheckbox]}>
+                  <View style={[styles.checkbox, payPerStream && styles.checkedBox]}>
+                    {payPerStream && (
+                      <FontAwesome name="check" size={8} color={COLORS.background} />
+                    )}
                   </View>
-                  <Text style={[styles.ynCheckboxText, styles.disabledText]}>Y</Text>
+                  <Text style={styles.ynCheckboxText}>Y</Text>
                 </TouchableOpacity>
-                
-                <View style={[styles.fullWidthPriceInputContainer, !payPerStream && styles.disabledInput]}>
-                  <TextInput
-                    style={[styles.textInput, !payPerStream && styles.disabledTextInput]}
-                    value={streamPrice}
-                    onChangeText={setStreamPrice}
-                    placeholder="0"
-                    placeholderTextColor={!payPerStream ? COLORS.textTertiary : COLORS.textSecondary}
-                    keyboardType="decimal-pad"
-                    editable={payPerStream}
-                  />
-                  <Text style={[styles.inputUnit, !payPerStream && styles.disabledInputUnit]}>$NEAR</Text>
-                </View>
+              </View>
+              
+              <View style={[styles.inputContainer, !payPerStream && styles.disabledInput]}>
+                <TextInput
+                  style={[styles.textInput, !payPerStream && styles.disabledTextInput]}
+                  value={streamPrice}
+                  onChangeText={setStreamPrice}
+                  placeholder="0"
+                  placeholderTextColor={!payPerStream ? COLORS.textTertiary : COLORS.textSecondary}
+                  keyboardType="decimal-pad"
+                  editable={payPerStream}
+                />
+                <Text style={[styles.inputUnit, !payPerStream && styles.disabledInputUnit]}>{getCurrency()}</Text>
               </View>
             </View>
           </>
@@ -757,7 +792,7 @@ const styles = StyleSheet.create({
   payPerStreamContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 12, // Reduced gap to give more space to input
     marginTop: 8,
   },
   ynCheckboxContainer: {
@@ -781,17 +816,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  // New style for full-width price input containers
-  fullWidthPriceInputContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  },
+
   disabledInput: {
     opacity: 0.4,
     borderColor: COLORS.textSecondary,

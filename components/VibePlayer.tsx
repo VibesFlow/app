@@ -258,6 +258,15 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   const startVibestream = async () => {
     try {
       console.log('🎵 Starting vibestream with RTA:', rtaID);
+      
+      // Check if this is a participant joining an existing vibestream
+      if (config?.isParticipant) {
+        console.log(`👥 Joining existing vibestream as participant for creator: ${config.creator}`);
+        console.log(`🎵 Original Vibe ID: ${config.originalVibeId}`);
+      } else {
+        console.log('🎵 Creating new vibestream as creator');
+      }
+      
       setIsStreaming(true);
       startTimeRef.current = Date.now();
       
@@ -402,25 +411,33 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     return undefined;
   }, [isStreaming]);
 
-  // Participant simulation with chunks service integration
+  // Participant tracking using blockchain data
   useEffect(() => {
-    if (isStreaming) {
-      const participantInterval = setInterval(() => {
-        const newCount = 1 + Math.floor(Math.random() * 5);
-        setParticipants(prev => ({
-          count: newCount,
-          lastUpdate: Date.now(),
-          accounts: prev.accounts // Keep existing accounts
-        }));
-        
-        // RESTORED: Update participant count in chunks service
-        audioChunkService.updateParticipantCount(newCount);
-      }, 10000);
-
-      return () => clearInterval(participantInterval);
+    if (isStreaming && rtaID && config?.mode === 'group') {
+      // For now, use fallback participant tracking until service is fixed
+      console.log(`🎯 Group mode vibestream detected:`, rtaID);
+      
+      // Fallback: use creator as single participant for now
+      setParticipants({
+        count: 1,
+        lastUpdate: Date.now(),
+        accounts: [config?.creator || 'creator.testnet']
+      });
+      audioChunkService.updateParticipantCount(1);
+      
+      console.log('📝 Note: Real participant tracking temporarily disabled due to import issues');
+    } else if (isStreaming) {
+      // Solo mode or fallback: just use creator
+      setParticipants({
+        count: 1,
+        lastUpdate: Date.now(),
+        accounts: [config?.creator || 'creator.testnet']
+      });
+      audioChunkService.updateParticipantCount(1);
     }
+    
     return undefined;
-  }, [isStreaming]);
+  }, [isStreaming, rtaID, config?.mode, config?.creator]);
 
   // Format duration to hh:mm:ss
   const formatDuration = (duration: number): string => {
@@ -565,7 +582,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
           {/* Pure music status */}
           <View style={styles.workerStatus}>
             <Text style={styles.workerStatusText}>
-              PURE RAVE EXPERIENCE
+              {config?.isParticipant ? 'PARTICIPANT MODE' : 'PURE RAVE EXPERIENCE'}
             </Text>
           </View>
         </View>

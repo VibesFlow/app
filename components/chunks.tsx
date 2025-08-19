@@ -44,12 +44,12 @@ class AudioChunkService {
   // Participant tracking
   private currentParticipantCount: number = 1;
   
-  // ENHANCED audio accumulation with background processing
+  // Enhanced audio accumulation with background processing
   private audioBuffer: ArrayBuffer[] = [];
   private bufferStartTime: number = 0;
   private chunkTimer: NodeJS.Timeout | null = null;
   
-  // BACKGROUND PROCESSING to minimize live music interference
+  // Background processing to minimize live music interference
   private isProcessing: boolean = false;
   private processedChunkIds: Set<string> = new Set();
   private backgroundQueue: Array<{
@@ -62,7 +62,7 @@ class AudioChunkService {
   private isBackgroundProcessing: boolean = false;
   private compressionWorker: Worker | null = null;
   
-  // INTELLIGENT LOAD BALANCING with enhanced music activity detection
+  // Intelligent load balancing with enhanced music activity detection
   private compressionLevel: 'light' | 'medium' | 'heavy' = 'light';
   private isLiveMusicActive: boolean = true;
   private lastMusicActivity: number = Date.now();
@@ -74,7 +74,7 @@ class AudioChunkService {
     isHeavyProcessing: false
   };
   
-  // ENHANCED ACTIVITY DETECTION
+  // Enhanced activity detection
   private activityDetectionWindow = 2000; // 2 seconds base window
   private quietPeriodThreshold = 5000; // 5 seconds quiet = switch to medium processing
   private idlePeriodThreshold = 10000; // 10 seconds idle = switch to heavy processing
@@ -108,7 +108,7 @@ class AudioChunkService {
     }
   }
 
-  // Initialize ENHANCED Web Worker for background compression
+  // Initialize Enhanced Web Worker for background compression
   private initializeEnhancedCompressionWorker() {
     if (typeof Worker !== 'undefined' && Platform.OS === 'web') {
       try {
@@ -152,34 +152,34 @@ class AudioChunkService {
     }
   }
 
-  // ENHANCED system load monitoring with intelligent music activity detection
+  // Enhanced system load monitoring with intelligent music activity detection
   private startEnhancedLoadBalanceMonitoring() {
     setInterval(() => {
       const now = Date.now();
       const timeSinceLastActivity = now - this.lastMusicActivity;
       
-      // ENHANCED MUSIC ACTIVITY DETECTION
+      // Enhanced music activity detection
       this.updateMusicActivityDetection(now, timeSinceLastActivity);
       
-      // ADAPTIVE COMPRESSION LEVEL ADJUSTMENT
+      // Adaptive compression level adjustment
       this.adjustCompressionLevel(timeSinceLastActivity);
       
-      // PROCESSING LOAD ANALYSIS
+      // Processing load analysis
       this.updateEnhancedProcessingMetrics();
       
-      // BACKGROUND QUEUE MANAGEMENT
+      // Background queue management
       this.optimizeBackgroundQueue();
       
     }, 250); // Higher frequency monitoring (4x per second)
   }
 
-  // INTELLIGENT music activity pattern detection
+  // Intelligent music activity pattern detection
   private updateMusicActivityDetection(now: number, timeSinceLastActivity: number) {
     // Detect if live music is actively playing with enhanced logic
     const baseThreshold = this.activityDetectionWindow;
     let adaptiveThreshold = baseThreshold;
     
-    // ADAPTIVE THRESHOLD based on recent activity patterns
+    // Adaptive threshold based on recent activity patterns
     if (this.musicActivityHistory.length > 5) {
       const recentIntervals: number[] = [];
       for (let i = 1; i < this.musicActivityHistory.length; i++) {
@@ -201,14 +201,14 @@ class AudioChunkService {
     }
   }
 
-  // ADAPTIVE compression level adjustment based on multiple factors
+  // Adaptive compression level adjustment based on multiple factors
   private adjustCompressionLevel(timeSinceLastActivity: number) {
     let newLevel: 'light' | 'medium' | 'heavy';
     
     if (this.isLiveMusicActive) {
       newLevel = 'light'; // Minimal processing during live music
     } else if (timeSinceLastActivity < this.quietPeriodThreshold) {
-      // SMART MEDIUM PROCESSING - consider background queue size and system load
+      // Smart medium processing - consider background queue size and system load
       const queuePressure = this.backgroundQueue.length > 3;
       const lowSystemLoad = this.processingLoadMonitor.avgProcessingTime < 100;
       
@@ -216,13 +216,13 @@ class AudioChunkService {
     } else if (timeSinceLastActivity < this.idlePeriodThreshold) {
       newLevel = 'medium'; // Moderate processing during quiet periods
     } else {
-      // INTELLIGENT HEAVY PROCESSING - only during confirmed idle periods
+      // Intelligent heavy processing - only during confirmed idle periods
       const confirmedIdle = this.backgroundQueue.length > 2 && 
                            !this.processingLoadMonitor.isHeavyProcessing;
       newLevel = confirmedIdle ? 'heavy' : 'medium';
     }
     
-    // SMOOTH TRANSITIONS - avoid rapid compression level changes
+    // Smooth transitions - avoid rapid compression level changes
     if (newLevel !== this.compressionLevel) {
       const levelOrder = { light: 1, medium: 2, heavy: 3 };
       const currentLevel = levelOrder[this.compressionLevel];
@@ -266,11 +266,11 @@ class AudioChunkService {
     }
   }
 
-  // OPTIMIZE background queue management with intelligent prioritization
+  // Optimize background queue management with intelligent prioritization
   private optimizeBackgroundQueue() {
     if (this.backgroundQueue.length === 0) return;
     
-    // DYNAMIC PRIORITY ADJUSTMENT based on current state
+    // Dynamic priority adjustment based on current state
     this.backgroundQueue.forEach(item => {
       // Upgrade priority for old items during idle periods
       if (!this.isLiveMusicActive && this.backgroundQueue.length > 5) {
@@ -285,7 +285,7 @@ class AudioChunkService {
       }
     });
     
-    // AUTOMATIC QUEUE PROCESSING during optimal conditions
+    // Automatic queue processing during optimal conditions
     const shouldAutoProcess = !this.isBackgroundProcessing && 
                              this.backgroundQueue.length > 3 && 
                              !this.isLiveMusicActive &&
@@ -317,7 +317,7 @@ class AudioChunkService {
     this.startOptimizedChunkTimer();
   }
 
-  // Update participant count for the current vibestream
+  // Update participant count from blockchain data
   updateParticipantCount(count: number): void {
     if (this.isCollecting && count > 0) {
       this.currentParticipantCount = count;
@@ -325,13 +325,13 @@ class AudioChunkService {
     }
   }
 
-  // Stop collecting with MINIMAL interruption to live music
+  // Stop collecting with minimal interruption to live music
   async stopCollecting(): Promise<void> {
     if (!this.isCollecting) return;
 
     console.log(`🛑 Stopping audio collection for RTA: ${this.currentRtaId} (background processing will continue)`);
     
-    // Stop collecting new audio IMMEDIATELY
+    // Stop collecting new audio
     this.isCollecting = false;
     
     // Stop chunk timer
@@ -439,7 +439,7 @@ class AudioChunkService {
         const buffer = new ArrayBuffer(binaryString.length);
         const uint8Array = new Uint8Array(buffer);
         
-        // CHUNKED PROCESSING for large buffers to avoid blocking
+        // Chunked processing for large buffers to avoid blocking
         const chunkSize = 32768; // 32KB chunks
         if (binaryString.length > chunkSize) {
           let offset = 0;
@@ -572,7 +572,7 @@ class AudioChunkService {
     return `${this.currentRtaId}_chunk_${sequenceStr}_${timestamp}${suffix}`;
   }
 
-  // ENHANCED background processing queue with intelligent load balancing
+  // Enhanced background processing queue with intelligent load balancing
   private async processBackgroundQueue(): Promise<void> {
     if (this.isBackgroundProcessing || this.backgroundQueue.length === 0) return;
     
@@ -756,7 +756,7 @@ class AudioChunkService {
       const result = await response.json();
       const uploadDuration = Date.now() - uploadStartTime;
       
-      // IMPROVED SYNAPSE STATUS LOGGING
+      // Improved Synapse status logging
       if (result.synapseStatus) {
         if (result.synapseStatus.success) {
           console.log(`✅ STORAGE STATUS: Queued for Filecoin (${uploadDuration}ms)`);
@@ -829,7 +829,7 @@ class AudioChunkService {
     }
   }
 
-  // NEW: Poll for actual Synapse upload completion status
+  // Poll for Synapse upload completion status
   private async pollSynapseUploadStatus(rtaId: string, chunkId: string, uploadStartTime: number): Promise<void> {
     let attempts = 0;
     let pollInterval = 10000;
@@ -898,7 +898,7 @@ class AudioChunkService {
     setTimeout(poll, 5000);
   }
 
-  // FAST ArrayBuffer to base64 conversion
+  // Fast ArrayBuffer to base64 conversion
   private arrayBufferToBase64Fast(buffer: ArrayBuffer): string {
     try {
       const uint8Array = new Uint8Array(buffer);

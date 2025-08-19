@@ -10,6 +10,12 @@ export const CONTRACTS = {
   NETWORK: process.env.EXPO_PUBLIC_NEAR_NETWORK || 'testnet'
 };
 
+export const WORKERS = {
+  CHUNKER: process.env.EXPO_PUBLIC_ORCHESTRATOR_URL || 'https://alith.vibesflow.ai',
+  ORCHESTRATOR: process.env.EXPO_PUBLIC_ORCHESTRATOR_URL || 'https://alith.vibesflow.ai',
+  BACKEND: process.env.EXPO_PUBLIC_RAWCHUNKS_URL || 'https://api.vibesflow.ai'
+};
+
 export const NETWORKS = {
   NEAR: {
     RPC: process.env.EXPO_PUBLIC_NEAR_RPC_URL || 'https://rpc.testnet.near.org',

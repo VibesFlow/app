@@ -5,6 +5,7 @@ import VibePlayer from './components/VibePlayer';
 import UserProfile from './components/UserProfile';
 import VibeMarket from './components/VibeMarket';
 import Playback from './components/Playback';
+import LiveVibes from './components/LiveVibes';
 import { COLORS, FONT_SIZES, SPACING } from './theme';
 import { WalletProvider, useWallet } from './context/connector';
 import { FilCDNProvider } from './context/filcdn';
@@ -25,7 +26,7 @@ if (typeof window !== 'undefined') {
   };
 }
 
-type AppScreen = 'splash' | 'main' | 'vibe-player' | 'loading' | 'profile' | 'vibe-market' | 'playback';
+type AppScreen = 'splash' | 'main' | 'vibe-player' | 'loading' | 'profile' | 'vibe-market' | 'playback' | 'live-vibes';
 
 function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
@@ -42,6 +43,8 @@ function AppContent() {
         const path = window.location.pathname;
         if (path === '/market') {
           setCurrentScreen('vibe-market');
+        } else if (path === '/live') {
+          setCurrentScreen('live-vibes');
         } else if (path === '/profile') {
           setCurrentScreen('profile');
         } else if (path === '/player') {
@@ -74,6 +77,7 @@ function AppContent() {
       const getUrlForScreen = (screen: AppScreen) => {
         switch (screen) {
           case 'vibe-market': return '/market';
+          case 'live-vibes': return '/live';
           case 'profile': return '/profile';
           case 'vibe-player': return '/player';
           case 'playback': return rtaData ? `/vibestream/${rtaData.rtaId}` : '/market';
@@ -87,7 +91,7 @@ function AppContent() {
         window.history.pushState({}, '', url);
       }
     }
-  }, [currentScreen]);
+  }, [currentScreen, rtaData]);
 
   // Initialize orchestration integration with wallet
   useEffect(() => {
@@ -151,6 +155,24 @@ function AppContent() {
     setCurrentScreen('vibe-market');
   };
 
+  const handleOpenLiveVibes = () => {
+    setCurrentScreen('live-vibes');
+  };
+
+  const handleJoinVibestream = (vibeId: string, creator: string) => {
+    // Join an existing vibestream by connecting to the creator's session
+    const rtaId = `metis_vibe_${vibeId}`; // Format for Metis vibestreams
+    const config = {
+      creator,
+      mode: 'group',
+      isParticipant: true, // Flag to indicate this is a participant joining
+      originalVibeId: vibeId
+    };
+    
+    console.log(`🎵 Joining vibestream ${rtaId} created by ${creator}`);
+    handleLaunchVibePlayer(rtaId, config);
+  };
+
   if (currentScreen === 'splash') {
     return (
       <SplashScreen 
@@ -158,6 +180,7 @@ function AppContent() {
         onLaunchVibePlayer={handleLaunchVibePlayer} 
         onOpenProfile={handleOpenProfile}
         onOpenVibeMarket={handleOpenVibeMarket}
+        onOpenLiveVibes={handleOpenLiveVibes}
       />
     );
   }
@@ -200,6 +223,15 @@ function AppContent() {
           setrtaData({ rtaId, config: { mode: 'playback' } });
           setCurrentScreen('playback');
         }}
+      />
+    );
+  }
+
+  if (currentScreen === 'live-vibes') {
+    return (
+      <LiveVibes 
+        onBack={handleBackToMain}
+        onJoinVibestream={handleJoinVibestream}
       />
     );
   }

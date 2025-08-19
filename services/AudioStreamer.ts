@@ -1,13 +1,13 @@
 /**
- * ContinuousAudioStreamer - Production-ready continuous audio playback
- * Based on Google's project-livewire/AudioStreamer.js proven patterns
- * 
- * Fixes:
+ * AudioStreamer - Continuous audio playback
  * 1. Continuous chunk playback without interruptions
  * 2. Proper stall detection and recovery
  * 3. Memory-efficient AudioBuffer management
  * 4. Seamless transitions between chunks
  * 5. Accurate timeline management for seeking
+ * 6. Intelligent buffering ahead of current playback
+ * 7. Clean up resources to prevent memory leaks
+ * 8. Get current playback state
  */
 
 interface ChunkData {

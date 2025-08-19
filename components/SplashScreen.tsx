@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -6,6 +6,7 @@ import { COLORS, BRANDING } from '../theme';
 import ConnectModal from './ConnectModal';
 import VibestreamModal from './VibestreamModal';
 import { useWallet } from '../context/connector';
+import { liveVibestreamsTracker, LiveVibestreamsData } from '../services/LiveTracker';
 
 const { width, height } = Dimensions.get('window');
 
@@ -35,17 +36,47 @@ interface SplashScreenProps {
   onLaunchVibePlayer: () => void;
   onOpenProfile: () => void;
   onOpenVibeMarket: () => void;
+  onOpenLiveVibes?: () => void;
 }
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ 
   onStart, 
   onLaunchVibePlayer, 
   onOpenProfile, 
-  onOpenVibeMarket 
+  onOpenVibeMarket,
+  onOpenLiveVibes
 }) => {
   const [vibestreamModalVisible, setVibestreamModalVisible] = useState(false);
   const [showDisconnectDropdown, setShowDisconnectDropdown] = useState(false);
+  const [liveVibestreamsData, setLiveVibestreamsData] = useState<LiveVibestreamsData>({
+    liveVibestreams: [],
+    totalLive: 0,
+    nearLive: 0,
+    metisLive: 0,
+    lastUpdated: 0
+  });
   const { account, connected, disconnect, openModal } = useWallet();
+  
+  // Track live vibestreams
+  useEffect(() => {
+    const startTracking = async () => {
+      try {
+        await liveVibestreamsTracker.startTracking((data) => {
+          setLiveVibestreamsData(data);
+        });
+      } catch (error) {
+        console.warn('Failed to start live vibestreams tracking:', error);
+      }
+    };
+
+    startTracking();
+
+    return () => {
+      liveVibestreamsTracker.stopTracking((data) => {
+        setLiveVibestreamsData(data);
+      });
+    };
+  }, []);
   
   const handleConnect = () => {
     openModal();
@@ -60,7 +91,19 @@ const SplashScreen: React.FC<SplashScreenProps> = ({
   };
 
   const handleVibeMarket = () => {
-    onOpenVibeMarket();
+    if (connected && account) {
+      onOpenVibeMarket();
+    } else {
+      openModal();
+    }
+  };
+
+  const handleLiveVibes = () => {
+    if (connected && account) {
+      onOpenLiveVibes?.();
+    } else {
+      openModal();
+    }
   };
 
   const handleWalletClick = () => {
@@ -166,6 +209,18 @@ const SplashScreen: React.FC<SplashScreenProps> = ({
         </View>
         <Text style={styles.title}>VIBES<Text style={styles.titleAccent}>FLOW</Text></Text>
         <Text style={styles.slogan}>{BRANDING.slogan}</Text>
+        
+        {/* Live Vibestreams Counter */}
+        <TouchableOpacity 
+          style={styles.liveVibesContainer}
+          onPress={handleLiveVibes}
+          activeOpacity={0.7}
+        >
+          <View style={styles.liveDot} />
+          <Text style={styles.liveVibesText}>
+            {liveVibestreamsData.totalLive} Vibestream{liveVibestreamsData.totalLive !== 1 ? 's' : ''} Live!
+          </Text>
+        </TouchableOpacity>
       </View>
       
       {/* Action buttons */}
@@ -408,6 +463,30 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 1,
     fontWeight: '500',
+  },
+  liveVibesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 0, 160, 0.1)',
+    borderWidth: 1,
+    borderColor: COLORS.secondary,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.secondary,
+    marginRight: 8,
+  },
+  liveVibesText: {
+    color: COLORS.secondary,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
   },
 });
 

@@ -8,7 +8,7 @@
 
 import React, { useRef, useEffect, useState, useCallback, useContext } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
-import { WORKERS, CONTRACTS } from '../config';
+import { WORKERS } from '../config';
 import { useWallet } from '../context/connector';
 
 interface RTAIntegrationProps {
@@ -96,7 +96,7 @@ export default function RTAIntegration({
         throw new Error(`Chunker failed to start: ${chunkerResult.message}`);
       }
 
-      // STEP 2: Add initial participants to chunker raffle
+      // STEP 2: Add initial participants to chunker raffle (FIXED for Group mode)
       if (participants > 0 && account?.accountId) {
         await fetch(`${WORKERS.CHUNKER}/chunk/participant`, {
           method: 'POST',
@@ -104,9 +104,15 @@ export default function RTAIntegration({
           body: JSON.stringify({
             rtaId: rawId, // Use raw ID for workers
             accountId: account.accountId,
-            network: detectedNetwork
+            network: detectedNetwork,
+            // FIXED: Enhanced metadata for Group mode tracking
+            participantType: 'creator_initial',
+            joinedAt: Date.now(),
+            source: 'rta_initialization',
+            isCreator: true
           }),
         });
+        console.log(`👤 Added creator as initial participant for ${detectedNetwork} vibestream`);
       }
 
       setWorkersConnected(true);
@@ -133,13 +139,18 @@ export default function RTAIntegration({
     try {
       const rawId = extractRawId(rtaId!);
       
+      // Enhanced participant tracking for Group mode
       await fetch(`${WORKERS.CHUNKER}/chunk/participant`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rtaId: rawId, // Use raw ID for workers
           accountId: accountId,
-          network: networkType
+          network: networkType,
+          // Additional Group mode metadata
+          participantType: 'real_blockchain_participant',
+          joinedAt: Date.now(),
+          source: 'rta_integration'
         }),
       });
       console.log(`👤 Added participant ${accountId} to ${networkType} chunk raffle`);
@@ -219,7 +230,7 @@ export default function RTAIntegration({
     }
   };
 
-  // Simple, minimal UI (no ugly tracker)
+  // Enhanced UI for Group mode with participant tracking
   if (!isStreaming || !rtaId) {
     return null;
   }
@@ -231,6 +242,14 @@ export default function RTAIntegration({
           {getNetworkStatusIcon()} {getNetworkDisplayName()} | RTA: {workersConnected ? '🟢' : '🔴'} | Participants: {participants} | Workers: {workersConnected ? 'Active' : 'Inactive'}
         </Text>
       </View>
+      {/* Group mode indicator */}
+      {participants > 1 && (
+        <View style={styles.groupModeIndicator}>
+          <Text style={styles.groupModeText}>
+            🎫 Group Mode Active - {participants} Participants
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -254,5 +273,18 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontFamily: 'monospace',
+  },
+  // Added styles for Group mode indicator
+  groupModeIndicator: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  groupModeText: {
+    color: '#00ff9f',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    textAlign: 'center',
   },
 });
