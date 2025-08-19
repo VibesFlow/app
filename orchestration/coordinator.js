@@ -218,24 +218,18 @@ export class OrchestrationCoordinator extends EventEmitter {
       
       this.walletIntegration = walletIntegration;
       
-      // 1. Initialize direct Lyria connection (client-side)
+      // Initialize Lyria
       if (this.lyriaApiKey) {
+        console.log('🎵 PRIORITY: Starting Lyria connection immediately...');
         await this.initializeLyriaConnection();
       }
       
-      // 2. Initialize Gemini buffer manager (client-side)
-      if (this.geminiApiKey) {
-        await this.initializeGeminiBuffering();
-      }
-      
-      // 3. Establish WebSocket connection to server for sensor interpretation
-      await this.connectToInterpretationServer();
-      
-      // 4. Initialize platform-specific sensor systems
+      // Start background processes in parallel
+      this.initializeBackgroundSystems();
       
       this.coordinationEnabled = true;
       
-      console.log('✅ Unified orchestration architecture initialized (sensors on standby)');
+      console.log('✅ Unified orchestration architecture initialized (Lyria ready, background systems starting)');
       return true;
     } catch (error) {
       console.error('❌ Failed to initialize unified orchestration architecture:', error);
@@ -243,28 +237,59 @@ export class OrchestrationCoordinator extends EventEmitter {
     }
   }
 
+  // Initialize background systems in parallel
+  async initializeBackgroundSystems() {
+    // Run these in parallel without blocking Lyria startup
+    Promise.all([
+      // Initialize Gemini buffer manager
+      this.geminiApiKey ? this.initializeGeminiBuffering().catch(err => 
+        console.warn('⚠️ Gemini buffering failed:', err.message)
+      ) : Promise.resolve(),
+      
+      // Establish WebSocket connection to server
+      this.connectToInterpretationServer().catch(err => 
+        console.warn('⚠️ Server connection failed:', err.message)
+      )
+    ]).then(() => {
+      console.log('✅ Background systems initialized');
+    }).catch(error => {
+      console.warn('⚠️ Some background systems failed:', error.message);
+    });
+  }
+
   // Start vibestream session when user creates new vibestream
   async startVibestreamSession(rtaId, audioChunkService) {
     try {
       console.log('🎯 Starting new vibestream session:', rtaId);
-      console.log('📡 NOW starting sensor collection for active vibestream generation...');
       
-      // Start actual sensor collection (ONLY NOW!)
+      // Set vibestream active to enable sensor data flow
+      this.vibestreamActive = true;
+      this.currentRtaId = rtaId;
+      this.audioChunkService = audioChunkService;
+      
+      console.log('🔧 Vibestream active status set to:', this.vibestreamActive, 'RTA:', rtaId);
+      
+      // Start sensor collection
       if (Platform.OS === 'web' && this.orchestrators.web) {
-        await this.orchestrators.web.startSensorCollection(rtaId);
+        console.log('📡 Starting sensor collection...');
+        // Don't await - run in parallel
+        this.orchestrators.web.startSensorCollection(rtaId).catch(error => {
+          console.warn('⚠️ Web sensor collection failed:', error.message);
+        });
       } else if (Platform.OS !== 'web' && this.orchestrators.mobile) {
-        await this.orchestrators.mobile.startSensorCollection(rtaId);
+        console.log('📱 Starting mobile sensor collection...');
+        // Don't await - run in parallel
+        this.orchestrators.mobile.startSensorCollection(rtaId).catch(error => {
+          console.warn('⚠️ Mobile sensor collection failed:', error.message);
+        });
       }
       
-          // Start the vibestream (existing logic)
-    this.startVibestream(rtaId, audioChunkService);
-    
-    console.log('✅ Vibestream session started with sensor collection');
-    
-    // Set vibestreamActive to true to enable sensor data flow
-    this.vibestreamActive = true;
-    this.currentRtaId = rtaId;
-    console.log('🔧 FIXED: Vibestream active status set to:', this.vibestreamActive, 'RTA:', rtaId);
+      // Send session-start message to server
+      this.sendSessionStartToServer(rtaId);
+      
+      console.log('✅ Vibestream session started immediately (sensors starting in parallel)');
+      this.emit('vibestreamStarted', rtaId);
+      
       return true;
     } catch (error) {
       console.error('❌ Failed to start vibestream session:', error);
@@ -322,18 +347,23 @@ export class OrchestrationCoordinator extends EventEmitter {
     try {
       console.log('🧠 Initializing Gemini predictive buffering...');
       
+      if (!this.geminiApiKey) {
+        console.warn('⚠️ No Gemini API key - buffering will use basic fallback');
+        return false;
+      }
+      
       this.geminiBufferManager = createGeminiBufferManager(this.geminiApiKey);
       const initialized = await this.geminiBufferManager.initialize();
       
       if (initialized) {
-        console.log('✅ Gemini buffering system initialized');
+        console.log('✅ Gemini buffering system initialized and running continuously');
         return true;
       } else {
-        console.warn('⚠️ Gemini buffering initialization failed - API key may be missing');
+        console.warn('⚠️ Gemini buffering initialization failed - using basic buffering');
         return false;
       }
     } catch (error) {
-      console.warn('⚠️ Failed to initialize Gemini buffering:', error.message);
+      console.warn('⚠️ Failed to initialize Gemini buffering - using basic buffering:', error.message);
       return false;
     }
   }
@@ -640,19 +670,21 @@ export class OrchestrationCoordinator extends EventEmitter {
         });
       }
       
-      // Apply interpretation to Lyria with enhanced transition handling
+      // Apply orchestrator server prompts to Lyria
+      console.log('🎯 Applying server prompts to Lyria:', {
+        prompt: interpretation.singleCoherentPrompt?.substring(0, 60) + '...',
+        bpm: interpretation.lyriaConfig?.bpm,
+        requiresCrossfade: interpretation.requiresCrossfade
+      });
       this.applyInterpretationToLyria(interpretation, response.sessionInfo);
       
-      // Apply to Gemini buffer manager for predictive buffering
+      // Send to buffering.js for predictive processing
       if (this.geminiBufferManager) {
-        console.log('🧠 Sending interpretation to buffer manager:', {
-          hasPrompt: !!interpretation.singleCoherentPrompt,
-          promptPreview: interpretation.singleCoherentPrompt?.substring(0, 30) + '...',
-          requiresCrossfade: interpretation.requiresCrossfade
-        });
+        console.log('🧠 Predictive buffering pre-processing the chunk');
+        // Process to prepare for incoming audio
         this.geminiBufferManager.processInterpretation(interpretation);
       } else {
-        console.warn('⚠️ No buffer manager available for interpretation processing');
+        console.warn('⚠️ No buffer manager available - audio will have clicks/gaps');
       }
       
       // Emit for UI updates
@@ -973,30 +1005,28 @@ export class OrchestrationCoordinator extends EventEmitter {
       } else if (message.serverContent?.audioChunk) {
         audioData = message.serverContent.audioChunk;
       }
-      
-      // Debug logging
-      if (!audioData && message.serverContent) {
-        logWarning('No audio data found in Lyria message', { 
-          serverContentKeys: Object.keys(message.serverContent),
-          hasAudioChunks: !!message.serverContent.audioChunks
-        });
-      }
 
       if (audioData) {
-        logInfo('Audio chunk received, processing');
+        console.log('🎵 Processing Lyria audio');
         
-        // Send to Gemini buffer manager for seamless playback with predictive buffering
+        // 1. Send to buffering.js for predictive processing
         if (this.geminiBufferManager) {
           this.geminiBufferManager.handleLyriaAudioChunk(audioData);
-          this.geminiBufferManager.bufferAudioChunk(audioData);
         }
         
-        // Send to audio chunk service for vibestream
+        // 2. Send to chunks service for 60-second collection
         if (this.currentRtaId && this.audioChunkService) {
           this.audioChunkService.addAudioData(audioData);
         }
 
-        // Emit audio data to sensor callbacks so VibePlayer receives it
+        // 3. Send to platform orchestrator for playback
+        if (Platform.OS === 'web' && this.orchestrators.web) {
+          this.orchestrators.web.playAudioChunk(audioData);
+        } else if (Platform.OS !== 'web' && this.orchestrators.mobile) {
+          this.orchestrators.mobile.processAudioChunk(audioData);
+        }
+
+        // 4. Emit to UI callbacks
         this.sensorCallbacks.forEach(callback => {
           try {
             callback({ 
@@ -1007,22 +1037,6 @@ export class OrchestrationCoordinator extends EventEmitter {
             });
           } catch (error) {
             logWarning('Sensor callback with audio error', { error: error.message });
-          }
-        });
-
-        // Send to appropriate platform orchestrator for additional processing
-        if (Platform.OS === 'web' && this.orchestrators.web) {
-          this.orchestrators.web.playAudioChunk(audioData);
-        } else if (Platform.OS !== 'web' && this.orchestrators.mobile) {
-          this.orchestrators.mobile.processAudioChunk(audioData);
-        }
-
-        // Call registered audio chunk callbacks
-        this.callbacks.onAudioChunk.forEach(callback => {
-          try {
-            callback(audioData);
-          } catch (error) {
-            logWarning('Audio chunk callback error', { error: error.message });
           }
         });
       }
@@ -1081,18 +1095,14 @@ export class OrchestrationCoordinator extends EventEmitter {
   // ORCHESTRATION CONTROL
   // ============================================================================
 
-  // Start orchestration with initial prompts
+  // Start orchestration with initial prompts - IMMEDIATE LYRIA START
   async startOrchestration(initialPrompts = null) {
-    console.log('🎵 Starting orchestration...');
+    console.log('🎵 Starting orchestration with IMMEDIATE Lyria startup...');
     
-    if (!this.isInitialized) {
-      console.error('❌ Orchestration not initialized');
-      return false;
-    }
-
     try {
+      // CRITICAL: If Lyria isn't connected yet, connect immediately
       if (!this.lyriaSession) {
-        console.log('🔗 Initializing Lyria connection...');
+        console.log('🚀 IMMEDIATE: Connecting to Lyria for instant music...');
         const connected = await this.initializeLyriaConnection();
         if (!connected) {
           console.error('❌ Failed to connect to Lyria');
@@ -1100,30 +1110,45 @@ export class OrchestrationCoordinator extends EventEmitter {
         }
       }
 
-      console.log('🎹 Starting music stream...');
+      console.log('🎹 IMMEDIATE: Starting music stream with baseline techno...');
       
-      // Start Lyria session - prompts will come from server via sensor interpretations
+      // IMMEDIATE: Set rave configuration for instant music
       await this.lyriaSession.setMusicGenerationConfig({
         musicGenerationConfig: {
-          bpm: 120,
-          density: 0.5,
-          brightness: 0.6,
+          bpm: 140,  // Rave baseline
+          density: 0.6,
+          brightness: 0.7,
           guidance: 1.0,
-          temperature: 2.0
+          temperature: 1.8
         }
       });
       
-      // Set minimal initial prompt to start the stream
-      const prompts = initialPrompts || [{ text: 'electronic music', weight: 1.0 }];
+      // IMMEDIATE: Set baseline techno prompt (part A of A+B+C format)
+      const baselinePrompt = initialPrompts || [{ text: 'driving acid techno', weight: 1.0 }];
       await this.lyriaSession.setWeightedPrompts({
-        weightedPrompts: prompts
+        weightedPrompts: baselinePrompt
       });
       
-      // Start playback
+      // IMMEDIATE: Start playback NOW
       await this.lyriaSession.play();
       
-      console.log('📡 Server will send enhanced prompts via sensor data interpretation');
-      console.log('✅ Orchestration started successfully!');
+      console.log('🎉 IMMEDIATE: Lyria music generation started with baseline techno!');
+      console.log('📡 Server will enhance with A+B+C format: baseline + layer + poetry');
+      
+      // IMMEDIATE: Send baseline to buffering.js for predictive preparation
+      if (this.geminiBufferManager) {
+        const baselineInterpretation = {
+          singleCoherentPrompt: baselinePrompt[0].text,
+          lyriaConfig: {
+            bpm: 140,
+            density: 0.6,
+            brightness: 0.7
+          },
+          requiresCrossfade: false
+        };
+        await this.geminiBufferManager.processInterpretation(baselineInterpretation);
+        console.log('🧠 IMMEDIATE: Buffering.js prepared for baseline techno');
+      }
       
       this.emit('orchestrationStarted', true);
       return true;
@@ -1168,28 +1193,6 @@ export class OrchestrationCoordinator extends EventEmitter {
   // ============================================================================
   // VIBESTREAM CONTROL
   // ============================================================================
-  
-  // Start vibestream - this initializes sensors and chunk service
-  startVibestream(rtaId, audioChunkService) {
-    this.currentRtaId = rtaId;
-    this.audioChunkService = audioChunkService;
-    this.vibestreamActive = true;
-    
-    console.log('🎯 Vibestream started:', rtaId);
-    console.log('📡 Starting sensor collection for active vibestream');
-    
-    // Start sensor collection on the active orchestrator
-    if (this.activeOrchestrator && this.activeOrchestrator.startSensorCollection) {
-      this.activeOrchestrator.startSensorCollection(rtaId);
-    } else {
-      console.warn('⚠️ Active orchestrator does not support sensor collection');
-    }
-    
-    // Send session-start message to server for user pattern loading
-    this.sendSessionStartToServer(rtaId);
-    
-    this.emit('vibestreamStarted', rtaId);
-  }
   
   // Stop vibestream - this stops sensors and chunk service
   stopVibestream() {

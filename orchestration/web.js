@@ -11,10 +11,6 @@ import { logSensorData, logAudioChunk, logPerformance, logInfo, logWarning, logE
 export class WebOrchestrator {
   constructor() {
     this.audioContext = null;
-    this.audioBufferQueue = []; // Robust audio buffering system
-    this.isPlaying = false;
-    this.nextStartTime = 0;
-    this.bufferLookAhead = 0.1; // 100ms lookahead for smooth playback
     this.sensorCallbacks = [];
     this.lastMouseX = 0;
     this.lastMouseY = 0;
@@ -70,9 +66,6 @@ export class WebOrchestrator {
         await this.audioContext.resume();
       }
       
-      // Start the buffering system
-      this.startAudioBuffering();
-      
       // Mark as initialized so audio can be played
       this.isInitialized = true;
       
@@ -84,37 +77,6 @@ export class WebOrchestrator {
     }
   }
 
-  // Robust audio buffering system for seamless server audio chunk playback
-  startAudioBuffering() {
-    if (this.isBuffering) return; // Already running
-    
-    this.isBuffering = true;
-    
-    // Schedule audio chunks for seamless playback
-    const scheduleAudio = () => {
-      // Check if we should continue buffering and audioContext is available
-      if (!this.isBuffering || !this.audioContext) {
-        return; // Stop the loop
-      }
-      
-      const currentTime = this.audioContext.currentTime;
-      
-      // Process queued audio buffers
-      while (this.audioBufferQueue.length > 0 && this.nextStartTime < currentTime + this.bufferLookAhead) {
-        const audioBuffer = this.audioBufferQueue.shift();
-        if (audioBuffer && audioBuffer.duration) {
-          this.playBufferedAudio(audioBuffer, this.nextStartTime);
-          this.nextStartTime += audioBuffer.duration;
-        } else {
-          logWarning('Invalid audio buffer in queue, skipping', { queueLength: this.audioBufferQueue.length });
-        }
-      }
-      
-      requestAnimationFrame(scheduleAudio);
-    };
-    
-    scheduleAudio();
-  }
 
   // Play buffered audio with crossfading for seamless transitions
   playBufferedAudio(audioBuffer, startTime) {
@@ -729,91 +691,10 @@ export class WebOrchestrator {
     return this.startSensorCollection('legacy_session');
   }
 
-  // Real-time audio chunk playback
+  // SIMPLIFIED: Only handle final audio playback (buffering.js handles the rest)
   async playAudioChunk(audioData) {
     if (!this.isInitialized || Platform.OS !== 'web') return;
 
-    try {
-      let arrayBuffer;
-      
-      // Handle different audio data formats from server
-      if (typeof audioData === 'string') {
-        // Base64 encoded audio data
-        try {
-          const binaryString = atob(audioData);
-          arrayBuffer = new ArrayBuffer(binaryString.length);
-          const uint8Array = new Uint8Array(arrayBuffer);
-          
-          for (let i = 0; i < binaryString.length; i++) {
-            uint8Array[i] = binaryString.charCodeAt(i);
-          }
-        } catch (base64Error) {
-          logWarning('Failed to decode base64 audio', { error: base64Error.message });
-          return;
-        }
-      } else if (audioData instanceof ArrayBuffer) {
-        // Already an ArrayBuffer
-        arrayBuffer = audioData;
-      } else if (audioData instanceof Uint8Array) {
-        // Uint8Array - convert to ArrayBuffer
-        arrayBuffer = audioData.buffer.slice(audioData.byteOffset, audioData.byteOffset + audioData.byteLength);
-      } else if (audioData?.buffer instanceof ArrayBuffer) {
-        // Has buffer property (like DataView)
-        arrayBuffer = audioData.buffer;
-      } else if (audioData?.data) {
-        // Server might wrap audio data in a data property
-        const wrappedData = audioData.data;
-        if (typeof wrappedData === 'string') {
-          // Base64 encoded
-          try {
-            const binaryString = atob(wrappedData);
-            arrayBuffer = new ArrayBuffer(binaryString.length);
-            const uint8Array = new Uint8Array(arrayBuffer);
-            
-            for (let i = 0; i < binaryString.length; i++) {
-              uint8Array[i] = binaryString.charCodeAt(i);
-            }
-          } catch (base64Error) {
-            logWarning('Failed to decode wrapped base64 audio', { error: base64Error.message });
-            return;
-          }
-        } else if (wrappedData instanceof ArrayBuffer) {
-          arrayBuffer = wrappedData;
-        } else if (wrappedData instanceof Uint8Array) {
-          arrayBuffer = wrappedData.buffer.slice(wrappedData.byteOffset, wrappedData.byteOffset + wrappedData.byteLength);
-        } else {
-          logWarning('Unknown wrapped audio data format', { type: typeof wrappedData, hasData: !!wrappedData });
-          return;
-        }
-      } else {
-        logWarning('Unknown audio data format from server', { type: typeof audioData, hasData: !!audioData });
-        return;
-      }
-      
-      if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-        logWarning('Empty audio buffer received from server', { byteLength: arrayBuffer?.byteLength || 0 });
-        return;
-      }
-            
-      // Server sends RAW 16-bit PCM audio data, NOT encoded audio
-      // Format: 48kHz, 2 channels (stereo), 16-bit signed integers
-      const audioBuffer = await this.createAudioBufferFromServerData(arrayBuffer);
-      
-      if (audioBuffer) {
-        // Add to buffering queue for seamless playback
-        this.audioBufferQueue.push(audioBuffer);
-        
-        // Initialize nextStartTime if this is the first chunk
-        if (this.nextStartTime === 0) {
-          this.nextStartTime = this.audioContext.currentTime + 0.1; // 100ms initial delay
-        }        
-      } else {
-        logWarning('Failed to create AudioBuffer from received data', { arrayBufferSize: arrayBuffer?.byteLength || 0 });
-      }
-      
-    } catch (error) {
-      logError('Server audio chunk processing failed', { error: error.message, stack: error.stack });
-    }
   }
 
   // Create AudioBuffer from server-processed audio data
@@ -887,14 +768,6 @@ export class WebOrchestrator {
 
       // Stop audio buffering loop
       this.isBuffering = false;
-
-      // Cleanup audio queue
-      this.audioBufferQueue.forEach(audioBuffer => {
-        if (audioBuffer && typeof audioBuffer.disconnect === 'function') {
-          audioBuffer.disconnect();
-        }
-      });
-      this.audioBufferQueue = [];
 
       if (this.audioContext) {
         this.audioContext.close();

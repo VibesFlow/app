@@ -272,34 +272,34 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         audioChunkService.updateParticipantCount(participants.count);
       }
 
-      // RESTORED: Start orchestration system with proper initialization
+      // Start Lyria first, then background systems in parallel
       try {
-        // Initialize orchestration integration with wallet if available
+        // 1. Initialize orchestration integration with wallet
         if (config?.creator) {
           await orchestrationIntegration.initializeWithWallet({ account: { accountId: config.creator } });
         }
         
-        // Start vibestream session for sensor data collection
-        if (rtaID) {
-          await orchestrationIntegration.startVibestreamSession(rtaID, audioChunkService);
-          
-          // Send session start to server for user pattern loading
-          await orchestrationIntegration.sendSessionStartToServer(rtaID);
-        }
-        
-        // Start orchestration - this will connect directly to Lyria for music generation
-        const success = await orchestrationIntegration.startOrchestration(null);
+        // 2. Start orchestration (Lyria music generation)
+        const success = await orchestrationIntegration.startOrchestration();
         
         if (!success) {
-          console.error('❌ Failed to start orchestration');
+          console.error('❌ Failed to start Lyria orchestration');
           setIsStreaming(false);
           return;
         }
         
-        console.log('✅ Orchestration and chunks service started successfully');
+        console.log('🎉 Lyria started with baseline');
+        
+        // 3. Start vibestream session (sensors + chunks)
+        if (rtaID) {
+          orchestrationIntegration.startVibestreamSession(rtaID, audioChunkService).catch(error => {
+            console.warn('⚠️ Vibestream session failed:', error.message);
+          });
+        }
+        
+        console.log('✅ Music started, background systems starting in parallel');
       } catch (error) {
         console.error('❌ Failed to start orchestration:', error);
-        // Continue anyway - basic functionality should still work
       }
       
     } catch (error) {
