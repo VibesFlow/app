@@ -17,6 +17,7 @@ import GlitchText from './ui/GlitchText';
 import AuthenticatedImage from './ui/ProfilePic';
 import { useFilCDN } from '../context/filcdn';
 import { ProfileLoader } from '../services/ProfileLoader';
+import { ContinuousAudioStreamer } from '../services/AudioStreamer';
 
 const { width, height } = Dimensions.get('window');
 
@@ -31,10 +32,10 @@ interface FilterState {
   date: 'today' | 'week' | 'month' | 'all';
 }
 
-interface MinimalPlayer {
+interface PreviewPlayer {
   isPlaying: boolean;
   currentRTA: string | null;
-  audio: HTMLAudioElement | null;
+  stopPreview: (() => void) | null;
 }
 
 const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
@@ -54,15 +55,15 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
     date: 'all'
   });
   
-  const [player, setPlayer] = useState<MinimalPlayer>({
+  const [player, setPlayer] = useState<PreviewPlayer>({
     isPlaying: false,
     currentRTA: null,
-    audio: null
+    stopPreview: null
   });
 
-  const playerRef = useRef<MinimalPlayer>(player);
+  const playerRef = useRef<PreviewPlayer>(player);
   const profileLoader = useRef<ProfileLoader>(new ProfileLoader());
-  const [creatorProfiles, setCreatorProfiles] = useState<Map<string, any>>(new Map());
+  const audioStreamer = useRef<ContinuousAudioStreamer>(new ContinuousAudioStreamer());
   
   playerRef.current = player;
 
@@ -79,15 +80,11 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
       if (vibestreams.length === 0) return;
       
       const uniqueCreators = [...new Set(vibestreams.map(stream => stream.creator))];
+      
+      // Use ProfileLoader's efficient preloading
       await profileLoader.current.preloadProfiles(uniqueCreators);
       
-      // Load profiles into state
-      const profileMap = new Map();
-      for (const creator of uniqueCreators) {
-        const profile = await profileLoader.current.loadCreatorProfile(creator);
-        profileMap.set(creator, profile);
-      }
-      setCreatorProfiles(profileMap);
+      // ProfileLoader handles caching internally, no need to update state
     };
     
     loadCreatorProfiles();
@@ -96,35 +93,35 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
   // Cleanup audio when component unmounts
   useEffect(() => {
     return () => {
-      if (player.audio) {
-        player.audio.pause();
-        player.audio = null;
+      if (player.stopPreview) {
+        player.stopPreview();
       }
+      audioStreamer.current?.dispose();
     };
-  }, []);
+  }, [player.stopPreview]);
 
-  // Simple preview playback (first chunk only)
+  // Simple preview playback using proper AudioStreamer service
   const togglePreview = useCallback(async (stream: any) => {
     try {
       if (player.currentRTA === stream.rta_id && player.isPlaying) {
         // Stop current preview
-        if (player.audio) {
-          player.audio.pause();
+        if (player.stopPreview) {
+          player.stopPreview();
         }
         setPlayer({
           isPlaying: false,
           currentRTA: null,
-          audio: null
+          stopPreview: null
         });
         return;
       }
 
-      // Stop any existing audio
-      if (player.audio) {
-        player.audio.pause();
+      // Stop any existing preview
+      if (player.stopPreview) {
+        player.stopPreview();
       }
 
-      // Start new preview
+      // Get first chunk for preview
       const firstChunk = stream.chunks_detail?.[0];
       if (!firstChunk) {
         Alert.alert('No Audio', 'No chunks available for preview');
@@ -133,48 +130,31 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
 
       console.log('🎵 Starting preview for:', stream.rta_id);
 
-      if (Platform.OS === 'web') {
-        const audio = new Audio();
-        audio.crossOrigin = 'anonymous';
-        audio.preload = 'auto';
-        audio.volume = 0.6;
-
+      if (Platform.OS === 'web' && audioStreamer.current) {
         // Use FilCDN URL if available, fallback to proxy
         const audioUrl = firstChunk.filcdn_url || firstChunk.url;
-        audio.src = audioUrl;
-
-        // Auto-stop preview after 30 seconds
-        audio.addEventListener('loadeddata', () => {
-          setTimeout(() => {
-            if (playerRef.current.currentRTA === stream.rta_id && playerRef.current.isPlaying) {
-              audio.pause();
-              setPlayer(prev => ({
-                ...prev,
-                isPlaying: false,
-                currentRTA: null
-              }));
-            }
-          }, 30000); // 30 second preview
-        });
-
-        audio.addEventListener('ended', () => {
-          setPlayer(prev => ({
-            ...prev,
-            isPlaying: false,
-            currentRTA: null
-          }));
-        });
+        
+        // Start preview using AudioStreamer service
+        const stopPreview = await audioStreamer.current.playPreview(audioUrl, 0.6);
 
         setPlayer({
           isPlaying: true,
           currentRTA: stream.rta_id,
-          audio
+          stopPreview
         });
 
-        audio.play().catch(error => {
-          console.error('❌ Preview playback failed:', error);
-          Alert.alert('Playback Error', 'Failed to start preview');
-        });
+        // Auto-stop after 30 seconds
+        setTimeout(() => {
+          if (playerRef.current.currentRTA === stream.rta_id && playerRef.current.isPlaying) {
+            stopPreview();
+            setPlayer(prev => ({
+              ...prev,
+              isPlaying: false,
+              currentRTA: null,
+              stopPreview: null
+            }));
+          }
+        }, 30000);
       }
     } catch (error) {
       console.error('❌ Preview toggle failed:', error);
@@ -239,11 +219,18 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
     return rtaId.toUpperCase();
   };
 
-  // Creator display name helper (using ProfileLoader)
-  const getDisplayName = (creator: string): string => {
-    const profile = creatorProfiles.get(creator);
-    return profile?.displayName || creator;
-  };
+  // Creator display name helper (using ProfileLoader cache)
+  const getDisplayName = useCallback((creator: string): string => {
+    // ProfileLoader handles caching internally, no need for local state
+    const cached = profileLoader.current.getDisplayName(creator);
+    if (cached) return cached;
+    
+    // Fallback formatting
+    if (creator.startsWith('0x')) {
+      return `${creator.slice(0, 5)}...${creator.slice(-6)}`;
+    }
+    return creator;
+  }, []);
 
   // Filter vibestreams
   const filteredVibestreams = vibestreams.filter(stream => {
