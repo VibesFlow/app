@@ -51,6 +51,7 @@ export interface LiveVibestream {
   mode: 'solo' | 'group';
   startedAt: number;
   isActive: boolean;
+  rtaId?: string; // Full RTA ID from blockchain event
   // Group mode specific fields
   ticketsAmount?: number;
   ticketPrice?: string;
@@ -145,37 +146,33 @@ class LiveVibestreamsTracker {
   }
 
   /**
-   * Fetch live vibestreams from both networks
+   * Fetch live vibestreams - track only active streaming sessions
    */
   private async fetchLiveVibestreams(): Promise<void> {
     try {
       console.log('🔍 Fetching live vibestreams...');
       
-      // Fetch from both networks in parallel
-      const [nearLive, metisLive] = await Promise.allSettled([
-        this.fetchNearLiveVibestreams(),
-        this.fetchMetisLiveVibestreams()
-      ]);
+      // Get active streams from SRS
+      const activeStreams = await this.fetchOrchestratorLiveVibestreams();
+      
+      // Convert SRS streams to LiveVibestream format
+      const liveVibestreams: LiveVibestream[] = activeStreams.map(stream => {
+        const isMetis = stream.vibeId.startsWith('metis_vibe_');
+        const isNear = stream.vibeId.startsWith('rta_');
+        
+        return {
+          vibeId: stream.vibeId,
+          creator: stream.creator,
+          network: isMetis ? 'metis' : 'near',
+          mode: 'solo', // Default mode
+          startedAt: Date.now() - 300000, // Estimate started 5 minutes ago
+          isActive: true,
+          rtaId: stream.vibeId
+        };
+      });
 
-      const liveVibestreams: LiveVibestream[] = [];
-      let nearCount = 0;
-      let metisCount = 0;
-
-      // Process NEAR results
-      if (nearLive.status === 'fulfilled') {
-        liveVibestreams.push(...nearLive.value);
-        nearCount = nearLive.value.length;
-      } else {
-        console.warn('⚠️ NEAR live vibestreams fetch failed:', nearLive.reason);
-      }
-
-      // Process Metis results
-      if (metisLive.status === 'fulfilled') {
-        liveVibestreams.push(...metisLive.value);
-        metisCount = metisLive.value.length;
-      } else {
-        console.warn('⚠️ Metis live vibestreams fetch failed:', metisLive.reason);
-      }
+      const nearCount = liveVibestreams.filter(v => v.network === 'near').length;
+      const metisCount = liveVibestreams.filter(v => v.network === 'metis').length;
 
       // Update cache
       this.cache = {
@@ -195,7 +192,7 @@ class LiveVibestreamsTracker {
         }
       });
 
-      console.log(`✅ Live vibestreams updated: ${liveVibestreams.length} total (${nearCount} NEAR, ${metisCount} Metis)`);
+      console.log(`✅ Live vibestreams updated: ${liveVibestreams.length} total (${nearCount} NEAR, ${metisCount} Metis) from active streaming sessions`);
 
     } catch (error) {
       console.error('❌ Failed to fetch live vibestreams:', error);
@@ -203,111 +200,48 @@ class LiveVibestreamsTracker {
   }
 
   /**
-   * Fetch live vibestreams from NEAR
+   * Fetch active sessions from SRS HTTP API
    */
-  private async fetchNearLiveVibestreams(): Promise<LiveVibestream[]> {
-    // For now, return empty array as NEAR doesn't have real-time live tracking yet
-    // This would need to be implemented by querying the NEAR contract for active RTAs
-    return [];
-  }
-
-  /**
-   * Fetch live vibestreams from Metis
-   */
-  private async fetchMetisLiveVibestreams(): Promise<LiveVibestream[]> {
-    if (!createPublicClient || !custom || !parseAbiItem) {
-      throw new Error('Viem not available for Metis tracking');
-    }
-
-    // Check if we have ethereum provider
-    if (typeof window === 'undefined' || !(window as any).ethereum) {
-      console.warn('Ethereum provider not available, skipping Metis live tracking');
-      return [];
-    }
-
-    const ethProvider = (window as any).ethereum;
-    
-    // Create public client for reading contract state
-    const publicClient = createPublicClient({
-      chain: {
-        id: NETWORK_CONFIG.METIS.CHAIN_ID,
-        name: 'Metis Hyperion',
-        nativeCurrency: { name: 'tMETIS', symbol: 'tMETIS', decimals: 18 },
-        rpcUrls: { default: { http: [NETWORK_CONFIG.METIS.RPC_URL] } },
-      },
-      transport: custom(ethProvider)
-    });
-
+  private async fetchOrchestratorLiveVibestreams(): Promise<{vibeId: string, creator: string}[]> {
     try {
-      // Get current block to limit event search range
-      const currentBlock = await publicClient.getBlockNumber();
-      const searchFromBlock = currentBlock > 5000n ? currentBlock - 5000n : 0n;
-      
-      // Query VibestreamCreated events from VibeFactory (recent ones)
-      const vibestreamEvents = await publicClient.getLogs({
-        address: NETWORK_CONFIG.METIS.VIBE_FACTORY as `0x${string}`,
-        event: parseAbiItem('event VibestreamCreated(uint256 indexed vibeId, address indexed creator, string rtaId, bool storeToFilecoin, string mode, uint256 distance, uint256 ticketsAmount, uint256 ticketPrice, bool payPerStream, uint256 streamPrice, uint256 timestamp)'),
-        fromBlock: searchFromBlock,
-        toBlock: currentBlock
+      // MINIMAL: Just get active streams from SRS - let SRS handle everything
+      const response = await fetch('https://srs.vibesflow.ai/api/v1/streams/', {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        }
       });
 
-      const liveVibestreams: LiveVibestream[] = [];
-      
-      // Process recent events (assume they're still live if created within last hour)
-      const oneHourAgo = Date.now() - (60 * 60 * 1000);
-      
-      for (const event of vibestreamEvents) {
-        const args = event.args as any;
-        const timestamp = Number(args.timestamp) * 1000; // Convert to milliseconds
-        
-        // Consider vibestream live if created within last hour
-        if (timestamp > oneHourAgo) {
-          const liveVibe: LiveVibestream = {
-            vibeId: args.vibeId.toString(),
-            creator: args.creator,
-            network: 'metis',
-            mode: args.mode === 'group' ? 'group' : 'solo',
-            startedAt: timestamp,
-            isActive: true
-          };
-          
-          // Add group mode specific data
-          if (args.mode === 'group') {
-            liveVibe.ticketsAmount = Number(args.ticketsAmount);
-            liveVibe.ticketPrice = args.ticketPrice.toString();
-            liveVibe.distance = Number(args.distance);
-            liveVibe.payPerStream = args.payPerStream;
-            if (args.payPerStream) {
-              liveVibe.streamPrice = args.streamPrice.toString();
-            }
-            
-            // Try to get tickets sold from VibeKiosk
-            try {
-              const vibeConfig = await publicClient.readContract({
-                address: NETWORK_CONFIG.METIS.VIBE_KIOSK as `0x${string}`,
-                abi: [parseAbiItem('function getVibeConfig(uint256 vibeId) external view returns (tuple(uint256 vibeId, address creator, uint256 ticketsAmount, uint256 ticketPrice, uint256 distance, uint256 ticketsSold, bool isActive))')],
-                functionName: 'getVibeConfig',
-                args: [args.vibeId]
-              }) as any;
-              
-              liveVibe.ticketsSold = Number(vibeConfig.ticketsSold);
-            } catch (error) {
-              console.warn('Could not fetch ticket sales data:', error);
-              liveVibe.ticketsSold = 0;
-            }
-          }
-          
-          liveVibestreams.push(liveVibe);
-        }
+      if (!response.ok) {
+        throw new Error(`SRS API responded with ${response.status}`);
       }
 
-      return liveVibestreams;
+      const data = await response.json();
       
+      // MINIMAL: Extract only vibestream IDs from active SRS streams
+      const activeStreams: {vibeId: string, creator: string}[] = [];
+      
+      if (data.streams && Array.isArray(data.streams)) {
+        data.streams.forEach((stream: any) => {
+          // Only track streams with blockchain RTA ID format
+          if (stream.name && (stream.name.includes('metis_vibe_') || stream.name.includes('rta_') || /^\d+_\w+$/.test(stream.name))) {
+            activeStreams.push({
+              vibeId: stream.name,
+              creator: 'creator' // SRS handles creator tracking
+            });
+          }
+        });
+      }
+
+      return activeStreams;
+
     } catch (error) {
-      console.error('❌ Failed to fetch Metis live vibestreams:', error);
+      console.warn('⚠️ Failed to fetch active sessions from SRS:', error);
       return [];
     }
   }
+
+
 
   /**
    * Cleanup when service is destroyed

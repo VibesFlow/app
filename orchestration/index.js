@@ -53,10 +53,8 @@ async function initializeOrchestration() {
   }
 }
 
-// Auto-initialize on import for convenience
-initializeOrchestration().catch(error => {
-  console.error('Auto-initialization failed:', error);
-});
+// NOTE: Auto-initialization removed to prevent participant interference
+// Orchestration will only be initialized when needed by creators in VibePlayer
 
 // Default export
 export default orchestrationCoordinator; 
