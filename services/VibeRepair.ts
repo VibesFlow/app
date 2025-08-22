@@ -11,10 +11,6 @@ interface BufferingPattern {
   sessionDuration: number;
   userBehavior: 'seeking' | 'continuous' | 'interrupted';
   timestamp: number;
-  totalChunks: number;
-  completedChunks: number;
-  bufferUnderflows: number;
-  networkQuality: 'excellent' | 'good' | 'poor';
 }
 
 export class VibestreamRepair {
@@ -25,19 +21,14 @@ export class VibestreamRepair {
     this.loadPatternsFromStorage();
   }
 
-  // Start tracking a session with enhanced metrics
-  startSession(rtaId: string, totalChunks: number = 0) {
+  // Start tracking a session (simplified)
+  startSession(rtaId: string) {
     this.currentSession = {
       rtaId,
       chunkFailures: [],
       timestamp: Date.now(),
-      userBehavior: 'continuous',
-      totalChunks,
-      completedChunks: 0,
-      bufferUnderflows: 0,
-      networkQuality: 'excellent'
+      userBehavior: 'continuous'
     };
-    console.log(`📊 Started analytics session for ${rtaId} (${totalChunks} chunks)`);
   }
 
   // Record chunk failure (simplified)
@@ -53,27 +44,6 @@ export class VibestreamRepair {
     }
   }
 
-  // Record chunk completion
-  recordChunkCompletion() {
-    if (this.currentSession.completedChunks !== undefined) {
-      this.currentSession.completedChunks++;
-    }
-  }
-
-  // Record buffer underflow
-  recordBufferUnderflow() {
-    if (this.currentSession.bufferUnderflows !== undefined) {
-      this.currentSession.bufferUnderflows++;
-    }
-  }
-
-  // Update network quality
-  updateNetworkQuality(quality: 'excellent' | 'good' | 'poor') {
-    if (this.currentSession) {
-      this.currentSession.networkQuality = quality;
-    }
-  }
-
   // End session and save pattern (simplified)
   endSession() {
     if (!this.currentSession.rtaId) return;
@@ -83,11 +53,7 @@ export class VibestreamRepair {
       chunkFailures: this.currentSession.chunkFailures || [],
       sessionDuration: Date.now() - (this.currentSession.timestamp || Date.now()),
       userBehavior: this.currentSession.userBehavior || 'continuous',
-      timestamp: this.currentSession.timestamp || Date.now(),
-      totalChunks: this.currentSession.totalChunks || 0,
-      completedChunks: this.currentSession.completedChunks || 0,
-      bufferUnderflows: this.currentSession.bufferUnderflows || 0,
-      networkQuality: this.currentSession.networkQuality || 'excellent'
+      timestamp: this.currentSession.timestamp || Date.now()
     };
 
     this.patterns.push(pattern);

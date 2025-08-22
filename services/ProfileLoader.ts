@@ -89,21 +89,6 @@ export class ProfileLoader {
   }
 
   /**
-   * Get display name from cache (for efficient access)
-   */
-  public getDisplayName(creatorAddress: string): string | null {
-    const cached = this.profileCache.get(creatorAddress);
-    return cached?.displayName || null;
-  }
-
-  /**
-   * Get cached profile if available
-   */
-  public getCachedProfile(creatorAddress: string): CreatorProfile | null {
-    return this.profileCache.get(creatorAddress) || null;
-  }
-
-  /**
    * Clear profile cache
    */
   public clearCache(): void {

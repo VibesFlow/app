@@ -296,14 +296,12 @@ class AudioChunkService {
     }
   }
 
-  // Start collecting audio chunks for a vibestream (CREATOR-ONLY)
+  // Start collecting audio chunks for a vibestream
   startCollecting(rtaId: string, creator: string): void {
     if (this.isCollecting) {
       console.warn('🔄 Already collecting chunks, stopping previous session');
       this.stopCollecting();
     }
-    
-    console.log('🎵 CREATOR: Starting audio chunk collection for RTA:', rtaId);
     
     this.isCollecting = true;
     this.currentRtaId = rtaId;

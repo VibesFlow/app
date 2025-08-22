@@ -32,12 +32,12 @@ interface ContinuousPlayerState {
 }
 
 export class ContinuousAudioStreamer {
-  private context!: AudioContext;
+  private context: AudioContext;
   private sampleRate: number = 24000; // From project-livewire docs
   private audioQueue: AudioBuffer[] = [];
   private isPlaying: boolean = false;
   private currentSource: AudioBufferSourceNode | null = null;
-  private gainNode!: GainNode;
+  private gainNode: GainNode;
   
   // Stall detection (critical from project-livewire)
   private playbackTimeout: NodeJS.Timeout | null = null;
@@ -545,117 +545,5 @@ export class ContinuousAudioStreamer {
    */
   public getState(): ContinuousPlayerState {
     return { ...this.state };
-  }
-
-  /**
-   * Play SRS HTTP-FLV stream for participants (ultra-low latency)
-   * Returns a cleanup function
-   */
-  public async playSRSStream(streamUrl: string, volume: number = 0.8): Promise<() => void> {
-    try {
-      console.log('🎵 Starting SRS HTTP-FLV participant stream:', streamUrl);
-      
-      // Resume audio context if suspended
-      if (this.context.state === 'suspended') {
-        await this.context.resume();
-      }
-
-      // Create audio element for HTTP-FLV stream
-      const audio = new Audio();
-      audio.crossOrigin = 'anonymous';
-      audio.src = streamUrl;
-      audio.volume = volume;
-      audio.autoplay = true;
-      
-      // Create media element source
-      const mediaSource = this.context.createMediaElementSource(audio);
-      const gainNode = this.context.createGain();
-      
-      gainNode.gain.value = volume;
-      mediaSource.connect(gainNode);
-      gainNode.connect(this.context.destination);
-      
-      // Start playback
-      await audio.play();
-      
-      console.log('✅ SRS participant stream started');
-      
-      // Return cleanup function
-      return () => {
-        try {
-          audio.pause();
-          audio.src = '';
-          mediaSource.disconnect();
-          gainNode.disconnect();
-          console.log('🛑 SRS participant stream stopped');
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      };
-      
-    } catch (error) {
-      console.error('❌ SRS stream playback failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Simple preview playback for a single chunk (used by VibeMarket)
-   * Returns a cleanup function
-   */
-  public async playPreview(audioUrl: string, volume: number = 0.6): Promise<() => void> {
-    try {
-      // Resume audio context if suspended
-      if (this.context.state === 'suspended') {
-        await this.context.resume();
-      }
-
-      // Load and decode audio
-      const response = await fetch(audioUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const arrayBuffer = await response.arrayBuffer();
-      const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
-      
-      // Create preview source
-      const previewSource = this.context.createBufferSource();
-      const previewGain = this.context.createGain();
-      
-      previewSource.buffer = audioBuffer;
-      previewGain.gain.value = volume;
-      
-      previewSource.connect(previewGain);
-      previewGain.connect(this.context.destination);
-      
-      // Start preview
-      previewSource.start();
-      
-      // Auto-stop after 30 seconds
-      const autoStopTimeout = setTimeout(() => {
-        try {
-          previewSource.stop();
-        } catch (e) {
-          // Ignore if already stopped
-        }
-      }, 30000);
-      
-      // Return cleanup function
-      return () => {
-        clearTimeout(autoStopTimeout);
-        try {
-          previewSource.stop();
-          previewSource.disconnect();
-          previewGain.disconnect();
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      };
-      
-    } catch (error) {
-      console.error('❌ Preview playback failed:', error);
-      throw error;
-    }
   }
 }

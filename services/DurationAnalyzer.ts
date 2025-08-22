@@ -169,8 +169,10 @@ Return analysis in JSON format:
 }`;
 
       // Use generateContent for audio analysis (not Live API for this use case)
-      const model = this.ai.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-      const response = await model.generateContent(analysisPrompt);
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: analysisPrompt
+      });
 
       const analysisText = response.response?.text() || '';
       const analysis = this.parseGeminiResponse(analysisText, rtaId, chunkData);
@@ -437,21 +439,5 @@ Return analysis in JSON format:
    */
   public getAnalysis(rtaId: string): DurationAnalysisResult | null {
     return this.analysisCache.get(rtaId) || null;
-  }
-
-  /**
-   * Get chunk durations for AudioStreamer integration
-   */
-  public getChunkDurations(rtaId: string): Array<{chunk_id: string, actualDuration: number}> {
-    const analysis = this.analysisCache.get(rtaId);
-    return analysis?.chunkDurations || [];
-  }
-
-  /**
-   * Clear analysis cache
-   */
-  public clearCache(): void {
-    this.analysisCache.clear();
-    console.log('🧹 Duration analysis cache cleared');
   }
 }

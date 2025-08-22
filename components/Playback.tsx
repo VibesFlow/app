@@ -82,18 +82,14 @@ const Playback: React.FC<PlaybackProps> = ({ onBack, rtaId }) => {
     
     audioStreamer.current.onChunkTransition = (fromChunk, toChunk) => {
       console.log(`🎵 Chunk transition: ${fromChunk} → ${toChunk}`);
-      vibeRepair.current.recordChunkCompletion();
     };
     
     audioStreamer.current.onPlaybackComplete = () => {
       console.log('🏁 Playback completed');
-      vibeRepair.current.endSession();
     };
     
     audioStreamer.current.onError = (error) => {
       console.error('❌ Playback error:', error);
-      vibeRepair.current.recordBufferUnderflow();
-      vibeRepair.current.updateNetworkQuality('poor');
     };
     
     return () => {
@@ -152,8 +148,8 @@ const Playback: React.FC<PlaybackProps> = ({ onBack, rtaId }) => {
         // Load chunks into the audio streamer
         audioStreamer.current?.loadVibestream(chunkData);
         
-        // Start analytics session with total chunks
-        vibeRepair.current.startSession(rtaId, chunkData.length);
+        // Start analytics session
+        vibeRepair.current.startSession(rtaId);
 
         setLoading(false);
         
