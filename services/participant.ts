@@ -30,18 +30,17 @@ if (Platform.OS === 'web') {
   }
 }
 
-// Network configs
-const CONTRACT_ADDRESSES = {
+// Network configuration
+const NETWORK_CONFIG = {
   NEAR: {
-    RTA_FACTORY: process.env.RTA_FACTORY_CONTRACT || process.env.EXPO_PUBLIC_RTA_FACTORY_CONTRACT || 'rtav2.vibesflow.testnet',
-    NETWORK: process.env.NEAR_NETWORK || process.env.EXPO_PUBLIC_NEAR_NETWORK || 'testnet'
+    RPC_URL: process.env.EXPO_PUBLIC_NEAR_NODE_URL,
+    FACTORY_CONTRACT: process.env.EXPO_PUBLIC_NEAR_CONTRACT_ID,
   },
   METIS: {
-    VIBE_FACTORY: process.env.VIBE_FACTORY_ADDRESS || process.env.EXPO_PUBLIC_VIBE_FACTORY_ADDRESS || '0x69ee9D117fdE9874c148F995d2f4CC67f2BF8c9C',
-    VIBE_KIOSK: process.env.VIBE_KIOSK_ADDRESS || process.env.EXPO_PUBLIC_VIBE_KIOSK_ADDRESS || '0xF463127B64F7acA9BeC512a1552b2e80f674D478',
-    NETWORK: 'hyperion',
-    CHAIN_ID: parseInt(process.env.HYPERION_CHAIN_ID || process.env.EXPO_PUBLIC_HYPERION_CHAIN_ID || '133717'),
-    RPC_URL: process.env.HYPERION_RPC_URL || process.env.EXPO_PUBLIC_HYPERION_RPC_URL || 'https://hyperion-testnet.metisdevops.link'
+    CHAIN_ID: parseInt(process.env.EXPO_PUBLIC_HYPERION_CHAIN_ID || '133717'),
+    RPC_URL: process.env.EXPO_PUBLIC_HYPERION_RPC_URL,
+    VIBE_FACTORY: process.env.EXPO_PUBLIC_VIBE_FACTORY_ADDRESS,
+    VIBE_KIOSK: process.env.EXPO_PUBLIC_VIBE_KIOSK_ADDRESS,
   }
 };
 
@@ -50,8 +49,6 @@ export interface ParticipantData {
   joinedAt: number;
   ticketId?: string; // For Metis VibeKiosk tickets
   isActive: boolean;
-  streamingUrl?: string; // SRS streaming URL for participants
-  isStreaming?: boolean; // Whether audio stream is active
 }
 
 export interface VibestreamParticipants {
@@ -161,13 +158,13 @@ class ParticipantTrackingService {
 
     const ethProvider = (window as any).ethereum;
     
-    // Create public client
+    // Create public client for reading contract state
     const publicClient = createPublicClient({
       chain: {
-        id: CONTRACT_ADDRESSES.METIS.CHAIN_ID,
+        id: NETWORK_CONFIG.METIS.CHAIN_ID,
         name: 'Metis Hyperion',
         nativeCurrency: { name: 'tMETIS', symbol: 'tMETIS', decimals: 18 },
-        rpcUrls: { default: { http: [CONTRACT_ADDRESSES.METIS.RPC_URL] } },
+        rpcUrls: { default: { http: [NETWORK_CONFIG.METIS.RPC_URL] } },
       },
       transport: custom(ethProvider)
     });
@@ -204,7 +201,7 @@ class ParticipantTrackingService {
       
       // Query TicketMinted events from VibeKiosk
       const ticketMintedEvents = await publicClient.getLogs({
-        address: CONTRACT_ADDRESSES.METIS.VIBE_KIOSK as `0x${string}`,
+        address: NETWORK_CONFIG.METIS.VIBE_KIOSK as `0x${string}`,
         event: parseAbiItem('event TicketMinted(uint256 indexed vibeId, uint256 indexed ticketId, address indexed buyer, string ticketName, uint256 price)'),
         args: {
           vibeId: BigInt(vibeId)
@@ -233,7 +230,7 @@ class ParticipantTrackingService {
       let maxParticipants: number | undefined;
       try {
         const vibeConfig = await publicClient.readContract({
-          address: CONTRACT_ADDRESSES.METIS.VIBE_KIOSK as `0x${string}`,
+          address: NETWORK_CONFIG.METIS.VIBE_KIOSK as `0x${string}`,
           abi: [parseAbiItem('function getVibeConfig(uint256 vibeId) external view returns (tuple(uint256 vibeId, address creator, uint256 ticketsAmount, uint256 ticketPrice, uint256 distance, uint256 ticketsSold, bool isActive))')],
           functionName: 'getVibeConfig',
           args: [BigInt(vibeId)]
@@ -284,7 +281,7 @@ class ParticipantTrackingService {
     // So we'll return the creator as the only participant
     try {
       // Query RTA metadata to get creator
-      const rpcUrl = process.env.EXPO_PUBLIC_NEAR_NODE_URL;
+      const rpcUrl = NETWORK_CONFIG.NEAR.RPC_URL;
       if (!rpcUrl) {
         throw new Error('NEAR RPC URL not configured');
       }
@@ -301,7 +298,7 @@ class ParticipantTrackingService {
           params: {
             request_type: 'call_function',
             finality: 'final',
-            account_id: CONTRACT_ADDRESSES.NEAR.RTA_FACTORY,
+            account_id: NETWORK_CONFIG.NEAR.FACTORY_CONTRACT,
             method_name: 'get_rta_metadata',
             args_base64: typeof Buffer !== 'undefined' 
               ? Buffer.from(JSON.stringify({ rta_id: vibeId })).toString('base64')
@@ -352,301 +349,6 @@ class ParticipantTrackingService {
     
     this.participantCache.set(vibeId, fallbackData);
     onUpdate(fallbackData);
-  }
-
-  /**
-   * Join a vibestream as a participant with wallet signature (required for tracking)
-   * Uses RTA config data instead of blockchain verification to avoid blocking
-   */
-  async joinVibestreamAsParticipant(
-    vibeId: string, 
-    participantId: string,
-    walletAddress: string,
-    signMessage?: (message: string) => Promise<string>
-  ): Promise<{ streamingUrl?: string; hlsUrl?: string; success: boolean; error?: string }> {
-    try {
-      const streamingServerUrl = process.env.EXPO_PUBLIC_STREAMING_URL || 'https://srs.vibesflow.ai';
-      
-      console.log(`🎵 Joining vibestream ${vibeId} as participant ${participantId} with wallet signature`);
-      
-      // Use RTA config data instead of blockchain verification
-      let ticketVerification: any = null;
-      let walletSignature: string | null = null;
-      let hasValidTicket = false;
-      
-      try {
-        // Parse RTA ID to understand the vibestream format
-        console.log(`🔍 Parsing vibeId: "${vibeId}"`);
-        
-        let isMetisVibestream = false;
-        let isFallbackMode = false;
-        
-        // Detect network and fallback mode from RTA ID format
-        if (vibeId.startsWith('metis_vibe_')) {
-          isMetisVibestream = true;
-          // Check if this is a fallback mode vibestream
-          // Fallback vibestreams have the format: metis_vibe_${timestamp}_${random}
-          const parts = vibeId.split('_');
-          if (parts.length >= 4) {
-            console.log(`✅ Metis vibestream format detected: ${vibeId}`);
-          }
-        } else if (vibeId.startsWith('rta_')) {
-          console.log(`✅ NEAR vibestream format detected: ${vibeId}`);
-        } else {
-          // Raw timestamp format - likely fallback mode
-          isFallbackMode = true;
-          console.log(`✅ Fallback mode vibestream detected: ${vibeId}`);
-        }
-        
-        // For all vibestreams, generate wallet signature for participant tracking using wallet context
-        try {
-          const joinMessage = `Join vibestream ${vibeId} as participant ${participantId} at ${Date.now()}`;
-          
-          // Use the provided wallet signing function if available
-          if (signMessage) {
-            walletSignature = await signMessage(joinMessage);
-            console.log(`✅ Wallet signature generated via wallet context for participant tracking`);
-          } else if (typeof window !== 'undefined' && (window as any).ethereum) {
-            // Fallback to direct ethereum provider if no signing function provided
-            const ethProvider = (window as any).ethereum;
-            
-            walletSignature = await ethProvider.request({
-              method: 'personal_sign',
-              params: [joinMessage, walletAddress]
-            });
-            console.log(`✅ Wallet signature generated via direct provider for participant tracking`);
-          }
-        } catch (signError) {
-          console.warn('⚠️ Wallet signature failed, continuing without signature:', signError);
-          // Continue without signature - don't block the join process
-        }
-        
-        // Set up verification data for streaming server
-        ticketVerification = {
-          hasTicket: false, // Default to free access
-          isFreeVibestream: true,
-          isMetisVibestream,
-          isFallbackMode,
-          verifiedAt: Date.now(),
-          vibeIdFormat: vibeId
-        };
-        
-        console.log(`✅ Vibestream verification completed:`, {
-          vibeId,
-          isMetis: isMetisVibestream,
-          isFallback: isFallbackMode,
-          hasSignature: !!walletSignature
-        });
-        
-      } catch (verificationError: any) {
-        console.warn('⚠️ Verification failed, continuing with basic tracking:', verificationError);
-        
-        // Fallback verification - don't block the join process
-        ticketVerification = {
-          hasTicket: false,
-          isFreeVibestream: true,
-          isFallbackMode: true,
-          verificationFailed: true,
-          verifiedAt: Date.now(),
-          error: verificationError.message
-        };
-      }
-      
-      // MINIMAL: Generate SRS streaming URLs based on blockchain RTA_ID - let SRS handle everything
-      const streamingUrl = `https://srs.vibesflow.ai/live/${vibeId}.flv`;
-      const hlsUrl = `https://srs.vibesflow.ai/live/${vibeId}.m3u8`;
-      
-      console.log(`✅ Generated streaming URLs for blockchain RTA ${vibeId}:
-        - HTTP-FLV: ${streamingUrl}
-        - HLS: ${hlsUrl}`);
-      
-      // MINIMAL: Don't verify stream existence - SRS will handle it automatically
-      // If stream doesn't exist, player will get 404 and can handle gracefully
-      
-      return {
-        streamingUrl,
-        hlsUrl,
-        success: true
-      };
-
-    } catch (error: any) {
-      console.error(`❌ Failed to join vibestream ${vibeId}:`, error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Leave a vibestream as a participant
-   */
-  async leaveVibestreamAsParticipant(
-    vibeId: string, 
-    participantId: string,
-    walletAddress: string
-  ): Promise<{ success: boolean; error?: string }> {
-    try {
-      const streamingServerUrl = process.env.EXPO_PUBLIC_STREAMING_URL || 'https://srs.vibesflow.ai';
-      
-      console.log(`🚪 Leaving vibestream ${vibeId} as participant ${participantId}`);
-      
-      const response = await fetch(`${streamingServerUrl}/stream/${vibeId}/leave`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          participantId,
-          walletAddress,
-          timestamp: Date.now()
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Streaming server responded with ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      console.log(`✅ Left vibestream ${vibeId}: ${result.participantCount} remaining participants`);
-      
-      return { success: true };
-
-    } catch (error: any) {
-      console.error(`❌ Failed to leave vibestream ${vibeId}:`, error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Handle blockchain-based participant routing via URL
-   * Format: /join/{rtaId} - where rtaId is the full blockchain RTA ID
-   */
-  async handleParticipantRouting(
-    rtaId: string,
-    walletAddress: string,
-    signMessage?: (message: string) => Promise<string>
-  ): Promise<{ success: boolean; streamingUrl?: string; hlsUrl?: string; error?: string; redirectUrl?: string }> {
-    try {
-      console.log(`🔗 Handling participant routing for RTA: ${rtaId}`);
-      
-      // Validate RTA ID format
-      if (!this.isValidRtaId(rtaId)) {
-        return {
-          success: false,
-          error: 'Invalid RTA ID format'
-        };
-      }
-      
-      // Extract participant ID from wallet address
-      const participantId = walletAddress.split('.')[0] || walletAddress;
-      
-      // Check if this is a valid, active vibestream
-      const streamExists = await this.verifyVibestreamExists(rtaId);
-      if (!streamExists) {
-        return {
-          success: false,
-          error: 'Vibestream not found or not active',
-          redirectUrl: '/live' // Redirect to live vibes page
-        };
-      }
-      
-      // Join the vibestream
-      const joinResult = await this.joinVibestreamAsParticipant(
-        rtaId,
-        participantId,
-        walletAddress,
-        signMessage
-      );
-      
-      if (joinResult.success) {
-        console.log(`✅ Participant routing successful for ${rtaId}`);
-        return {
-          success: true,
-          streamingUrl: joinResult.streamingUrl,
-          hlsUrl: joinResult.hlsUrl
-        };
-      } else {
-        return {
-          success: false,
-          error: joinResult.error || 'Failed to join vibestream',
-          redirectUrl: '/live'
-        };
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Participant routing failed:', error);
-      return {
-        success: false,
-        error: error.message,
-        redirectUrl: '/live'
-      };
-    }
-  }
-
-  /**
-   * Validate RTA ID format for blockchain consistency
-   */
-  private isValidRtaId(rtaId: string): boolean {
-    // Valid formats:
-    // - metis_vibe_{timestamp}_{random} (Metis vibestreams)
-    // - rta_{timestamp}_{random} (NEAR vibestreams)
-    // - {timestamp}_{random} (fallback mode)
-    
-    if (rtaId.startsWith('metis_vibe_')) {
-      const parts = rtaId.split('_');
-      return parts.length >= 4 && /^\d+$/.test(parts[2]);
-    }
-    
-    if (rtaId.startsWith('rta_')) {
-      const parts = rtaId.split('_');
-      return parts.length >= 3 && /^\d+$/.test(parts[1]);
-    }
-    
-    // Fallback mode: timestamp_random
-    const parts = rtaId.split('_');
-    return parts.length >= 2 && /^\d+$/.test(parts[0]);
-  }
-
-  /**
-   * MINIMAL: Verify RTA ID format only - let SRS handle stream existence
-   */
-  private async verifyVibestreamExists(rtaId: string): Promise<boolean> {
-    // MINIMAL: Just validate blockchain RTA ID format - SRS will handle the rest
-    return this.isValidRtaId(rtaId);
-  }
-
-  /**
-   * Generate participant join URL for sharing
-   */
-  generateParticipantJoinUrl(rtaId: string, baseUrl?: string): string {
-    const base = baseUrl || (typeof window !== 'undefined' ? window.location.origin : 'https://vibesflow.ai');
-    return `${base}/join/${rtaId}`;
-  }
-
-  /**
-   * Extract RTA ID from participant join URL
-   */
-  extractRtaIdFromUrl(url: string): string | null {
-    try {
-      const urlObj = new URL(url);
-      const pathParts = urlObj.pathname.split('/');
-      
-      // Look for /join/{rtaId} pattern
-      const joinIndex = pathParts.indexOf('join');
-      if (joinIndex >= 0 && joinIndex < pathParts.length - 1) {
-        return pathParts[joinIndex + 1];
-      }
-      
-      return null;
-    } catch (error) {
-      console.warn('Failed to extract RTA ID from URL:', error);
-      return null;
-    }
   }
 
   /**
