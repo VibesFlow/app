@@ -169,6 +169,16 @@ export class OrchestrationCoordinator extends EventEmitter {
     this.sensorCallbacks = [];
     this.cleanupFunctions = [];
     
+    // Streaming server communication
+    this.lastStreamingError = 0;
+    this.lastSRSStreamLog = 0;
+    
+    // WebRTC streaming to SRS
+    this.webRtcPublisher = null;
+    this.audioContext = null;
+    this.mediaStreamDestination = null;
+    this.mediaStream = null;
+    
     console.log('🎛️ Unified Orchestration Coordinator initialized for platform:', this.platform);
     this.initializeCoordination();
   }
@@ -268,6 +278,9 @@ export class OrchestrationCoordinator extends EventEmitter {
       this.audioChunkService = audioChunkService;
       
       console.log('🔧 Vibestream active status set to:', this.vibestreamActive, 'RTA:', rtaId);
+      
+      // Start streaming session on streaming server
+      await this.startStreamingSession(rtaId);
       
       // Start sensor collection
       if (Platform.OS === 'web' && this.orchestrators.web) {
@@ -1019,14 +1032,29 @@ export class OrchestrationCoordinator extends EventEmitter {
           this.audioChunkService.addAudioData(audioData);
         }
 
-        // 3. Send to platform orchestrator for playback
+        // 3. Send to streaming server for participant restreaming (CREATOR ONLY)
+        if (this.currentRtaId && this.vibestreamActive && this.walletIntegration?.account?.accountId) {
+          // Try to send to streaming server, but don't block if it fails
+          this.sendAudioToStreamingServer(audioData).catch(error => {
+            console.warn('⚠️ Streaming to SRS failed, continuing with local playback:', error.message);
+          });
+        }
+
+        // 4. Send to platform orchestrator for playback AND connect to SRS stream
         if (Platform.OS === 'web' && this.orchestrators.web) {
           this.orchestrators.web.playAudioChunk(audioData);
+          
+          // Connect Lyria audio to SRS MediaStream if streaming is active
+          if (this.mediaStreamDestination && this.vibestreamActive) {
+            this.connectLyriaAudioToSRSStream(audioData);
+          } else if (this.vibestreamActive && !this.mediaStreamDestination) {
+            console.warn('⚠️ Vibestream active but no SRS MediaStream - WebRTC not connected');
+          }
         } else if (Platform.OS !== 'web' && this.orchestrators.mobile) {
           this.orchestrators.mobile.processAudioChunk(audioData);
         }
 
-        // 4. Emit to UI callbacks
+        // 5. Emit to UI callbacks
         this.sensorCallbacks.forEach(callback => {
           try {
             callback({ 
@@ -1198,6 +1226,11 @@ export class OrchestrationCoordinator extends EventEmitter {
   stopVibestream() {
     const endingRtaId = this.currentRtaId; // Store before clearing
     
+    // End streaming session on streaming server
+    if (endingRtaId) {
+      this.endStreamingSession(endingRtaId);
+    }
+    
     // Send session-end message to server for user pattern saving
     if (endingRtaId) {
       this.sendSessionEndToServer(endingRtaId, 'user_closed');
@@ -1289,6 +1322,179 @@ export class OrchestrationCoordinator extends EventEmitter {
   }
 
   // ============================================================================
+  // STREAMING SERVER COMMUNICATION
+  // ============================================================================
+
+  // Start streaming the audio output to SRS
+  async startStreamingSession(rtaId) {
+    try {
+      console.log(`📡 Starting real-time audio streaming to SRS for ${rtaId}...`);
+      
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        // Capture the audio that's actually playing and stream it to SRS
+        await this.startWebRTCStreamToSRS(rtaId);
+      }
+      
+      const streamingUrl = `https://srs.vibesflow.ai/live/${rtaId}.flv`;
+      const hlsUrl = `https://srs.vibesflow.ai/live/${rtaId}.m3u8`;
+      
+      console.log(`📡 Stream ${rtaId} will be available at:
+        - HTTP-FLV: ${streamingUrl}
+        - HLS: ${hlsUrl}`);
+
+    } catch (error) {
+      console.warn('⚠️ Failed to start streaming session:', error.message);
+    }
+  }
+
+  // Stream Lyria audio chunks to SRS via WebRTC
+  async startWebRTCStreamToSRS(rtaId) {
+    try {
+      console.log(`📡 Setting up WebRTC stream to SRS for ${rtaId}...`);
+      
+      // Create audio context for Lyria audio processing
+      if (!this.audioContext) {
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      // Create MediaStream destination that will receive Lyria audio chunks
+      this.mediaStreamDestination = this.audioContext.createMediaStreamDestination();
+      
+      // Create a silent audio source to initialize the MediaStream with a track
+      const oscillator = this.audioContext.createOscillator();
+      const gain = this.audioContext.createGain();
+      gain.gain.value = 0.001; // Very quiet placeholder
+      oscillator.connect(gain);
+      gain.connect(this.mediaStreamDestination);
+      oscillator.frequency.value = 440;
+      oscillator.start();
+      
+      // Create WebRTC peer connection
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+
+      // Add the MediaStream to peer connection (now has audio track)
+      const mediaStream = this.mediaStreamDestination.stream;
+      mediaStream.getTracks().forEach(track => {
+        pc.addTrack(track, mediaStream);
+        console.log('📡 Added audio track to WebRTC:', track.kind);
+      });
+
+      // Monitor connection state
+      pc.onconnectionstatechange = () => {
+        console.log(`📡 WebRTC to SRS: ${pc.connectionState}`);
+        if (pc.connectionState === 'connected') {
+          console.log('✅ Creator audio now streaming to SRS - participants can join');
+        }
+      };
+
+      // Create offer and send to SRS via WHIP
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const response = await fetch(`https://srs.vibesflow.ai/rtc/v1/whip/?app=live&stream=${rtaId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: offer.sdp
+      });
+
+      if (response.ok) {
+        const answer = await response.text();
+        await pc.setRemoteDescription({ type: 'answer', sdp: answer });
+        console.log(`✅ WebRTC stream to SRS ready for ${rtaId}`);
+        this.webRtcPublisher = pc;
+      } else {
+        throw new Error(`WHIP failed: ${response.status}`);
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to setup WebRTC stream to SRS:', error);
+    }
+  }
+
+  // Connect Lyria audio chunks to SRS MediaStream
+  connectLyriaAudioToSRSStream(audioData) {
+    try {
+      if (!this.audioContext || !this.mediaStreamDestination) {
+        console.warn('⚠️ Audio context or MediaStream not ready for SRS streaming');
+        return;
+      }
+
+      // Decode Lyria's base64 PCM audio (16-bit, 48kHz, stereo)
+      const binaryString = atob(audioData);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // Convert to AudioBuffer (Lyria format: 16-bit PCM, 48kHz, stereo)
+      const sampleCount = bytes.length / 4; // 16-bit stereo = 4 bytes per sample
+      const audioBuffer = this.audioContext.createBuffer(2, sampleCount, 48000);
+      
+      const leftChannel = audioBuffer.getChannelData(0);
+      const rightChannel = audioBuffer.getChannelData(1);
+      
+      // Convert 16-bit PCM to float32 audio data
+      for (let i = 0; i < sampleCount; i++) {
+        const sampleIndex = i * 4;
+        const leftSample = (bytes[sampleIndex] | (bytes[sampleIndex + 1] << 8));
+        const rightSample = (bytes[sampleIndex + 2] | (bytes[sampleIndex + 3] << 8));
+        
+        // Convert from unsigned 16-bit to signed and normalize to -1 to 1
+        leftChannel[i] = (leftSample < 32768 ? leftSample : leftSample - 65536) / 32768;
+        rightChannel[i] = (rightSample < 32768 ? rightSample : rightSample - 65536) / 32768;
+      }
+
+      // Stream this audio chunk through the MediaStream destination (which goes to SRS)
+      const source = this.audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.mediaStreamDestination);
+      source.start();
+      
+      // Log streaming activity (throttled)
+      if (!this.lastSRSStreamLog || Date.now() - this.lastSRSStreamLog > 5000) {
+        console.log(`📡 Lyria audio streaming to SRS for participants`);
+        this.lastSRSStreamLog = Date.now();
+      }
+
+    } catch (error) {
+      console.warn('⚠️ Failed to stream Lyria audio to SRS:', error.message);
+    }
+  }
+
+  // End streaming session on streaming server
+  async endStreamingSession(rtaId) {
+    try {
+      const streamingUrl = process.env.EXPO_PUBLIC_STREAMING_URL || 'https://srs.vibesflow.ai';
+      
+      const response = await fetch(`${streamingUrl}/stream/${rtaId}/end`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          timestamp: Date.now()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Streaming server responded with ${response.status}`);
+      }
+
+      console.log(`📡 Streaming session ended for ${rtaId}`);
+
+    } catch (error) {
+      console.warn('⚠️ Failed to end streaming session:', error.message);
+    }
+  }
+
+  // Audio streaming handled in startWebRTCStreamToSRS - no per-chunk processing needed
+  async sendAudioToStreamingServer(audioData) {
+    return;
+  }
+
+  // ============================================================================
   // CALLBACK MANAGEMENT
   // ============================================================================
 
@@ -1349,6 +1555,25 @@ export class OrchestrationCoordinator extends EventEmitter {
         this.geminiBufferManager.cleanup();
         this.geminiBufferManager = null;
       }
+
+      // Cleanup WebRTC publisher and MediaStream
+      if (this.webRtcPublisher) {
+        this.webRtcPublisher.close();
+        this.webRtcPublisher = null;
+      }
+      
+      if (this.mediaStream) {
+        this.mediaStream.getTracks().forEach(track => track.stop());
+        this.mediaStream = null;
+      }
+      
+      // Cleanup audio context
+      if (this.audioContext) {
+        this.audioContext.close();
+        this.audioContext = null;
+      }
+      
+      this.mediaStreamDestination = null;
 
       // Cleanup sensor functions
       this.cleanupFunctions.forEach(cleanup => {

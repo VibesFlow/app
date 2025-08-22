@@ -218,7 +218,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({
         >
           <View style={styles.liveDot} />
           <Text style={styles.liveVibesText}>
-            {liveVibestreamsData.totalLive} Vibestream{liveVibestreamsData.totalLive !== 1 ? 's' : ''} Live!
+            {liveVibestreamsData.totalLive} Vibestream{liveVibestreamsData.totalLive !== 1 ? 's' : ''} Live
           </Text>
         </TouchableOpacity>
       </View>
