@@ -18,6 +18,8 @@ import AuthenticatedImage from './ui/ProfilePic';
 import { useFilCDN } from '../context/filcdn';
 import { ProfileLoader } from '../services/ProfileLoader';
 import { ContinuousAudioStreamer } from '../services/AudioStreamer';
+import { useWallet } from '../context/connector';
+import SubscribeModal from './SubscribeModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -48,6 +50,13 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
     currentAddress,
     refreshVibestreams 
   } = useFilCDN();
+  
+  const { 
+    account, 
+    connected, 
+    isUserSubscribed,
+    getNetworkInfo 
+  } = useWallet();
 
   const [filters, setFilters] = useState<FilterState>({
     network: 'all',
@@ -59,6 +68,18 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
     isPlaying: false,
     currentRTA: null,
     stopPreview: null
+  });
+
+  // Subscription state (only for Metis users)
+  const [subscribeModalVisible, setSubscribeModalVisible] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<{
+    isSubscribed: boolean;
+    isLoading: boolean;
+    requiresSubscription: boolean;
+  }>({
+    isSubscribed: false,
+    isLoading: false,
+    requiresSubscription: false
   });
 
   const playerRef = useRef<PreviewPlayer>(player);
@@ -73,6 +94,54 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
       refreshVibestreams();
     }
   }, [isConnected]);
+
+  // Check subscription status for Metis users
+  useEffect(() => {
+    const checkSubscriptionStatus = async () => {
+      if (!connected || !account) {
+        setSubscriptionStatus({
+          isSubscribed: false,
+          isLoading: false,
+          requiresSubscription: false
+        });
+        return;
+      }
+
+      const networkInfo = getNetworkInfo();
+      
+      // Only check subscription for Metis Hyperion network
+      if (networkInfo?.type === 'metis-hyperion') {
+        setSubscriptionStatus(prev => ({ ...prev, isLoading: true, requiresSubscription: true }));
+        
+        try {
+          const isSubscribed = await isUserSubscribed();
+          setSubscriptionStatus({
+            isSubscribed,
+            isLoading: false,
+            requiresSubscription: true
+          });
+
+          console.log(`🔐 Metis user subscription status: ${isSubscribed ? 'SUBSCRIBED' : 'NOT SUBSCRIBED'}`);
+        } catch (error) {
+          console.error('❌ Failed to check subscription status:', error);
+          setSubscriptionStatus({
+            isSubscribed: false,
+            isLoading: false,
+            requiresSubscription: true
+          });
+        }
+      } else {
+        // For non-Metis networks, no subscription required
+        setSubscriptionStatus({
+          isSubscribed: true, // Allow access
+          isLoading: false,
+          requiresSubscription: false
+        });
+      }
+    };
+
+    checkSubscriptionStatus();
+  }, [connected, account, isUserSubscribed, getNetworkInfo]);
 
   // Preload creator profiles when vibestreams change
   useEffect(() => {
@@ -230,6 +299,21 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
       return `${creator.slice(0, 5)}...${creator.slice(-6)}`;
     }
     return creator;
+  }, []);
+
+  // Handle subscription success
+  const handleSubscriptionSuccess = useCallback(() => {
+    setSubscriptionStatus({
+      isSubscribed: true,
+      isLoading: false,
+      requiresSubscription: true
+    });
+    setSubscribeModalVisible(false);
+  }, []);
+
+  // Handle subscription modal close
+  const handleSubscribeModalClose = useCallback(() => {
+    setSubscribeModalVisible(false);
   }, []);
 
   // Filter vibestreams
@@ -400,8 +484,34 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Subscription Gate for Metis Users */}
+        {subscriptionStatus.requiresSubscription && !subscriptionStatus.isSubscribed && !subscriptionStatus.isLoading && (
+          <GlitchContainer intensity="medium" style={styles.subscriptionGate}>
+            <FontAwesome5 name="lock" size={32} color={COLORS.accent} />
+            <Text style={styles.gateTitle}>PREMIUM ACCESS REQUIRED</Text>
+            <Text style={styles.gateSubtext}>
+              Access all DJ sets ever created on Metis Hyperion for just 10 tMETIS per month!
+            </Text>
+            <TouchableOpacity 
+              style={styles.subscribeButton}
+              onPress={() => setSubscribeModalVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.subscribeButtonText}>SUBSCRIBE NOW</Text>
+            </TouchableOpacity>
+          </GlitchContainer>
+        )}
+
+        {/* Subscription Loading State */}
+        {subscriptionStatus.isLoading && (
+          <GlitchContainer intensity="medium" style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.secondary} />
+            <Text style={styles.loadingText}>CHECKING SUBSCRIPTION...</Text>
+          </GlitchContainer>
+        )}
+
         {/* Loading State */}
-        {loading && (
+        {loading && subscriptionStatus.isSubscribed && (
           <GlitchContainer intensity="medium" style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
             <Text style={styles.loadingText}>SCANNING FREQUENCIES...</Text>
@@ -420,8 +530,8 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
           </View>
         )}
 
-        {/* Vibestreams List */}
-        {!loading && !error && (
+        {/* Vibestreams List - Only show if subscribed or subscription not required */}
+        {!loading && !error && subscriptionStatus.isSubscribed && (
           <View style={styles.vibestreamsSection}>
             <View style={styles.sectionHeader}>
               <GlitchText text="LIVE FREQUENCIES" style={styles.sectionTitle} />
@@ -448,6 +558,13 @@ const VibeMarket: React.FC<VibeMarketProps> = ({ onBack, onOpenPlayback }) => {
           <Text style={styles.brandText}>POWERED BY FILCDN</Text>
         </View>
       </ScrollView>
+      
+      {/* Subscribe Modal */}
+      <SubscribeModal
+        visible={subscribeModalVisible}
+        onClose={handleSubscribeModalClose}
+        onSubscriptionSuccess={handleSubscriptionSuccess}
+      />
     </View>
   );
 };
@@ -728,6 +845,45 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     lineHeight: 18,
+  },
+  subscriptionGate: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xl * 2,
+    marginVertical: SPACING.large,
+    borderWidth: 1,
+    borderColor: COLORS.accent + '60',
+  },
+  gateTitle: {
+    fontSize: FONT_SIZES.medium,
+    color: COLORS.accent,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+    marginTop: SPACING.large,
+    textAlign: 'center',
+  },
+  gateSubtext: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.textSecondary,
+    letterSpacing: 1,
+    marginTop: SPACING.small,
+    textAlign: 'center',
+    paddingHorizontal: SPACING.large,
+    lineHeight: 20,
+  },
+  subscribeButton: {
+    backgroundColor: COLORS.secondary,
+    paddingVertical: SPACING.medium,
+    paddingHorizontal: SPACING.large,
+    marginTop: SPACING.large,
+    borderWidth: 1,
+    borderColor: COLORS.secondary,
+  },
+  subscribeButtonText: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.background,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
   },
 });
 

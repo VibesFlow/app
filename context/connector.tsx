@@ -61,9 +61,11 @@ const CONTRACT_ADDRESSES = {
     NETWORK: process.env.NEAR_NETWORK || process.env.EXPO_PUBLIC_NEAR_NETWORK || 'testnet'
   },
   METIS: {
-    VIBE_FACTORY: process.env.VIBE_FACTORY_ADDRESS || process.env.EXPO_PUBLIC_VIBE_FACTORY_ADDRESS || '0x6A73eA14a08d1b75bdF05401254747fefD9b3D4D',
-    VIBE_KIOSK: process.env.VIBE_KIOSK_ADDRESS || process.env.EXPO_PUBLIC_VIBE_KIOSK_ADDRESS || '0x5B68182608DD4396798491A59D71b7663b6Ec49d',
-    PROXY_ADMIN: process.env.PROXY_ADMIN_ADDRESS || process.env.EXPO_PUBLIC_PROXY_ADMIN_ADDRESS || '0xdA1a1722Acb6f3A9fb7DE7f2c5193b5ad541F8F9',
+    VIBE_FACTORY: process.env.VIBE_FACTORY_ADDRESS || process.env.EXPO_PUBLIC_VIBE_FACTORY_ADDRESS || '0x49B2E60fF51B107624be84363B718cfF292A0517',
+    VIBE_KIOSK: process.env.VIBE_KIOSK_ADDRESS || process.env.EXPO_PUBLIC_VIBE_KIOSK_ADDRESS || '0x5ac3193b6DD7B520D63EbE65b59f97a2dF4ee686',
+    PPM: process.env.PPM_ADDRESS || process.env.EXPO_PUBLIC_PPM_ADDRESS || '0x0BCc714c6eB21FbE2eEcB4A2f40356af181eAefB',
+    SUBSCRIPTIONS: process.env.SUBSCRIPTIONS_ADDRESS || process.env.EXPO_PUBLIC_SUBSCRIPTIONS_ADDRESS || '0xC5178c585784B93bc408eAd828701155a41e4f76',
+    PROXY_ADMIN: process.env.PROXY_ADMIN_ADDRESS || process.env.EXPO_PUBLIC_PROXY_ADMIN_ADDRESS || '0x9DdF4Ff8FAc224fF54701c85b77A00F1b84A66Df',
     TREASURY_RECEIVER: process.env.TREASURY_RECEIVER || process.env.EXPO_PUBLIC_TREASURY_RECEIVER || '0x058271e764154c322F3D3dDC18aF44F7d91B1c80',
     NETWORK: 'hyperion',
     CHAIN_ID: parseInt(process.env.HYPERION_CHAIN_ID || process.env.EXPO_PUBLIC_HYPERION_CHAIN_ID || '133717'),
@@ -97,7 +99,7 @@ interface RTAConfig {
   ticket_amount?: number;
   ticket_price?: string;
   pay_per_stream: boolean;
-  stream_price?: string;
+  stream_price: string;
   creator: string;
   created_at: number;
 }
@@ -158,6 +160,15 @@ interface WalletContextType {
   addParticipantToVibestream: (vibeId: string, participantId: string) => Promise<void>;
   removeParticipantFromVibestream: (vibeId: string, participantId: string) => Promise<void>;
   getVibestreamParticipants: (vibeId: string) => Promise<string[]>;
+  
+  // PPM contract methods
+  authorizePPMSpending: (vibeId: string, allowanceAmount: string) => Promise<string>;
+  joinPPMVibestream: (vibeId: string) => Promise<string>;
+  leavePPMVibestream: (vibeId: string) => Promise<string>;
+  getPPMAllowance: (vibeId: string, participant?: string) => Promise<any>;
+  
+  // Subscription contract methods (Metis only for now)
+  isUserSubscribed: () => Promise<boolean>;
   
   // Network-aware session info
   getNetworkInfo: () => { type: NetworkType; contracts: any } | null;
@@ -565,8 +576,16 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         }
         throw new Error('Near wallet not available');
       } else if (account.walletType === 'metis') {
-        // TODO: Implement Metis message signing
-        throw new Error('Message signing not yet implemented for Metis');
+        // Implement Metis message signing using ethereum provider
+        if (typeof window !== 'undefined' && (window as any).ethereum) {
+          const ethProvider = (window as any).ethereum;
+          const signature = await ethProvider.request({
+            method: 'personal_sign',
+            params: [message, account.accountId]
+          });
+          return signature;
+        }
+        throw new Error('Ethereum provider not available for Metis signing');
       }
       
       throw new Error('No suitable wallet method available');
@@ -708,26 +727,36 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         },
       };
 
-      // VibeFactory ABI for createVibestreamWithDelegate function - matches simplified VibeFactory.sol
+      // VibeFactory ABI for createVibestreamWithDelegate function - matches current VibeFactory.sol with PPM integration
       const createVibestreamWithDelegateAbi = parseAbiItem(
-        'function createVibestreamWithDelegate(string calldata mode, bool storeToFilecoin, uint256 distance, string calldata metadataURI, uint256 ticketsAmount, uint256 ticketPrice, address delegatee) external returns (uint256 vibeId)'
+        'function createVibestreamWithDelegate(string calldata mode, bool storeToFilecoin, uint256 distance, string calldata metadataURI, uint256 ticketsAmount, uint256 ticketPrice, bool payPerStream, uint256 streamPrice, address delegatee) external returns (uint256 vibeId)'
       );
 
       // Prepare contract parameters to match the struct in contracts
       const mode = config.mode; // 'solo' or 'group'
       const storeToFilecoin = config.store_to_filecoin;
+      
+      // Ensure all parameters are properly defined for the contract
       const distance = BigInt(config.distance || 0);
-      // Upload metadata to Pinata and get IPFS URI
-      const metadataURI = await uploadMetadataToPinata(rtaId, config);
       // FIXED: Temporarily set ticketsAmount to 0 to avoid VibeKiosk call that's causing revert
       // The VibeFactory tries to call VibeKiosk when ticketsAmount > 0 && mode != "solo"
       // but the VibeKiosk might not be properly configured
       const ticketsAmount = BigInt(0); // TODO: Re-enable when VibeKiosk is properly configured
       
-      // Convert ticket price from NEAR to wei (1 NEAR ≈ 1 tMETIS for testing)
+      // Upload metadata to Pinata and get IPFS URI
+      const metadataURI = await uploadMetadataToPinata(rtaId, config);
+      
+      // Convert ticket price from string to wei
       let ticketPriceWei = BigInt(0);
       if (config.ticket_price && parseFloat(config.ticket_price) > 0) {
         ticketPriceWei = parseEther(config.ticket_price);
+      }
+      
+      // Handle pay-per-stream parameters - ensure they're always defined
+      const payPerStream = config.pay_per_stream === true; // Explicit boolean
+      let streamPriceWei = BigInt(0);
+      if (payPerStream && config.stream_price && config.stream_price !== '0' && parseFloat(config.stream_price) > 0) {
+        streamPriceWei = parseEther(config.stream_price);
       }
       
       // Set delegatee address - default to zero address if not provided
@@ -740,9 +769,25 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         metadataURI,
         ticketsAmount: ticketsAmount.toString(),
         ticketPrice: ticketPriceWei.toString(),
+        payPerStream,
+        streamPrice: streamPriceWei.toString(),
         delegatee: delegateeAddress,
         vibeFactory: CONTRACT_ADDRESSES.METIS.VIBE_FACTORY
       });
+
+      // Validate parameters before sending to contract to prevent revert
+      if (!mode || mode.length === 0) {
+        throw new Error('Mode cannot be empty');
+      }
+      if (!metadataURI || metadataURI.length === 0) {
+        throw new Error('Metadata URI cannot be empty');
+      }
+      if (payPerStream && mode !== 'group') {
+        throw new Error('Pay-per-stream only available for group mode');
+      }
+      if (payPerStream && streamPriceWei === BigInt(0)) {
+        throw new Error('Stream price must be greater than 0 for pay-per-stream');
+      }
 
       // Log the original config for debugging
       console.log('📋 Original config:', config);
@@ -762,6 +807,17 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // Use viem for gas estimation and transaction
       try {
         console.log('📤 Sending createVibestreamWithDelegate transaction to:', CONTRACT_ADDRESSES.METIS.VIBE_FACTORY);
+        console.log('🔍 Exact contract arguments:', [
+          mode,
+          storeToFilecoin,
+          distance,
+          metadataURI,
+          ticketsAmount,
+          ticketPriceWei,
+          payPerStream,
+          streamPriceWei,
+          delegateeAddress
+        ]);
         
         // Send transaction using viem wallet client with explicit gas settings
         const txHash = await walletClient.writeContract({
@@ -775,10 +831,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
             metadataURI,
             ticketsAmount,
             ticketPriceWei,
+            payPerStream,
+            streamPriceWei,
             delegateeAddress as `0x${string}`
           ],
           account: accounts[0] as `0x${string}`,
-          gas: BigInt(3000000), // 3M gas limit - reduced to avoid hitting block limit
+          gas: BigInt(3000000), 
         });
 
         console.log('✅ Transaction sent:', txHash);
@@ -825,7 +883,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           // Parse receipt logs to get the actual vibeId created by the contract
           try {
             const vibestreamCreatedEvent = parseAbiItem(
-              'event VibestreamCreated(uint256 indexed vibeId, address indexed creator, uint256 startDate, string mode, string metadataURI, address vibeKioskAddress)'
+              'event VibestreamCreated(uint256 indexed vibeId, address indexed creator, uint256 timestamp, string mode, uint256 ticketsAmount, uint256 ticketPrice, address requestedDelegatee)'
             );
             
             const eventSelector = getEventSelector(vibestreamCreatedEvent);
@@ -1442,7 +1500,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           // Read vibestream data from contract
           const vibeData = await publicClient.readContract({
             address: CONTRACT_ADDRESSES.METIS.VIBE_FACTORY as `0x${string}`,
-            abi: [parseAbiItem('function getVibestream(uint256 vibeId) external view returns (tuple(address creator, uint256 startDate, string mode, bool storeToFilecoin, uint256 distance, string metadataURI, uint256 ticketsAmount, uint256 ticketPrice, bool finalized))')],
+            abi: [parseAbiItem('function getVibestream(uint256 vibeId) external view returns (tuple(address creator, uint256 startDate, string mode, bool storeToFilecoin, uint256 distance, string metadataURI, uint256 ticketsAmount, uint256 ticketPrice, bool finalized, bool payPerStream, uint256 streamPrice))')],
             functionName: 'getVibestream',
             args: [BigInt(vibeId)]
           });
@@ -1522,6 +1580,191 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     return [];
   }, [account]);
 
+  // PPM Contract Methods
+  const authorizePPMSpending = useCallback(async (vibeId: string, allowanceAmount: string): Promise<string> => {
+    if (!account || account.network !== 'metis-hyperion') {
+      throw new Error('PPM only available on Metis Hyperion network');
+    }
+
+    try {
+      console.log(`💰 Authorizing PPM spending: ${allowanceAmount} tMETIS for vibe ${vibeId}`);
+
+      if (typeof window === 'undefined' || !(window as any).ethereum) {
+        throw new Error('Ethereum provider not available');
+      }
+
+      const ethProvider = (window as any).ethereum;
+      const allowanceInWei = parseEther(allowanceAmount);
+
+      // PPM authorizeSpending ABI
+      const authorizePPMAbi = parseAbiItem(
+        'function authorizeSpending(uint256 vibeId, uint256 authorizedAmount) external payable'
+      );
+
+      // Create wallet client
+      const walletClient = createWalletClient({
+        chain: {
+          id: CONTRACT_ADDRESSES.METIS.CHAIN_ID,
+          name: 'Metis Hyperion',
+          nativeCurrency: { name: 'tMETIS', symbol: 'tMETIS', decimals: 18 },
+          rpcUrls: { default: { http: [CONTRACT_ADDRESSES.METIS.RPC_URL] } },
+        },
+        transport: custom(ethProvider)
+      });
+
+      const txHash = await walletClient.writeContract({
+        address: CONTRACT_ADDRESSES.METIS.PPM as `0x${string}`,
+        abi: [authorizePPMAbi],
+        functionName: 'authorizeSpending',
+        args: [BigInt(vibeId), allowanceInWei],
+        account: account.accountId as `0x${string}`,
+        value: allowanceInWei, // Send tMETIS with the transaction
+        gas: BigInt(200000),
+      });
+
+      console.log('✅ PPM allowance authorized:', txHash);
+      return txHash;
+
+    } catch (error: any) {
+      console.error('❌ Failed to authorize PPM spending:', error);
+      throw new Error(`PPM authorization failed: ${error.message}`);
+    }
+  }, [account]);
+
+  const joinPPMVibestream = useCallback(async (vibeId: string): Promise<string> => {
+    if (!account || account.network !== 'metis-hyperion') {
+      throw new Error('PPM only available on Metis Hyperion network');
+    }
+
+    try {
+      console.log(`🎵 Joining PPM vibestream: ${vibeId}`);
+
+      if (typeof window === 'undefined' || !(window as any).ethereum) {
+        throw new Error('Ethereum provider not available');
+      }
+
+      const ethProvider = (window as any).ethereum;
+
+      // PPM joinVibestream ABI
+      const joinPPMAbi = parseAbiItem(
+        'function joinVibestream(uint256 vibeId) external'
+      );
+
+      const walletClient = createWalletClient({
+        chain: {
+          id: CONTRACT_ADDRESSES.METIS.CHAIN_ID,
+          name: 'Metis Hyperion',
+          nativeCurrency: { name: 'tMETIS', symbol: 'tMETIS', decimals: 18 },
+          rpcUrls: { default: { http: [CONTRACT_ADDRESSES.METIS.RPC_URL] } },
+        },
+        transport: custom(ethProvider)
+      });
+
+      const txHash = await walletClient.writeContract({
+        address: CONTRACT_ADDRESSES.METIS.PPM as `0x${string}`,
+        abi: [joinPPMAbi],
+        functionName: 'joinVibestream',
+        args: [BigInt(vibeId)],
+        account: account.accountId as `0x${string}`,
+        gas: BigInt(150000),
+      });
+
+      console.log('✅ Joined PPM vibestream:', txHash);
+      return txHash;
+
+    } catch (error: any) {
+      console.error('❌ Failed to join PPM vibestream:', error);
+      throw new Error(`PPM join failed: ${error.message}`);
+    }
+  }, [account]);
+
+  const leavePPMVibestream = useCallback(async (vibeId: string): Promise<string> => {
+    if (!account || account.network !== 'metis-hyperion') {
+      throw new Error('PPM only available on Metis Hyperion network');
+    }
+
+    try {
+      console.log(`🚪 Leaving PPM vibestream: ${vibeId}`);
+
+      if (typeof window === 'undefined' || !(window as any).ethereum) {
+        throw new Error('Ethereum provider not available');
+      }
+
+      const ethProvider = (window as any).ethereum;
+
+      // PPM leaveVibestream ABI
+      const leavePPMAbi = parseAbiItem(
+        'function leaveVibestream(uint256 vibeId) external'
+      );
+
+      const walletClient = createWalletClient({
+        chain: {
+          id: CONTRACT_ADDRESSES.METIS.CHAIN_ID,
+          name: 'Metis Hyperion',
+          nativeCurrency: { name: 'tMETIS', symbol: 'tMETIS', decimals: 18 },
+          rpcUrls: { default: { http: [CONTRACT_ADDRESSES.METIS.RPC_URL] } },
+        },
+        transport: custom(ethProvider)
+      });
+
+      const txHash = await walletClient.writeContract({
+        address: CONTRACT_ADDRESSES.METIS.PPM as `0x${string}`,
+        abi: [leavePPMAbi],
+        functionName: 'leaveVibestream',
+        args: [BigInt(vibeId)],
+        account: account.accountId as `0x${string}`,
+        gas: BigInt(150000),
+      });
+
+      console.log('✅ Left PPM vibestream:', txHash);
+      return txHash;
+
+    } catch (error: any) {
+      console.error('❌ Failed to leave PPM vibestream:', error);
+      throw new Error(`PPM leave failed: ${error.message}`);
+    }
+  }, [account]);
+
+  const getPPMAllowance = useCallback(async (vibeId: string, participant?: string): Promise<any> => {
+    if (!account || account.network !== 'metis-hyperion') {
+      throw new Error('PPM only available on Metis Hyperion network');
+    }
+
+    try {
+      const participantAddress = participant || account.accountId;
+
+      if (typeof window === 'undefined' || !(window as any).ethereum) {
+        throw new Error('Ethereum provider not available');
+      }
+
+      const ethProvider = (window as any).ethereum;
+
+      const publicClient = createPublicClient({
+        chain: {
+          id: CONTRACT_ADDRESSES.METIS.CHAIN_ID,
+          name: 'Metis Hyperion',
+          nativeCurrency: { name: 'tMETIS', symbol: 'tMETIS', decimals: 18 },
+          rpcUrls: { default: { http: [CONTRACT_ADDRESSES.METIS.RPC_URL] } },
+        },
+        transport: custom(ethProvider)
+      });
+
+      // Get participant allowance
+      const allowanceData = await publicClient.readContract({
+        address: CONTRACT_ADDRESSES.METIS.PPM as `0x${string}`,
+        abi: [parseAbiItem('function getParticipantAllowance(uint256 vibeId, address participant) external view returns (tuple(uint256 vibeId, address participant, uint256 authorizedAmount, uint256 spentAmount, uint256 payPerMinute, uint256 joinedAt, uint256 lastDeduction, bool isActive, address creator))')],
+        functionName: 'getParticipantAllowance',
+        args: [BigInt(vibeId), participantAddress as `0x${string}`]
+      });
+
+      return allowanceData;
+
+    } catch (error: any) {
+      console.error('❌ Failed to get PPM allowance:', error);
+      throw new Error(`PPM allowance query failed: ${error.message}`);
+    }
+  }, [account]);
+
   const getNetworkInfo = useCallback(() => {
     if (!account) return null;
     
@@ -1538,6 +1781,75 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
     
     return null;
+  }, [account]);
+
+  // Simple subscription check for Metis users
+  const isUserSubscribed = useCallback(async (): Promise<boolean> => {
+    if (!account || account.network !== 'metis-hyperion') {
+      return false;
+    }
+
+    try {
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && (window as any).ethereum) {
+        const ethProvider = (window as any).ethereum;
+        
+        // Verify we're on the correct network first
+        const chainId = await ethProvider.request({ method: 'eth_chainId' });
+        const expectedChainId = '0x20a55'; // 133717 in hex
+        if (chainId !== expectedChainId) {
+          console.warn(`Wrong network for subscription check: expected ${expectedChainId}, got ${chainId}`);
+          return false;
+        }
+
+        // Use the exact same chain config as createVibestreamWithDelegate
+        const metisHyperion = {
+          id: CONTRACT_ADDRESSES.METIS.CHAIN_ID,
+          name: 'Metis Hyperion Testnet',
+          network: 'metis-hyperion',
+          nativeCurrency: {
+            decimals: 18,
+            name: 'tMETIS',
+            symbol: 'tMETIS',
+          },
+          rpcUrls: {
+            default: {
+              http: [CONTRACT_ADDRESSES.METIS.RPC_URL],
+            },
+            public: {
+              http: [CONTRACT_ADDRESSES.METIS.RPC_URL],
+            },
+          },
+          blockExplorers: {
+            default: {
+              name: 'Metis Hyperion Explorer',
+              url: 'https://hyperion-testnet-explorer.metisdevops.link',
+            },
+          },
+        };
+        
+        const publicClient = createPublicClient({
+          chain: metisHyperion,
+          transport: custom(ethProvider)
+        });
+
+        console.log('🔍 Checking subscription for address:', account.accountId);
+        console.log('🔍 Using contract address:', CONTRACT_ADDRESSES.METIS.SUBSCRIPTIONS);
+
+        const isSubscribed = await publicClient.readContract({
+          address: CONTRACT_ADDRESSES.METIS.SUBSCRIPTIONS as `0x${string}`,
+          abi: [parseAbiItem('function isSubscribed(address user) external view returns (bool)')],
+          functionName: 'isSubscribed',
+          args: [account.accountId as `0x${string}`]
+        }) as boolean;
+
+        console.log('✅ Subscription check result:', isSubscribed);
+        return isSubscribed;
+      }
+      return false;
+    } catch (error: any) {
+      console.error('❌ Failed to check subscription status:', error);
+      return false;
+    }
   }, [account]);
 
   const value: WalletContextType = {
@@ -1566,6 +1878,11 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     addParticipantToVibestream,
     removeParticipantFromVibestream,
     getVibestreamParticipants,
+    authorizePPMSpending,
+    joinPPMVibestream,
+    leavePPMVibestream,
+    getPPMAllowance,
+    isUserSubscribed,
     getNetworkInfo,
   };
 

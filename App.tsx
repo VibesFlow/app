@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Platform, Alert } from 'react-native';
 import SplashScreen from './components/SplashScreen';
 import VibePlayer from './components/VibePlayer';
 import UserProfile from './components/UserProfile';
@@ -34,6 +34,11 @@ function AppContent() {
     rtaId: string;
     config: any;
   } | null>(null);
+  const [participantOptions, setParticipantOptions] = useState<{
+    isParticipant?: boolean;
+    streamingUrl?: string;
+    hlsUrl?: string;
+  } | undefined>(undefined);
   const { account } = useWallet();
 
   // Web URL routing - sync URL with state
@@ -45,6 +50,13 @@ function AppContent() {
           setCurrentScreen('vibe-market');
         } else if (path === '/live') {
           setCurrentScreen('live-vibes');
+        } else if (path.startsWith('/join/')) {
+          // Extract RTA ID from URL for group mode
+          const rtaId = path.substring(6); // Remove '/join/' prefix
+          if (rtaId) {
+            // This is a live vibestream that can be joined as participant
+            handleLive(rtaId);
+          }
         } else if (path === '/profile') {
           setCurrentScreen('profile');
         } else if (path === '/player') {
@@ -52,7 +64,7 @@ function AppContent() {
         } else if (path.startsWith('/vibestream/')) {
           setCurrentScreen('playback');
           // Extract RTA ID from URL
-          const rtaId = path.substring(12); // Remove '/vibestream/' prefix
+          const rtaId = path.substring(12); 
           if (rtaId) {
             setrtaData({ rtaId, config: { mode: 'playback' } });
           }
@@ -79,7 +91,9 @@ function AppContent() {
           case 'vibe-market': return '/market';
           case 'live-vibes': return '/live';
           case 'profile': return '/profile';
-          case 'vibe-player': return '/player';
+          case 'vibe-player': 
+            // If this is group mode, use /join/ route
+            return participantOptions?.isParticipant && rtaData ? `/join/${rtaData.rtaId}` : '/player';
           case 'playback': return rtaData ? `/vibestream/${rtaData.rtaId}` : '/market';
           case 'splash': return '/';
           default: return '/';
@@ -93,33 +107,8 @@ function AppContent() {
     }
   }, [currentScreen, rtaData]);
 
-  // Initialize orchestration integration with wallet
-  useEffect(() => {
-    const initializeOrchestration = async () => {
-      try {
-        console.log('🔗 Initializing orchestration integration with wallet...');
-        
-        // Get wallet integration context
-        const walletIntegration = { account };
-        
-        // Initialize orchestration with wallet
-        const success = await orchestrationIntegration.initializeWithWallet(walletIntegration);
-        
-        if (success) {
-          console.log('✅ Orchestration integration initialized with wallet');
-        } else {
-          console.warn('⚠️ Orchestration integration initialization failed');
-        }
-      } catch (error) {
-        console.error('❌ Failed to initialize orchestration:', error);
-      }
-    };
-
-    // Initialize when wallet is available
-    if (account) {
-      initializeOrchestration();
-    }
-  }, [account]);
+  // NOTE: Orchestration initialization moved to VibePlayer (creator-only)
+  // This prevents unnecessary initialization for participants who only need audio streaming
 
   const handleStart = () => {
     setCurrentScreen('main');
@@ -159,18 +148,103 @@ function AppContent() {
     setCurrentScreen('live-vibes');
   };
 
-  const handleJoinVibestream = (vibeId: string, creator: string) => {
+  const handleJoinVibestream = (vibeId: string, creator: string, options?: {
+    isParticipant?: boolean;
+    streamingUrl?: string;
+    hlsUrl?: string;
+  }) => {
     // Join an existing vibestream by connecting to the creator's session
-    const rtaId = `metis_vibe_${vibeId}`; // Format for Metis vibestreams
+    // vibeId is already in the correct format (e.g., metis_vibe_1755719598360_kjuchm)
+    const rtaId = vibeId; 
     const config = {
       creator,
       mode: 'group',
-      isParticipant: true, // Flag to indicate this is a participant joining
+      isParticipant: options?.isParticipant || true,
       originalVibeId: vibeId
     };
     
+    // Store participant options for VibePlayer
+    setParticipantOptions(options);
+    
     console.log(`🎵 Joining vibestream ${rtaId} created by ${creator}`);
+    console.log(`👥 Participant mode:`, options?.isParticipant);
+    console.log(`🎵 Stream URL:`, options?.streamingUrl);
+    
     handleLaunchVibePlayer(rtaId, config);
+  };
+
+  // Handle live vibestream URL routing for participants
+  const handleLive = async (rtaId: string) => {
+    try {
+      console.log(`🎵 Joining live vibestream for RTA ID: ${rtaId}`);
+      
+      // Check if wallet is connected for participant tracking
+      if (!account) {
+        Alert.alert(
+          'Wallet Required',
+          'Please connect your wallet to join vibestreams.',
+          [
+            { text: 'Cancel', onPress: () => setCurrentScreen('live-vibes') },
+            { text: 'Connect', onPress: () => setCurrentScreen('splash') }
+          ]
+        );
+        return;
+      }
+
+      // Use participant tracking service for proper blockchain-based routing
+      const { participantTrackingService } = await import('./services/participant');
+      
+      const result = await participantTrackingService.handleParticipantRouting(
+        rtaId,
+        account.accountId
+        // Note: signMessage function would be added here when wallet context supports it
+      );
+      
+      if (result.success) {
+        console.log(`✅ Successfully joined vibestream ${rtaId}`);
+        
+        // This is a live vibestream - join as participant
+        handleJoinVibestream(rtaId, 'creator', {
+          isParticipant: true,
+          streamingUrl: result.streamingUrl,
+          hlsUrl: result.hlsUrl
+        });
+        
+      } else {
+        console.error(`❌ Failed to join vibestream: ${result.error}`);
+        
+        // Handle different error cases
+        if (result.redirectUrl === '/live') {
+        Alert.alert(
+          'Vibestream Not Active', 
+            result.error || 'This vibestream is not currently streaming. The creator may have ended the session.',
+          [
+            { text: 'View Live Vibes', onPress: () => setCurrentScreen('live-vibes') },
+            { text: 'View Playback', onPress: () => {
+              setrtaData({ rtaId, config: { mode: 'playback' } });
+              setCurrentScreen('playback');
+            }}
+          ]
+        );
+        } else {
+          Alert.alert(
+            'Join Failed',
+            result.error || 'Could not join the vibestream. Please try again.',
+            [{ text: 'OK', onPress: () => setCurrentScreen('live-vibes') }]
+          );
+        }
+      }
+      
+    } catch (error) {
+      console.error(`❌ Error checking live vibestream:`, error);
+      
+      // Fallback to live vibes list
+      Alert.alert(
+        'Connection Error',
+        'Could not connect to the vibestream. Please check your connection.',
+        [{ text: 'OK', onPress: () => setCurrentScreen('live-vibes') }]
+      );
+    }
   };
 
   if (currentScreen === 'splash') {
@@ -201,6 +275,7 @@ function AppContent() {
         onBack={handleBackFromVibePlayer} 
         rtaID={rtaData?.rtaId}
         config={rtaData?.config}
+        participantOptions={participantOptions}
       />
     );
   }
