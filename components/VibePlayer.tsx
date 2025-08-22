@@ -17,7 +17,6 @@ import { COLORS, FONT_SIZES, SPACING } from '../theme';
 import GlitchContainer from './ui/GlitchContainer';
 import GlitchText from './ui/GlitchText';
 import { useFilCDN } from '../context/filcdn';
-import { useWallet } from '../context/connector';
 
 // Import new orchestration integration
 import { orchestrationIntegration } from '../orchestration/coordinator';
@@ -32,15 +31,6 @@ interface VibePlayerProps {
   rtaID?: string;
   config?: any;
   mode?: 'live' | 'playback'; // NEW: Support for RTA playback mode
-  participantOptions?: {
-    isParticipant?: boolean;
-    streamingUrl?: string;
-    hlsUrl?: string;
-    // PPM-related options
-    isPPMEnabled?: boolean;
-    streamPrice?: string;
-    authorizedAllowance?: string;
-  };
 }
 
 interface SensorData {
@@ -86,8 +76,7 @@ interface RTAPlaybackState {
 // Google Lyria API configuration
 const LYRIA_API_KEY = process.env.EXPO_PUBLIC_LYRIA_API_KEY || '';
 
-const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = 'live', participantOptions }) => {
-  const { getPPMAllowance, leavePPMVibestream } = useWallet();
+const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = 'live' }) => {
   // =============================================================================
   // STATE MANAGEMENT (WITH RTA PLAYBACK)
   // =============================================================================
@@ -124,15 +113,6 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     chunkQueue: []
   });
 
-  // PPM Allowance State (Participant Mode Only)
-  const [ppmAllowance, setPpmAllowance] = useState({
-    authorized: parseFloat(participantOptions?.authorizedAllowance || '0'),
-    spent: 0,
-    remaining: parseFloat(participantOptions?.authorizedAllowance || '0'),
-    lastDeduction: Date.now(),
-    streamPrice: parseFloat(participantOptions?.streamPrice || '0'),
-  });
-
   // NEW: FilCDN integration
   const { getVibestreamByRTA, downloadChunk } = useFilCDN();
   
@@ -156,38 +136,12 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   // Pure music player state - no blockchain tracking
   
   // =============================================================================
-  // INITIALIZATION (CREATOR vs PARTICIPANT MODE)
+  // ORCHESTRATION INITIALIZATION
   // =============================================================================
   useEffect(() => {
-    const initializeVibePlayer = async () => {
+    const initializeOrchestration = async () => {
       try {
-        if (participantOptions?.isParticipant) {
-          // PARTICIPANT MODE: Only initialize basic UI and audio streaming
-          console.log('👥 PARTICIPANT MODE: Initializing audio streaming only...');
-          
-          // Start simple waveform animation for participants (no sensor data needed)
-          const participantWaveformInterval = setInterval(() => {
-            const time = Date.now() / 1000;
-            const simulatedSensorData = {
-              x: Math.sin(time * 0.3) * 0.5,
-              y: Math.cos(time * 0.4) * 0.4,
-              z: 0.5 + Math.sin(time * 0.2) * 0.3,
-              timestamp: Date.now(),
-              source: 'participant_simulation'
-            };
-            setSensorData(simulatedSensorData);
-            processRealTimeSensorData(simulatedSensorData);
-          }, 100); // 10fps for participants - lighter processing
-          
-          updateIntervalRef.current = participantWaveformInterval;
-          setIsInitialized(true);
-          
-          console.log('✅ PARTICIPANT MODE: Ready for audio streaming');
-          return;
-        }
-        
-        // CREATOR MODE: Full orchestration system
-        console.log('🎛️ CREATOR MODE: Initializing full orchestration system...');
+        console.log('🎛️ Initializing VibePlayer orchestration system...');
         
         // Start with basic sensor simulation for waveforms while orchestration loads
         const sensorInterval = setInterval(() => {
@@ -203,26 +157,26 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
           
           setSensorData(sensorData);
           processRealTimeSensorData(sensorData);
-        }, 50); // 20fps sensor updates for creators
+        }, 50); // 20fps sensor updates
         
         updateIntervalRef.current = sensorInterval;
         
-        // Try to initialize orchestration integration (CREATOR ONLY)
+        // Try to initialize orchestration integration
         const status = orchestrationIntegration.getStatus();
         if (status.initialized) {
-          console.log('✅ Orchestration integration ready (CREATOR MODE):', status);
+          console.log('✅ Orchestration integration ready:', status);
           
-          // Try to get real sensor data (CREATOR ONLY)
+          // Try to get real sensor data
           try {
             orchestrationIntegration.onSensorData((data) => {
               if (!data.isDecay) {
                 setSensorData(data);
                 processRealTimeSensorData(data);
                 
-                // Feed audio data to chunks service (CREATOR ONLY)
+                // Feed audio data to chunks service
                 if (typeof data.audioData === 'string' || data.audioData instanceof ArrayBuffer) {
                   audioChunkService.addAudioData(data.audioData);
-                  console.log('🎵 Audio data fed to chunks service (CREATOR):', typeof data.audioData);
+                  console.log('🎵 Audio data fed to chunks service:', typeof data.audioData);
                 }
               } else {
                 // Apply decay to current sensor data for smooth transitions
@@ -243,15 +197,15 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         }
 
         setIsInitialized(true);
-        console.log('✅ CREATOR MODE: Orchestration system initialized successfully');
+        console.log('✅ VibePlayer orchestration system initialized successfully');
 
       } catch (error) {
-        console.error('❌ VibePlayer initialization failed:', error);
+        console.error('❌ VibePlayer orchestration initialization failed:', error);
         setIsInitialized(true); // Still allow UI to function
       }
     };
 
-    initializeVibePlayer();
+    initializeOrchestration();
 
     return () => {
       // Cleanup all intervals
@@ -264,16 +218,14 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         rtaProgressIntervalRef.current = null;
       }
       
-      // Cleanup orchestration integration (only if creator mode)
-      if (!participantOptions?.isParticipant) {
-        try {
-          orchestrationIntegration.cleanup();
-        } catch (error) {
-          console.warn('Cleanup error:', error);
-        }
+      // Cleanup orchestration integration
+      try {
+        orchestrationIntegration.cleanup();
+      } catch (error) {
+        console.warn('Cleanup error:', error);
       }
     };
-  }, [participantOptions?.isParticipant]);
+  }, []);
 
   // =============================================================================
   // REAL-TIME PROCESSING
@@ -301,150 +253,62 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   }, []);
 
   // =============================================================================
-  // PARTICIPANT MODE (SRS STREAMING)
-  // =============================================================================
-  
-  // Start participant mode - receive audio from SRS
-  const startParticipantMode = async () => {
-    try {
-      console.log('👥 Starting participant mode - receiving from SRS');
-      
-      setIsStreaming(true);
-      startTimeRef.current = Date.now();
-      
-      // Create audio element for LIVE HTTP-FLV stream
-      if (participantOptions?.streamingUrl) {
-        console.log(`🎵 Connecting to LIVE SRS stream: ${participantOptions.streamingUrl}`);
-        
-        // Create HTML5 audio element for live streaming
-        const liveAudio = new Audio();
-        liveAudio.crossOrigin = 'anonymous';
-        liveAudio.src = participantOptions.streamingUrl;
-        liveAudio.volume = 0.8;
-        liveAudio.autoplay = true;
-        liveAudio.controls = false;
-        
-        // Handle audio events
-        liveAudio.onloadstart = () => console.log('🔄 Loading live stream...');
-        liveAudio.oncanplay = () => console.log('✅ Live stream ready to play');
-        liveAudio.onplay = () => console.log('▶️ Live stream playing');
-        liveAudio.onerror = (e) => {
-          console.error('❌ Live stream error:', e);
-          console.log('🔄 Retrying with HLS fallback...');
-          // Try HLS as fallback
-          if (participantOptions?.hlsUrl) {
-            liveAudio.src = participantOptions.hlsUrl;
-          }
-        };
-        liveAudio.onstalled = () => {
-          console.warn('⚠️ Live stream stalled - stream may not be active yet');
-          // Try to reload after a delay
-          setTimeout(() => {
-            console.log('🔄 Retrying stalled stream...');
-            liveAudio.load();
-          }, 3000);
-        };
-        liveAudio.onwaiting = () => console.log('⏳ Live stream buffering...');
-        
-        // Start live playback
-        try {
-          await liveAudio.play();
-          console.log('✅ Vibestream started for participant');
-        } catch (playError) {
-          console.error('❌ Failed to start live audio:', playError);
-          throw playError;
-        }
-        
-        // Store cleanup function for component unmount
-        const cleanup = () => {
-          console.log('🛑 Cleaning up participant audio stream');
-          liveAudio.pause();
-          liveAudio.src = '';
-          liveAudio.remove();
-        };
-        
-        // Store cleanup reference
-        (updateIntervalRef as any).current = { cleanup };
-        
-        console.log('✅ Participant mode started - receiving creator\'s audio via SRS');
-        return cleanup;
-      } else {
-        throw new Error('No streaming URL provided for participant mode');
-      }
-      
-    } catch (error) {
-      console.error('❌ Failed to start participant mode:', error);
-      setIsStreaming(false);
-      throw error;
-    }
-  };
-
-  // =============================================================================
-  // STREAMING CONTROL
+  // STREAMING CONTROL (RESTORED FROM LEGACY)
   // =============================================================================
   const startVibestream = async () => {
     try {
       console.log('🎵 Starting vibestream with RTA:', rtaID);
       
       // Check if this is a participant joining an existing vibestream
-      if (participantOptions?.isParticipant) {
-        console.log(`👥 PARTICIPANT MODE: Joining existing vibestream`);
-        console.log(`🎵 Stream URL: ${participantOptions.streamingUrl}`);
-        console.log(`📺 HLS URL: ${participantOptions.hlsUrl}`);
-        
-        // PARTICIPANT-ONLY: Start audio streaming mode - receive from SRS
-        await startParticipantMode();
-        return;
+      if (config?.isParticipant) {
+        console.log(`👥 Joining existing vibestream as participant for creator: ${config.creator}`);
+        console.log(`🎵 Original Vibe ID: ${config.originalVibeId}`);
+      } else {
+        console.log('🎵 Creating new vibestream as creator');
       }
-      
-      // CREATOR MODE: Full vibestream creation with orchestration
-      console.log('🎛️ CREATOR MODE: Creating new vibestream with full orchestration');
       
       setIsStreaming(true);
       startTimeRef.current = Date.now();
       
-      // CREATOR-ONLY: Start audio chunk service for backend upload
+      // RESTORED: Start audio chunk service for backend upload with proper integration
       if (rtaID && config?.creator) {
-        console.log('🎵 CREATOR: Starting audio chunk service...');
-        
         // Reload backend URL to ensure we're using latest environment variables
         audioChunkService.reloadBackendUrl();
         audioChunkService.startCollecting(rtaID, config.creator);
-        console.log('🎵 CREATOR: Audio chunk service started for RTA:', rtaID);
+        console.log('🎵 Audio chunk service started for RTA:', rtaID);
         
         // Update participant count in chunks service
         audioChunkService.updateParticipantCount(participants.count);
       }
 
-      // CREATOR-ONLY: Start Lyria orchestration and background systems
+      // Start Lyria first, then background systems in parallel
       try {
-        console.log('🎛️ CREATOR: Starting Lyria orchestration...');
-        
-        // 1. Initialize orchestration integration with wallet (CREATOR ONLY)
+        // 1. Initialize orchestration integration with wallet
         if (config?.creator) {
           await orchestrationIntegration.initializeWithWallet({ account: { accountId: config.creator } });
         }
         
-        // 2. Start orchestration (Lyria music generation) - CREATOR ONLY
+        // 2. Start orchestration (Lyria music generation)
         const success = await orchestrationIntegration.startOrchestration();
         
         if (!success) {
-          console.error('❌ CREATOR: Failed to start Lyria orchestration');
+          console.error('❌ Failed to start Lyria orchestration');
           setIsStreaming(false);
           return;
         }
         
-        console.log('🎉 CREATOR: Lyria started with baseline');
+        console.log('🎉 Lyria started with baseline');
         
-        // 3. Start vibestream session (sensors + chunks) - CREATOR ONLY
+        // 3. Start vibestream session (sensors + chunks)
         if (rtaID) {
           orchestrationIntegration.startVibestreamSession(rtaID, audioChunkService).catch(error => {
-            console.warn('⚠️ CREATOR: Vibestream session failed:', error.message);
+            console.warn('⚠️ Vibestream session failed:', error.message);
           });
         }
         
+        console.log('✅ Music started, background systems starting in parallel');
       } catch (error) {
-        console.error('❌ CREATOR: Failed to start orchestration:', error);
+        console.error('❌ Failed to start orchestration:', error);
       }
       
     } catch (error) {
@@ -457,55 +321,28 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     console.log('🛑 Closing vibestream...');
     setIsStreaming(false);
     
-    // Handle different cleanup for participant vs creator
-    if (participantOptions?.isParticipant) {
-      // PARTICIPANT MODE: PPM cleanup + audio cleanup
-      console.log('🛑 PARTICIPANT: Cleaning up audio stream and PPM...');
-      
-      // Leave PPM vibestream if enabled
-      if (participantOptions?.isPPMEnabled && rtaID) {
-        try {
-          const vibeId = rtaID.replace('metis_vibe_', '');
-          await leavePPMVibestream(vibeId);
-          console.log('✅ PARTICIPANT: Left PPM vibestream');
-        } catch (error) {
-          console.warn('⚠️ Failed to leave PPM vibestream:', error);
-        }
-      }
-      
-      if (updateIntervalRef.current && typeof (updateIntervalRef.current as any).cleanup === 'function') {
-        (updateIntervalRef.current as any).cleanup();
-      }
+    if (updateIntervalRef.current) {
+      clearInterval(updateIntervalRef.current);
       updateIntervalRef.current = null;
+    }
+    
+    // Cleanup sequence
+    try {
+      // Stop audio chunk service first (will process remaining chunks)
+      await audioChunkService.stopCollecting();
+      console.log('🛑 Audio chunk service stopped');
       
-      console.log('✅ PARTICIPANT: Cleanup complete');
-    } else {
-      // CREATOR MODE: Full orchestration cleanup
-      console.log('🛑 CREATOR: Full orchestration cleanup...');
+      // Stop vibestream session (this will cleanup sensors)
+      orchestrationIntegration.stopVibestream();
       
-      if (updateIntervalRef.current) {
-        clearInterval(updateIntervalRef.current);
-        updateIntervalRef.current = null;
-      }
+      // Stop orchestration - this will:
+      // 1. Stop Lyria session (client-side)
+      // 2. Close server connection
+      await orchestrationIntegration.stopOrchestration();
       
-      // Cleanup sequence for creator
-      try {
-        // Stop audio chunk service first (will process remaining chunks)
-        await audioChunkService.stopCollecting();
-        console.log('🛑 CREATOR: Audio chunk service stopped');
-        
-        // Stop vibestream session (this will cleanup sensors)
-        orchestrationIntegration.stopVibestream();
-        
-        // Stop orchestration - this will:
-        // 1. Stop Lyria session (client-side)
-        // 2. Close server connection
-        await orchestrationIntegration.stopOrchestration();
-        
-        console.log('✅ CREATOR: Vibestream closed successfully');
-      } catch (error) {
-        console.error('❌ CREATOR: Error during vibestream cleanup:', error);
-      }
+      console.log('✅ Vibestream closed successfully');
+    } catch (error) {
+      console.error('❌ Error during vibestream cleanup:', error);
     }
     
     onBack(); // Navigate to user profile
@@ -514,7 +351,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
   // VibePlayer is now pure - no blockchain/agent management needed
 
   // =============================================================================
-  // AUTO-START OPTIMIZATION (CREATOR-ONLY)
+  // AUTO-START OPTIMIZATION
   // =============================================================================
   useEffect(() => {
     if (isInitialized && !isStreaming) {
@@ -574,73 +411,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     return undefined;
   }, [isStreaming]);
 
-  // PPM Allowance tracking for participants - fetch real data from contract
+  // Participant tracking using blockchain data
   useEffect(() => {
-    if (participantOptions?.isParticipant && participantOptions?.isPPMEnabled && isStreaming && rtaID) {
-      console.log('💰 Starting real PPM allowance tracking for participant');
-      
-      const fetchPPMAllowance = async () => {
-        try {
-          const vibeId = rtaID.replace('metis_vibe_', ''); // Extract numeric vibeId
-          const allowanceData = await getPPMAllowance(vibeId);
-          
-          const authorizedWei = allowanceData[2]; // authorizedAmount
-          const spentWei = allowanceData[3]; // spentAmount
-          const payPerMinuteWei = allowanceData[4]; // payPerMinute
-          const isActive = allowanceData[7]; // isActive
-          
-          const authorized = parseFloat((authorizedWei / BigInt(10**18)).toString());
-          const spent = parseFloat((spentWei / BigInt(10**18)).toString());
-          const streamPrice = parseFloat((payPerMinuteWei / BigInt(10**18)).toString());
-          const remaining = authorized - spent;
-          
-          setPpmAllowance({
-            authorized,
-            spent,
-            remaining,
-            lastDeduction: Date.now(),
-            streamPrice,
-          });
-          
-          console.log(`💰 PPM Status - Authorized: ${authorized}, Spent: ${spent}, Remaining: ${remaining}, Active: ${isActive}`);
-          
-          // Check if allowance is exhausted
-          if (remaining <= 0 || !isActive) {
-            console.log('⚠️ PPM allowance exhausted or participant inactive');
-            Alert.alert(
-              'Allowance Exhausted',
-              'Your spending allowance has been used up. You will be disconnected from the vibestream.',
-              [{ text: 'OK', onPress: () => onBack() }]
-            );
-          }
-          
-        } catch (error) {
-          console.warn('⚠️ Failed to fetch PPM allowance:', error);
-        }
-      };
-      
-      // Fetch allowance immediately
-      fetchPPMAllowance();
-      
-      // Then fetch every 10 seconds to stay updated
-      const ppmInterval = setInterval(fetchPPMAllowance, 10000);
-      
-      return () => clearInterval(ppmInterval);
-    }
-    return undefined;
-  }, [isStreaming, participantOptions?.isParticipant, participantOptions?.isPPMEnabled, rtaID, getPPMAllowance, onBack]);
-
-  // Participant tracking (CREATOR-ONLY)
-  useEffect(() => {
-    // Skip all participant tracking for participants - they don't need to track themselves
-    if (participantOptions?.isParticipant) {
-      console.log('👥 PARTICIPANT: Skipping participant tracking (not needed)');
-      return;
-    }
-    
-    // CREATOR-ONLY: Track participants for group mode vibestreams
     if (isStreaming && rtaID && config?.mode === 'group') {
-      console.log(`🎯 CREATOR: Group mode vibestream detected:`, rtaID);
+      // For now, use fallback participant tracking until service is fixed
+      console.log(`🎯 Group mode vibestream detected:`, rtaID);
       
       // Fallback: use creator as single participant for now
       setParticipants({
@@ -648,14 +423,11 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
         lastUpdate: Date.now(),
         accounts: [config?.creator || 'creator.testnet']
       });
-      
-      // Update chunk service with participant count
       audioChunkService.updateParticipantCount(1);
       
-      console.log('📝 CREATOR: Real participant tracking temporarily disabled due to import issues');
+      console.log('📝 Note: Real participant tracking temporarily disabled due to import issues');
     } else if (isStreaming) {
-      // CREATOR-ONLY: Solo mode - just use creator
-      console.log('🎯 CREATOR: Solo mode vibestream');
+      // Solo mode or fallback: just use creator
       setParticipants({
         count: 1,
         lastUpdate: Date.now(),
@@ -665,7 +437,7 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
     }
     
     return undefined;
-  }, [isStreaming, rtaID, config?.mode, config?.creator, participantOptions?.isParticipant]);
+  }, [isStreaming, rtaID, config?.mode, config?.creator]);
 
   // Format duration to hh:mm:ss
   const formatDuration = (duration: number): string => {
@@ -810,30 +582,12 @@ const VibePlayer: React.FC<VibePlayerProps> = ({ onBack, rtaID, config, mode = '
           {/* Pure music status */}
           <View style={styles.workerStatus}>
             <Text style={styles.workerStatusText}>
-              {participantOptions?.isParticipant ? 'PARTICIPANT MODE - RECEIVING STREAM' : 'CREATOR MODE - GENERATING MUSIC'}
+              {config?.isParticipant ? 'PARTICIPANT MODE' : 'PURE RAVE EXPERIENCE'}
             </Text>
           </View>
-
-          {/* PPM Allowance Display (Participant Mode Only) */}
-          {participantOptions?.isParticipant && participantOptions?.isPPMEnabled && (
-            <View style={styles.ppmAllowanceContainer}>
-              <Text style={styles.ppmAllowanceLabel}>ALLOWANCE:</Text>
-              <Text style={[
-                styles.ppmAllowanceValue,
-                { color: ppmAllowance.remaining <= ppmAllowance.streamPrice * 2 ? COLORS.error : COLORS.accent }
-              ]}>
-                {ppmAllowance.remaining.toFixed(4)} tMETIS
-              </Text>
-              <Text style={styles.ppmAllowanceRate}>
-                -{ppmAllowance.streamPrice} tMETIS/MIN
-              </Text>
-            </View>
-          )}
         </View>
         
-        <View style={styles.headerRight}>
-          <GlitchText text={formatDuration(streamDuration)} style={styles.durationText} />
-        </View>
+        <GlitchText text={formatDuration(streamDuration)} style={styles.durationText} />
       </View>
 
       {/* Main visualizer */}
@@ -1136,37 +890,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: COLORS.textTertiary,
     textAlign: 'center',
-  },
-  headerRight: {
-    alignItems: 'center',
-  },
-  // PPM Allowance Display Styles
-  ppmAllowanceContainer: {
-    marginTop: SPACING.small,
-    alignItems: 'center',
-    backgroundColor: COLORS.background + '80',
-    paddingVertical: SPACING.xs,
-    paddingHorizontal: SPACING.small,
-    borderWidth: 1,
-    borderColor: COLORS.accent + '40',
-  },
-  ppmAllowanceLabel: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.textSecondary,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    marginBottom: 2,
-  },
-  ppmAllowanceValue: {
-    fontSize: FONT_SIZES.small,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  ppmAllowanceRate: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.textTertiary,
-    letterSpacing: 1,
-    marginTop: 2,
   },
 });
 
