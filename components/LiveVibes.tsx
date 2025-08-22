@@ -9,8 +9,6 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Modal,
-  TextInput,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING } from '../theme';
@@ -20,26 +18,35 @@ import AuthenticatedImage from './ui/ProfilePic';
 import { useWallet } from '../context/connector';
 import { liveVibestreamsTracker, LiveVibestreamsData, LiveVibestream } from '../services/LiveTracker';
 import { ProfileLoader } from '../services/ProfileLoader';
-import { participantTrackingService } from '../services/participant';
 
 const { width, height } = Dimensions.get('window');
 
+// Import viem for Metis contract interaction
+let createWalletClient: any = null;
+let custom: any = null;
+let parseAbiItem: any = null;
+let parseEther: any = null;
 
+// Conditional import for web platform
+if (Platform.OS === 'web') {
+  try {
+    const viem = require('viem');
+    createWalletClient = viem.createWalletClient;
+    custom = viem.custom;
+    parseAbiItem = viem.parseAbiItem;
+    parseEther = viem.parseEther;
+  } catch (error) {
+    console.warn('⚠️ Viem not available for ticket purchases');
+  }
+}
 
 interface LiveVibesProps {
   onBack: () => void;
-  onJoinVibestream: (vibeId: string, creator: string, options?: {
-    isParticipant?: boolean;
-    streamingUrl?: string;
-    hlsUrl?: string;
-    isPPMEnabled?: boolean;
-    streamPrice?: string;
-    authorizedAllowance?: string;
-  }) => void;
+  onJoinVibestream: (vibeId: string, creator: string) => void;
 }
 
 const LiveVibes: React.FC<LiveVibesProps> = ({ onBack, onJoinVibestream }) => {
-  const { account, connected, getNetworkInfo, signMessage, authorizePPMSpending, joinPPMVibestream } = useWallet();
+  const { account, connected, getNetworkInfo } = useWallet();
   const [liveVibestreamsData, setLiveVibestreamsData] = useState<LiveVibestreamsData>({
     liveVibestreams: [],
     totalLive: 0,
@@ -50,12 +57,6 @@ const LiveVibes: React.FC<LiveVibesProps> = ({ onBack, onJoinVibestream }) => {
   const [loading, setLoading] = useState(true);
   const [purchasingTickets, setPurchasingTickets] = useState<Set<string>>(new Set());
   const [creatorProfiles, setCreatorProfiles] = useState<Map<string, any>>(new Map());
-  
-  // PPM Allowance Modal State
-  const [showAllowanceModal, setShowAllowanceModal] = useState(false);
-  const [selectedVibestream, setSelectedVibestream] = useState<LiveVibestream | null>(null);
-  const [allowanceAmount, setAllowanceAmount] = useState('10');
-  const [approvingAllowance, setApprovingAllowance] = useState(false);
   
   const profileLoader = useRef<ProfileLoader>(new ProfileLoader());
 
@@ -132,140 +133,113 @@ const LiveVibes: React.FC<LiveVibesProps> = ({ onBack, onJoinVibestream }) => {
     return profile?.displayName || creator;
   };
 
-  // Join vibestream with wallet signature (required for tracking)
-  const joinVibestreamWithSignature = async (vibestream: LiveVibestream, ppmAllowanceAmount?: string) => {
+  // Purchase ticket for Metis vibestream
+  const purchaseTicket = async (vibestream: LiveVibestream) => {
     if (!connected || !account) {
-      Alert.alert('Wallet Required', 'Please connect your wallet to join vibestreams');
+      Alert.alert('Wallet Required', 'Please connect your wallet first');
+      return;
+    }
+
+    if (vibestream.network !== 'metis') {
+      Alert.alert('Not Supported', 'Ticket purchases are only supported on Metis network');
+      return;
+    }
+
+    if (!createWalletClient || !custom || !parseAbiItem || !parseEther) {
+      Alert.alert('Error', 'Web3 libraries not available');
+      return;
+    }
+
+    // Check if we have ethereum provider
+    if (typeof window === 'undefined' || !(window as any).ethereum) {
+      Alert.alert('Error', 'Ethereum provider not available');
       return;
     }
 
     const vibeId = vibestream.vibeId;
-    const rtaIdToJoin = vibestream.rtaId || vibeId;
-    
+    setPurchasingTickets(prev => new Set([...prev, vibeId]));
+
     try {
-      console.log(`🎵 Joining vibestream ${rtaIdToJoin} with wallet signature for tracking`);
+      const ethProvider = (window as any).ethereum;
       
-      // For paid vibestreams, purchase ticket first
-      if (vibestream.mode === 'group' && vibestream.ticketPrice && vibestream.ticketPrice !== '0') {
-        // Use connector's network-aware transaction methods
-        const networkInfo = getNetworkInfo();
-        if (!networkInfo || networkInfo.type !== 'metis-hyperion') {
-          Alert.alert('Network Error', 'Please switch to Metis Hyperion network for paid vibestreams');
-          return;
-        }
-        
-        setPurchasingTickets(prev => new Set([...prev, vibeId]));
-        
-        // TODO: Implement ticket purchase using connector's transaction methods
-        Alert.alert('Feature Coming Soon', 'Paid vibestreams will be available soon');
-        setPurchasingTickets(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(vibeId);
-          return newSet;
-        });
-        return;
-      }
+      // Create wallet client
+      const walletClient = createWalletClient({
+        chain: {
+          id: parseInt(process.env.EXPO_PUBLIC_HYPERION_CHAIN_ID || '133717'),
+          name: 'Metis Hyperion',
+          nativeCurrency: { name: 'tMETIS', symbol: 'tMETIS', decimals: 18 },
+          rpcUrls: { default: { http: [process.env.EXPO_PUBLIC_HYPERION_RPC_URL] } },
+        },
+        transport: custom(ethProvider)
+      });
+
+      // Get user's account
+      const [userAccount] = await walletClient.getAddresses();
       
-      // Join the vibestream using the participant service
-      const result = await participantTrackingService.joinVibestreamAsParticipant(
-        rtaIdToJoin,
-        account.accountId,
-        account.accountId,
-        signMessage
+      // Calculate ticket price (convert to wei if needed)
+      const ticketPriceWei = vibestream.ticketPrice && vibestream.ticketPrice !== '0' 
+        ? parseEther(vibestream.ticketPrice) 
+        : 0n;
+
+      console.log(`💳 Purchasing ticket for vibe ${vibeId}, price: ${ticketPriceWei} wei`);
+
+      // Call purchaseTicket on VibeKiosk contract
+      const hash = await walletClient.writeContract({
+        address: process.env.EXPO_PUBLIC_VIBE_KIOSK_ADDRESS as `0x${string}`,
+        abi: [parseAbiItem('function purchaseTicket(uint256 vibeId) external payable returns (uint256 ticketId)')],
+        functionName: 'purchaseTicket',
+        args: [BigInt(vibeId)],
+        value: ticketPriceWei,
+        account: userAccount
+      });
+
+      console.log(`✅ Ticket purchase transaction submitted: ${hash}`);
+      
+      Alert.alert(
+        'Ticket Purchased!',
+        `Your ticket has been purchased! Transaction: ${hash.slice(0, 10)}...`,
+        [
+          { text: 'OK', style: 'default' },
+          { 
+            text: 'Join Vibestream', 
+            style: 'default',
+            onPress: () => onJoinVibestream(vibeId, vibestream.creator)
+          }
+        ]
       );
+
+    } catch (error: any) {
+      console.error('❌ Failed to purchase ticket:', error);
       
-      if (result.success) {
-        console.log(`✅ Joined vibestream ${rtaIdToJoin} as participant`);
-        console.log(`🎵 Stream URL: ${result.streamingUrl}`);
-        console.log(`📺 HLS URL: ${result.hlsUrl}`);
+      let errorMessage = 'Failed to purchase ticket. Please try again.';
       
-        // Validate streaming URLs before proceeding
-        if (!result.streamingUrl && !result.hlsUrl) {
-          Alert.alert('Join Failed', 'No streaming URLs provided');
-          return;
-        }
-        
-        // Navigate to participant view with streaming URLs and PPM info
-        onJoinVibestream(rtaIdToJoin, vibestream.creator, {
-          isParticipant: true,
-          streamingUrl: result.streamingUrl,
-          hlsUrl: result.hlsUrl,
-          isPPMEnabled: !!(vibestream.payPerStream && vibestream.streamPrice && vibestream.streamPrice !== '0'),
-          streamPrice: vibestream.streamPrice,
-          authorizedAllowance: ppmAllowanceAmount || '0' // Pass the authorized amount
-        });
-      } else {
-        Alert.alert('Join Failed', result.error || 'Could not join vibestream');
+      if (error.message?.includes('insufficient funds')) {
+        errorMessage = 'Insufficient tMETIS balance. Please add funds to your wallet.';
+      } else if (error.message?.includes('User rejected')) {
+        errorMessage = 'Transaction was cancelled.';
+      } else if (error.message?.includes('All tickets sold')) {
+        errorMessage = 'All tickets for this vibestream have been sold.';
       }
       
-    } catch (error: any) {
-      console.error('❌ Failed to join vibestream:', error);
-      Alert.alert('Join Failed', 'Could not join vibestream. Please try again.');
-    }
-  };
-
-  // Handle PPM allowance for pay-per-stream vibestreams
-  const handlePPMAllowance = async (vibestream: LiveVibestream) => {
-    if (!connected || !account) {
-      Alert.alert('Wallet Required', 'Please connect your wallet to join vibestreams');
-      return;
-    }
-
-    // Check if this is a group mode vibestream with pay-per-stream
-    if (vibestream.mode === 'group' && vibestream.payPerStream && vibestream.streamPrice && vibestream.streamPrice !== '0') {
-      // Show allowance modal for PPM vibestreams
-      setSelectedVibestream(vibestream);
-      setAllowanceAmount('10'); // Reset to default
-      setShowAllowanceModal(true);
-    } else {
-      // Regular join flow for free vibestreams
-      await joinVibestreamWithSignature(vibestream);
-    }
-  };
-
-  // Approve PPM spending allowance
-  const approvePPMAllowance = async () => {
-    if (!selectedVibestream || !connected || !account) return;
-
-    const networkInfo = getNetworkInfo();
-    if (!networkInfo || networkInfo.type !== 'metis-hyperion') {
-      Alert.alert('Network Error', 'Please switch to Metis Hyperion network for pay-per-stream vibestreams');
-      return;
-    }
-
-    setApprovingAllowance(true);
-
-    try {
-      console.log(`💰 Approving PPM allowance: ${allowanceAmount} tMETIS for vibe ${selectedVibestream.vibeId}`);
-
-      // Step 1: Authorize PPM spending
-      const authTxHash = await authorizePPMSpending(selectedVibestream.vibeId, allowanceAmount);
-      console.log('✅ PPM allowance authorized:', authTxHash);
-
-      // Step 2: Join PPM vibestream
-      const joinTxHash = await joinPPMVibestream(selectedVibestream.vibeId);
-      console.log('✅ Joined PPM vibestream:', joinTxHash);
-
-      setShowAllowanceModal(false);
-      setApprovingAllowance(false);
-
-      // Store the allowance amount for passing to VibePlayer
-      const currentAllowanceAmount = allowanceAmount;
-      
-      // Join the vibestream after PPM setup
-      await joinVibestreamWithSignature(selectedVibestream, currentAllowanceAmount);
-      
-    } catch (error: any) {
-      console.error('❌ Failed to approve PPM allowance:', error);
-      Alert.alert('Approval Failed', 'Could not approve spending allowance. Please try again.');
+      Alert.alert('Purchase Failed', errorMessage);
     } finally {
-      setApprovingAllowance(false);
+      setPurchasingTickets(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(vibeId);
+        return newSet;
+      });
     }
   };
 
-  // Free-Wibestreams joining also require wallet signature for proper tracking
-  const joinVibestream = async (vibestream: LiveVibestream) => {
-    await handlePPMAllowance(vibestream);
+  // Join vibestream (for free tickets or after purchase)
+  const joinVibestream = (vibestream: LiveVibestream) => {
+    if (vibestream.mode === 'group' && vibestream.ticketPrice && vibestream.ticketPrice !== '0') {
+      // Requires ticket purchase
+      purchaseTicket(vibestream);
+    } else {
+      // Free to join or solo mode
+      onJoinVibestream(vibestream.vibeId, vibestream.creator);
+    }
   };
 
   // Render live vibestream card
@@ -433,80 +407,6 @@ const LiveVibes: React.FC<LiveVibesProps> = ({ onBack, onJoinVibestream }) => {
           <Text style={styles.brandText}>POWERED BY BLOCKCHAIN</Text>
         </View>
       </ScrollView>
-
-      {/* PPM Allowance Modal */}
-      <Modal
-        visible={showAllowanceModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowAllowanceModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <GlitchContainer intensity="medium" style={styles.allowanceModal}>
-            <View style={styles.modalHeader}>
-              <GlitchText text="SPENDING ALLOWANCE" style={styles.modalTitle} />
-              <TouchableOpacity 
-                onPress={() => setShowAllowanceModal(false)}
-                style={styles.modalCloseButton}
-              >
-                <FontAwesome5 name="times" size={20} color={COLORS.primary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalContent}>
-              <Text style={styles.modalDescription}>
-                This vibestream charges {selectedVibestream?.streamPrice} tMETIS per minute.
-                Set your spending allowance:
-              </Text>
-
-              <View style={styles.allowanceInputContainer}>
-                <TextInput
-                  style={styles.allowanceInput}
-                  value={allowanceAmount}
-                  onChangeText={setAllowanceAmount}
-                  placeholder="10"
-                  placeholderTextColor={COLORS.textTertiary}
-                  keyboardType="numeric"
-                />
-                <Text style={styles.allowanceCurrency}>tMETIS</Text>
-              </View>
-
-              <View style={styles.allowanceInfo}>
-                <Text style={styles.allowanceInfoText}>
-                  ≈ {Math.floor(parseFloat(allowanceAmount || '0') / parseFloat(selectedVibestream?.streamPrice || '1'))} MINUTES
-                </Text>
-                <Text style={styles.allowanceWarning}>
-                  This amount will be authorized for spending on this vibestream only.
-                </Text>
-              </View>
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={styles.modalCancelButton}
-                  onPress={() => setShowAllowanceModal(false)}
-                >
-                  <Text style={styles.modalCancelText}>CANCEL</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.modalApproveButton, approvingAllowance && styles.modalButtonDisabled]}
-                  onPress={approvePPMAllowance}
-                  disabled={approvingAllowance}
-                >
-                  {approvingAllowance ? (
-                    <View style={styles.modalLoadingContainer}>
-                      <ActivityIndicator size="small" color={COLORS.background} />
-                      <Text style={styles.modalApproveText}>APPROVING...</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.modalApproveText}>APPROVE & JOIN</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </GlitchContainer>
-        </View>
-      </Modal>
     </View>
   );
 };
@@ -748,129 +648,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     lineHeight: 18,
-  },
-  // PPM Allowance Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: COLORS.background + 'CC',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.large,
-  },
-  allowanceModal: {
-    width: '100%',
-    maxWidth: 400,
-    backgroundColor: COLORS.backgroundLight,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: SPACING.medium,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.primary + '40',
-  },
-  modalTitle: {
-    fontSize: FONT_SIZES.large,
-    color: COLORS.textPrimary,
-    letterSpacing: 2,
-    fontWeight: 'bold',
-  },
-  modalCloseButton: {
-    padding: SPACING.small,
-    borderWidth: 1,
-    borderColor: COLORS.primary + '60',
-  },
-  modalContent: {
-    padding: SPACING.large,
-  },
-  modalDescription: {
-    fontSize: FONT_SIZES.medium,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.large,
-    textAlign: 'center',
-    letterSpacing: 1,
-  },
-  allowanceInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.background,
-    marginBottom: SPACING.medium,
-  },
-  allowanceInput: {
-    flex: 1,
-    padding: SPACING.medium,
-    fontSize: FONT_SIZES.large,
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-    letterSpacing: 1,
-    fontWeight: 'bold',
-  },
-  allowanceCurrency: {
-    padding: SPACING.medium,
-    fontSize: FONT_SIZES.medium,
-    color: COLORS.primary,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    backgroundColor: COLORS.primary + '20',
-  },
-  allowanceInfo: {
-    alignItems: 'center',
-    marginBottom: SPACING.large,
-  },
-  allowanceInfoText: {
-    fontSize: FONT_SIZES.medium,
-    color: COLORS.accent,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    marginBottom: SPACING.small,
-  },
-  allowanceWarning: {
-    fontSize: FONT_SIZES.small,
-    color: COLORS.textTertiary,
-    textAlign: 'center',
-    letterSpacing: 1,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: SPACING.medium,
-  },
-  modalCancelButton: {
-    flex: 1,
-    paddingVertical: SPACING.medium,
-    borderWidth: 1,
-    borderColor: COLORS.textTertiary,
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    fontSize: FONT_SIZES.medium,
-    color: COLORS.textTertiary,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  modalApproveButton: {
-    flex: 2,
-    paddingVertical: SPACING.medium,
-    backgroundColor: COLORS.secondary,
-    alignItems: 'center',
-  },
-  modalApproveText: {
-    fontSize: FONT_SIZES.medium,
-    color: COLORS.background,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  modalButtonDisabled: {
-    opacity: 0.6,
-  },
-  modalLoadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.small,
   },
 });
 
