@@ -32,8 +32,8 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
   const [step, setStep] = useState(1);
   const [mode, setMode] = useState<VibestreamMode>('solo');
   const [storeToFilecoin, setStoreToFilecoin] = useState(true);
-  const [distance, setDistance] = useState('1'); // Start with minimum distance (1-10 meters)
-  const [ticketAmount, setTicketAmount] = useState('1'); // Start with minimum tickets (must be >= 1)
+  const [distance, setDistance] = useState('10'); // Contract comment says "up to 10" meters
+  const [ticketAmount, setTicketAmount] = useState('0');
   const [ticketPrice, setTicketPrice] = useState('0');
   const [streamPrice, setStreamPrice] = useState('0');
   const [freeTickets, setFreeTickets] = useState(true); // Default to true (N for ticket price)
@@ -165,7 +165,7 @@ const VibestreamModal: React.FC<VibestreamModalProps> = ({ visible, onClose, onL
         ticket_amount: mode === 'group' ? parseInt(ticketAmount) : undefined,
         ticket_price: mode === 'group' && !freeTickets ? ticketPrice : undefined,
         pay_per_stream: mode === 'group' ? payPerStream : false,
-        stream_price: mode === 'group' && payPerStream ? streamPrice : '0',
+        stream_price: mode === 'group' && payPerStream ? streamPrice : undefined,
         creator: accountIdToUse,
         created_at: Date.now(),
       };
