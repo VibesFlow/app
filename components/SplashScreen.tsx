@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, BRANDING } from '../theme';
 import ConnectModal from './ConnectModal';
 import VibestreamModal from './VibestreamModal';
+import SubscribeModal from './SubscribeModal';
 import { useWallet } from '../context/connector';
 import { liveVibestreamsTracker, LiveVibestreamsData } from '../services/LiveTracker';
 
